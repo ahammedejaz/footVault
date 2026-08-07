@@ -6,10 +6,12 @@ import {
   WhatsAppIcon,
 } from "@/components/brand/social-icons";
 import { prerenderOrDefer } from "@/lib/prerender";
-import { getCategoryTree } from "@/lib/queries/catalog";
 import {
-  getSiteSettings,
-  listPages,
+  cachedCategoryTree,
+  cachedPages,
+  cachedSiteSettings,
+} from "@/lib/queries/cached";
+import {
   setting,
   type ContactSettings,
   type SocialSettings,
@@ -38,7 +40,7 @@ function iconFor(name: string) {
 
 export async function SiteFooter() {
   const [settings, pages, tree] = await prerenderOrDefer("footer", () =>
-    Promise.all([getSiteSettings(), listPages(), getCategoryTree()]),
+    Promise.all([cachedSiteSettings(), cachedPages(), cachedCategoryTree()]),
   );
 
   const contact = setting<ContactSettings>(settings, "contact", {

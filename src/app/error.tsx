@@ -1,9 +1,11 @@
 "use client";
 
 import { useEffect } from "react";
+import { usePathname } from "next/navigation";
 
 import { TreadMark } from "@/components/brand/logo";
 import { Button } from "@/components/ui/button";
+import { reportBoundaryError, type BoundaryError } from "@/lib/report-error";
 
 /**
  * The last-resort error boundary.
@@ -17,16 +19,15 @@ export default function GlobalError({
   error,
   reset,
 }: {
-  error: Error & { digest?: string };
+  error: BoundaryError;
   reset: () => void;
 }) {
+  const pathname = usePathname();
   useEffect(() => {
-    console.error("[storefront] unhandled error", {
-      message: error.message,
-      digest: error.digest,
-      stack: error.stack,
-    });
-  }, [error]);
+    // "root", not "storefront": both boundaries used to log the same label, so
+    // a log line could not tell you whether the layout itself had failed.
+    reportBoundaryError("root", error, pathname);
+  }, [error, pathname]);
 
   return (
     <main className="mx-auto flex max-w-xl flex-col items-center px-4 py-24 text-center sm:px-6">

@@ -3,7 +3,7 @@ import Link from "next/link";
 import { HomeSection } from "@/components/storefront/home-sections";
 import { Button } from "@/components/ui/button";
 import { prerenderOrDefer } from "@/lib/prerender";
-import { getHomepageSections } from "@/lib/queries/content";
+import { cachedHomepageSections } from "@/lib/queries/cached";
 
 /**
  * The homepage renders whatever is in `homepage_sections`, in that order.
@@ -20,7 +20,7 @@ import { getHomepageSections } from "@/lib/queries/content";
 export const revalidate = 3600;
 
 export default async function HomePage() {
-  const sections = await prerenderOrDefer("homepage", getHomepageSections);
+  const sections = await prerenderOrDefer("homepage", cachedHomepageSections);
 
   if (sections.length === 0) {
     return (

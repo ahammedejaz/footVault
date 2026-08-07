@@ -3,6 +3,15 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   images: {
     /**
+     * next/image only serves the qualities named here — Next 16 defaults the
+     * allowlist to [75] and answers 400 for anything else. The hero asks for 82
+     * (see home-sections.tsx), which meant the optimiser quietly clamped the
+     * emitted srcset back to 75 while the code claimed otherwise, and a direct
+     * request for q=82 returned 400. Naming it makes the number in the code the
+     * number that ships.
+     */
+    qualities: [75, 82],
+    /**
      * The seed catalog ships drawn SVG product assets (see
      * scripts/generate-seed-images.ts), and next/image refuses to serve SVG
      * without this flag because an SVG can carry script.

@@ -189,19 +189,6 @@
     @apply border-border;
   }
 
-  /*
-    The announcement bar, once dismissed.
-
-    Set by a blocking inline script in announcement-bar.tsx before first paint,
-    so a returning visitor never sees the strip render and then vanish. Hiding
-    it in an effect instead would move the header and everything under it by
-    33px on every load — a layout shift on every page of the site, for the
-    people who have been here most.
-  */
-  [data-fv-announce="off"] [data-announcement] {
-    display: none;
-  }
-
   /* Anchors and focus targets clear the sticky header rather than landing
      underneath it. */
   :target,

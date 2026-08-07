@@ -8,7 +8,7 @@ import { MobileNav } from "@/components/storefront/mobile-nav";
 import { SearchButton } from "@/components/storefront/search-button";
 import type { NavItem } from "@/components/storefront/nav-types";
 import { deferIfPrerendering } from "@/lib/prerender";
-import { getCategoryTree, getPopularBrands } from "@/lib/queries/catalog";
+import { cachedCategoryTree, cachedPopularBrands } from "@/lib/queries/cached";
 import { primaryNav } from "@/lib/site-config";
 
 /**
@@ -21,7 +21,7 @@ import { primaryNav } from "@/lib/site-config";
  */
 async function getNav(): Promise<NavItem[]> {
   try {
-    const tree = await getCategoryTree();
+    const tree = await cachedCategoryTree();
     if (tree.length === 0) return [...primaryNav];
     return [
       ...tree.map((node) => ({
@@ -51,7 +51,7 @@ async function getNav(): Promise<NavItem[]> {
 /** Entry points offered inside the search overlay before anything is typed. */
 async function getPopularSearches(): Promise<Array<{ label: string; href: string }>> {
   try {
-    const brands = await getPopularBrands(5);
+    const brands = await cachedPopularBrands(5);
     return [
       { label: "New arrivals", href: "/collection/new-arrivals" },
       { label: "On sale", href: "/shop?on_sale=true" },

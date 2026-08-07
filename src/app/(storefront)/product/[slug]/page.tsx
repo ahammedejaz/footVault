@@ -7,12 +7,11 @@ import { ProductCard } from "@/components/storefront/product-card";
 import { ProductViewer } from "@/components/storefront/product-viewer";
 import { Rail } from "@/components/storefront/rail";
 import {
-  getProduct,
-  getRelatedProducts,
   listProductSlugs,
   type ProductDetail,
 } from "@/lib/queries/catalog";
-import { getSiteSettings, setting, type ShippingSettings } from "@/lib/queries/content";
+import { cachedProduct, cachedRelatedProducts, cachedSiteSettings } from "@/lib/queries/cached";
+import { setting, type ShippingSettings } from "@/lib/queries/content";
 import { formatPaise } from "@/lib/format";
 import { SITE_URL } from "@/lib/env";
 import { staticParamsOr } from "@/lib/static-params";
@@ -41,7 +40,7 @@ export async function generateMetadata({
   params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
   const { slug } = await params;
-  const product = await getProduct(slug);
+  const product = await cachedProduct(slug);
   if (!product) return { title: "No longer stocked" };
 
   const title = product.metaTitle ?? product.name;
@@ -67,10 +66,10 @@ export default async function ProductPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const product = await getProduct(slug);
+  const product = await cachedProduct(slug);
   if (!product) notFound();
 
-  const settings = await getSiteSettings();
+  const settings = await cachedSiteSettings();
   const shipping = setting<ShippingSettings>(settings, "shipping", {
     flat_fee_paise: 9900,
     free_above_paise: 199900,
@@ -201,7 +200,7 @@ export default async function ProductPage({
 }
 
 async function RelatedRail({ product }: { product: ProductDetail }) {
-  const related = await getRelatedProducts(product);
+  const related = await cachedRelatedProducts(product);
   if (related.length === 0) return null;
 
   const label = product.categoryName

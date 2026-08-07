@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
 import { Breadcrumbs } from "@/components/storefront/breadcrumbs";
-import { getPage, listPageSlugs } from "@/lib/queries/content";
+import { cachedPage } from "@/lib/queries/cached";
+import { listPageSlugs } from "@/lib/queries/content";
 import { staticParamsOr } from "@/lib/static-params";
 
 export const revalidate = 3600;
@@ -19,7 +20,7 @@ export async function generateMetadata({
   params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
   const { slug } = await params;
-  const page = await getPage(slug);
+  const page = await cachedPage(slug);
   if (!page) return {};
   return {
     title: page.metaTitle ?? page.title,
@@ -42,7 +43,7 @@ export default async function CmsPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const page = await getPage(slug);
+  const page = await cachedPage(slug);
   if (!page) notFound();
 
   const paragraphs = (page.body ?? "")
