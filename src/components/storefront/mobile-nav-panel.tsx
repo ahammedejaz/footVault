@@ -4,11 +4,15 @@ import * as React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Dialog } from "radix-ui";
-import { ChevronDown, Heart, X } from "lucide-react";
+import { ChevronDown, Heart, LogOut, X } from "lucide-react";
 
 import { Logo } from "@/components/brand/logo";
 import { Button } from "@/components/ui/button";
+import type { AccountUser } from "@/components/storefront/account-menu";
+import { GoogleSignInForm } from "@/components/storefront/sign-in";
 import type { NavItem } from "@/components/storefront/nav-types";
+import { signOut } from "@/lib/actions/auth";
+import { useCurrentPath } from "@/hooks/use-current-path";
 import { useSwipeDismiss } from "@/hooks/use-swipe-dismiss";
 import { cn } from "@/lib/utils";
 
@@ -25,15 +29,18 @@ import { cn } from "@/lib/utils";
  */
 export function MobileNavPanel({
   items,
+  user,
   open,
   onOpenChange,
 }: {
   items: NavItem[];
+  user: AccountUser | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
   const setOpen = onOpenChange;
   const pathname = usePathname();
+  const here = useCurrentPath();
   const swipe = useSwipeDismiss({ side: "left", onDismiss: () => setOpen(false) });
 
   // Navigating closes the drawer. Reset during render, not in an effect: an
@@ -94,6 +101,35 @@ export function MobileNavPanel({
               </li>
             </ul>
           </nav>
+
+          {/*
+            Signing in lives at the bottom of the drawer because below `sm` the
+            header bar has room for search and bag and nothing else — those two
+            carry the purchase, and a fourth 44px target overflows a 360px
+            screen. It is the last thing in the panel rather than the first
+            because browsing is what the drawer is for.
+          */}
+          <div className="border-border border-t px-4 py-4">
+            {user ? (
+              <form action={signOut} className="flex items-center justify-between gap-3">
+                <input type="hidden" name="next" value={here} readOnly />
+                <span className="min-w-0">
+                  <span className="text-muted-foreground block font-mono text-xs tracking-[0.06em] uppercase">
+                    Signed in
+                  </span>
+                  <span className="block truncate text-sm">
+                    {user.name ?? user.email}
+                  </span>
+                </span>
+                <Button type="submit" variant="outline" size="sm" className="shrink-0">
+                  <LogOut aria-hidden />
+                  Sign out
+                </Button>
+              </form>
+            ) : (
+              <GoogleSignInForm />
+            )}
+          </div>
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>

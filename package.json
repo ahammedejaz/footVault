@@ -17,8 +17,9 @@
     "audit:links": "tsx scripts/audit/links.ts",
     "audit:keyboard": "tsx scripts/audit/keyboard.ts",
     "audit:shots": "tsx scripts/audit/screenshots.ts",
-    "audit": "npm run audit:overflow && npm run audit:a11y && npm run audit:keyboard && npm run audit:interactions && npm run audit:links",
-    "audit:interactions": "tsx scripts/audit/interactions.ts"
+    "audit": "npm run audit:overflow && npm run audit:a11y && npm run audit:keyboard && npm run audit:interactions && npm run audit:links && npm run audit:auth",
+    "audit:interactions": "tsx scripts/audit/interactions.ts",
+    "audit:auth": "tsx scripts/audit/auth-rls.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.7.1",

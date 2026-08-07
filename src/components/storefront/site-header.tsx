@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Heart, ShoppingBag } from "lucide-react";
 
 import { Logo } from "@/components/brand/logo";
+import { AccountMenu } from "@/components/storefront/account-menu";
 import { BagLink, SavedLink } from "@/components/storefront/header-links";
 import { MegaNav } from "@/components/storefront/mega-nav";
 import { MobileNav } from "@/components/storefront/mobile-nav";
@@ -9,6 +10,7 @@ import { SearchButton } from "@/components/storefront/search-button";
 import type { NavItem } from "@/components/storefront/nav-types";
 import { deferIfPrerendering } from "@/lib/prerender";
 import { cachedCategoryTree, cachedPopularBrands } from "@/lib/queries/cached";
+import { getCurrentUser } from "@/lib/auth";
 import { primaryNav } from "@/lib/site-config";
 
 /**
@@ -73,7 +75,11 @@ async function getPopularSearches(): Promise<Array<{ label: string; href: string
  * 390px without either wrapping or shrinking below the tap floor.
  */
 export async function SiteHeader() {
-  const [nav, popular] = await Promise.all([getNav(), getPopularSearches()]);
+  const [nav, popular, user] = await Promise.all([
+    getNav(),
+    getPopularSearches(),
+    getCurrentUser(),
+  ]);
 
   return (
     <header className="bg-background/95 border-border supports-[backdrop-filter]:bg-background/80 sticky top-0 z-50 border-b backdrop-blur">
@@ -81,7 +87,10 @@ export async function SiteHeader() {
           icons together leave no room for gap-2, and the lockup cannot shrink
           because the wordmark must not wrap. */}
       <div className="mx-auto flex h-16 max-w-7xl items-center gap-1 px-4 sm:gap-2 sm:px-6">
-        <MobileNav items={nav} />
+        <MobileNav
+          items={nav}
+          user={user ? { name: user.name, email: user.email } : null}
+        />
 
         <Link
           href="/"
@@ -94,6 +103,7 @@ export async function SiteHeader() {
         <MegaNav items={nav} />
 
         <SearchButton popular={popular} />
+        <AccountMenu user={user ? { name: user.name, email: user.email } : null} />
         <SavedLink>
           <Heart />
         </SavedLink>

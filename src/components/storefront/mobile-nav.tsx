@@ -6,6 +6,7 @@ import { Menu } from "lucide-react";
 
 import { useReturnFocus } from "@/hooks/use-return-focus";
 import { Button } from "@/components/ui/button";
+import type { AccountUser } from "@/components/storefront/account-menu";
 import type { NavItem } from "@/components/storefront/nav-types";
 
 /**
@@ -23,7 +24,13 @@ const MobileNavPanel = dynamic(
   { ssr: false },
 );
 
-export function MobileNav({ items }: { items: NavItem[] }) {
+export function MobileNav({
+  items,
+  user,
+}: {
+  items: NavItem[];
+  user: AccountUser | null;
+}) {
   const [open, setOpen] = React.useState(false);
   const [mounted, setMounted] = React.useState(false);
   const trigger = useReturnFocus(open);
@@ -47,7 +54,7 @@ export function MobileNav({ items }: { items: NavItem[] }) {
         <Menu />
       </Button>
       {mounted ? (
-        <MobileNavPanel items={items} open={open} onOpenChange={setOpen} />
+        <MobileNavPanel items={items} user={user} open={open} onOpenChange={setOpen} />
       ) : null}
     </>
   );
