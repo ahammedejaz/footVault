@@ -5,7 +5,7 @@
  * has a plausible way of silently not working:
  *
  *   1. Dismissing the announcement sticks across a reload, and the strip is
- *      gone from the first frame rather than rendered and then hidden.
+ *      absent from the server's HTML rather than rendered and then hidden.
  *   2. The mobile filter sheet opens, and tapping a facet inside it keeps it
  *      open with the count updated.
  *   3. Search returns results for a misspelling.
@@ -34,15 +34,25 @@ async function announcement(page: Page) {
   await page.reload({ waitUntil: "load" });
   check(!(await bar.isVisible()), "announcement: came back after a reload");
 
-  // The strip must never paint and then vanish: the attribute that hides it is
-  // set by a blocking script, so it is already there at DOMContentLoaded.
-  const early = await page.evaluate(() =>
-    document.documentElement.getAttribute("data-fv-announce"),
+  // The strongest form of "no flash": not hidden quickly, but never sent. The
+  // dismissal is a cookie the server reads before it renders, so the markup
+  // that arrives has no strip in it at all — there is nothing to paint and
+  // nothing to shift. Checking the served HTML rather than the live DOM is the
+  // only way to tell that apart from a very fast hide.
+  const html = await page.evaluate(async () => {
+    const response = await fetch(window.location.href, { cache: "no-store" });
+    return response.text();
+  });
+  check(
+    !html.includes("data-announcement"),
+    "announcement: still present in the server HTML after being dismissed",
   );
-  check(early === "off", "announcement: hidden attribute not set before paint");
 
+  // And a *different* announcement must come back, because the cookie holds
+  // the key of the one that was dismissed rather than a bare flag.
   await page.context().clearCookies();
-  await page.evaluate(() => localStorage.clear());
+  await page.reload({ waitUntil: "load" });
+  check(await bar.isVisible(), "announcement: did not return for a fresh visitor");
 }
 
 async function filterSheet(page: Page) {
@@ -108,10 +118,16 @@ async function stickyBar(page: Page) {
   await page.waitForTimeout(400);
 
   const bar = page.locator("div").filter({ hasText: /^Pick a size$/ }).last();
-  const hiddenAtFirst = await page.evaluate(
-    () => document.querySelector('[aria-hidden="true"] button[disabled]') !== null,
-  );
-  check(hiddenAtFirst, "sticky bar: showing before the CTA has been seen");
+  // `inert`, not `aria-hidden`: the bar carries a live Add to bag button now,
+  // and aria-hidden would leave it in the tab order while telling screen
+  // readers it is not there. axe flags exactly that as aria-hidden-focus.
+  const hiddenAtFirst = await page.evaluate(() => {
+    const fixed = Array.from(document.querySelectorAll<HTMLElement>("div")).find(
+      (el) => getComputedStyle(el).position === "fixed" && el.textContent?.includes("Add to bag"),
+    );
+    return fixed ? fixed.hasAttribute("inert") : false;
+  });
+  check(hiddenAtFirst, "sticky bar: not inert before the CTA has been seen");
 
   await page.getByRole("button", { name: "Add to bag" }).first().scrollIntoViewIfNeeded();
   await page.mouse.wheel(0, 1200);

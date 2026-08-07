@@ -322,7 +322,16 @@ export function ProductViewer({
 
       {/* --- the sticky bar, once the real one has scrolled away ---------- */}
       <div
-        aria-hidden={!showSticky}
+        /*
+          `inert` rather than `aria-hidden`. The two are not interchangeable:
+          aria-hidden hides a subtree from assistive technology but leaves it in
+          the tab order, so a keyboard user lands on an "Add to bag" button that
+          screen readers have been told does not exist — which is what axe flags
+          as aria-hidden-focus, and it flagged it here. `inert` removes the
+          subtree from both at once, which is the thing actually wanted for a bar
+          that has slid off-screen.
+        */
+        inert={!showSticky}
         className={cn(
           "bg-background/95 supports-[backdrop-filter]:bg-background/85 fixed inset-x-0 bottom-0 z-40 border-t backdrop-blur transition-transform duration-200 lg:hidden",
           showSticky ? "translate-y-0" : "translate-y-full",

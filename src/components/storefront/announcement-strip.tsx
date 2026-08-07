@@ -14,9 +14,15 @@ import { dismissAnnouncement } from "@/lib/actions/announcement";
  *
  * The button is a real form bound to a Server Action, so it works with
  * JavaScript disabled: the post sets the cookie and the server renders the next
- * page without the strip. With JavaScript, `onSubmit` hides it on the spot so
- * nobody waits for a round trip to watch a bar close, and Next refreshes the
- * route after the action, so the cookie and the DOM agree from then on.
+ * page without the strip. With JavaScript, the click hides it on the spot so
+ * nobody waits for a round trip to watch a bar close.
+ *
+ * Hidden, not unmounted — and that distinction is the whole reason this
+ * component has a comment. Returning null on click removes the `<form>` from
+ * the tree while its own submission is still in flight, so the action never
+ * reaches the server: the bar vanished, the cookie was never written, and it
+ * came back on the next load. `hidden` collapses it just as instantly and
+ * leaves the form alive long enough to finish what the click started.
  */
 export function AnnouncementStrip({
   announcementKey,
@@ -26,13 +32,17 @@ export function AnnouncementStrip({
   children: React.ReactNode;
 }) {
   const [dismissed, setDismissed] = useState(false);
-  if (dismissed) return null;
 
   return (
     /* A landmark, not a bare div: content outside header / main / footer is
        content a screen-reader user cannot navigate to by region. */
     <aside
+      hidden={dismissed}
       aria-label="Store announcement"
+      // A stable hook for scripts/audit/interactions.ts. The strip's classes
+      // are styling and may change; this is what the audit is allowed to hold
+      // on to.
+      data-announcement
       data-surface="ink"
       className="border-b border-white/10"
     >
