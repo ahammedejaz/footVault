@@ -441,8 +441,12 @@ Honestly, the things I am least confident about.
 10. **No test covers a variant going inactive while it sits in a bag.** The code
     path exists and drops the line with a notice; it is untested.
 
-11. **Two guest carts are left in the database** from harness runs that could not
-    clean up without a service-role key. Harmless, and the teardown SQL is in
+11. **The harnesses cannot clean up after themselves without a service-role
+    key.** `audit:cart` and `audit:signedin` create real accounts and leave them
+    behind; deleting a user needs the admin API. I swept them by hand at the end
+    of this phase — the database is back to 0 users, 0 carts, 0 saved items and
+    the 35 seeded products — but the next person to run the suite will
+    accumulate rows again until §8.2 is done. The teardown SQL is in
     `docs/rls-tests.md` §8.
 
 ---
