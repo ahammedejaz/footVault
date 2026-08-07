@@ -302,7 +302,7 @@ latency to Supabase. See §8.
 | `audit:interactions` | Dismissal persists, filter sheet survives a tap, search forgives a misspelling, swatch changes gallery and URL, sticky bar waits |
 | `audit:links` | 122 pages, 1833 unique internal links, none broken, no missing titles, JSON-LD well formed |
 | `audit:auth` | 9 pass, 4 skip (see §8) |
-| `audit:cart` | 10 pass |
+| `audit:cart` | 12 pass |
 | `audit:bag` | 16 pass |
 | `audit:signedin` | 10 pass — the signed-in storefront in a browser |
 
@@ -318,6 +318,8 @@ PASS  the guest cart was consumed
 PASS  all four lines are in the account bag               4 lines
 PASS  a guest-only line kept its quantity                 qty 2
 PASS  the line in both bags summed                        1 + 2 -> 3
+PASS  a second merge moves nothing                        merged 0
+PASS  and leaves every quantity exactly as it was         3,1,2,1
 PASS  the guest cart no longer exists                     0 rows
 PASS  a summed quantity is capped at available stock      3 + 3 -> 3 (stock 3)
 ```
@@ -410,13 +412,18 @@ Honestly, the things I am least confident about.
    both need a real code from Google. **This is the largest untested surface in
    the phase**, and it shrinks to nothing the moment §8.1 is done.
 
-3. **The cart merge is not transactional.** It writes line by line; a failure
-   halfway leaves some lines merged and the guest cart intact, and the next
-   sign-in re-merges — which double-counts the lines that already moved, up to
-   the stock cap. The cap bounds the damage but does not prevent it. A
-   `SECURITY DEFINER` function doing the whole merge in one statement would be
-   correct; I chose to keep it in TypeScript under RLS instead, and this is the
-   price. Worth revisiting in Phase 5.
+3. **The cart merge is still not transactional, though it is now idempotent.**
+   It writes line by line under RLS rather than as one statement. It *used* to
+   double-count on a retry — a failure halfway left lines merged and the guest
+   cart intact, and the next sign-in added them again — which I found while
+   writing this list and fixed rather than shipped: each guest line is deleted
+   as soon as it lands, and `audit:cart` now runs the merge twice and asserts
+   nothing moves the second time (`a second merge moves nothing — merged 0`).
+   What remains is that a half-finished merge is briefly visible: some lines in
+   the account bag, the rest still in the guest bag, until the retry. No
+   quantity is ever wrong, and nothing is lost. A `SECURITY DEFINER` function
+   doing the whole thing in one statement would close it, at the cost of taking
+   the merge out from under RLS. Worth revisiting in Phase 5.
 
 4. **`acknowledgeCartChanges` is O(lines) round trips.** One `readSellable` per
    line. Fine for a bag of five, wasteful for a bag of thirty.

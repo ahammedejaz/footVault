@@ -164,6 +164,29 @@ async function main() {
     `1 + 2 -> ${byVariant.get(shared.id)} (stock ${shared.stock_quantity}, expected ${expectedShared})`,
   );
 
+  /* ── running it again changes nothing ──────────────────────────────────── */
+  // A merge that fails halfway leaves the guest token in place so the next
+  // sign-in retries — which makes a re-run the normal case, not the exception.
+  // If it were not idempotent, the second pass would add every already-moved
+  // line a second time.
+  const again = await mergeGuestCartIntoAccount(
+    callbackClient(token, signUp.session.access_token),
+    userId,
+    token,
+  );
+  const afterRetry = await rows<{ variant_id: string; quantity: number }>(
+    "re-read after a second merge",
+    asUser.from("cart_items").select("variant_id, quantity").eq("cart_id", accountCart.id),
+  );
+  const retryMap = new Map(afterRetry.map((l) => [l.variant_id, l.quantity]));
+  check("a second merge moves nothing", again.merged === 0, `merged ${again.merged}`);
+  check(
+    "and leaves every quantity exactly as it was",
+    afterRetry.length === after.length &&
+      [...byVariant].every(([v, q]) => retryMap.get(v) === q),
+    [...retryMap.values()].join(","),
+  );
+
   /* ── the guest bag is gone, and unreachable ────────────────────────────── */
   const leftovers = await rows<{ id: string }>(
     "look for the consumed guest cart",

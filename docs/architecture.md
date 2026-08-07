@@ -154,6 +154,12 @@ and a render that mutates cannot be retried. What the customer is told is
 `unit_price_seen` exists only so a change can be *noticed*. It is never used in
 a calculation.
 
+The merge is **idempotent**. A failure partway through leaves the guest token in
+place so the next sign-in retries, which makes a re-run the normal case rather
+than the exception — so each guest line is deleted the moment it lands in the
+account bag. Without that, the retry would add every already-moved line a second
+time, because `existing + guestQty` counts a quantity already inside `existing`.
+
 **The reservation model:** adding to a bag does not reserve stock. Two customers
 can hold the last pair and both bags are honest about it. The unit is claimed at
 checkout (Phase 5), which decrements in a transaction so exactly one wins.

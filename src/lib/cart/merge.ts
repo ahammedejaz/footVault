@@ -25,6 +25,14 @@ import { MAX_LINE_QUANTITY } from "@/lib/validations/cart";
  * sign-in tries again; a lost session with an intact cart is a worse trade than
  * a delayed merge.
  *
+ * Which makes re-running it the normal case, not the exception — so each guest
+ * line is deleted as soon as it has landed in the account bag. Without that, a
+ * merge that failed halfway would add the lines it had already moved a second
+ * time on the next attempt: `existing + guestQty` counts a quantity that is
+ * already inside `existing`. The stock cap bounds the damage but does not
+ * prevent it. Deleting as we go makes the whole thing idempotent, which is the
+ * property a retry needs.
+ *
  * The token is a parameter and cookies are the caller's problem. That is partly
  * layering — this is a statement about two rows in a database, not about HTTP —
  * and partly so the behaviour can actually be tested end to end without a
@@ -171,6 +179,21 @@ export async function mergeGuestCartIntoAccount(
       dropped++;
       continue;
     }
+
+    // Landed. Retire the guest line now rather than relying on the cart delete
+    // at the end, so a failure after this point cannot merge it twice.
+    const { error: consumeError } = await supabase
+      .from("cart_items")
+      .delete()
+      .eq("cart_id", guestCart.id)
+      .eq("variant_id", line.variant_id);
+    if (consumeError) {
+      // The line is in the account bag, which is what the customer cares about.
+      // Leaving the guest copy behind risks a double-count on a retry, so the
+      // cart is deliberately not dropped below and this is worth a loud log.
+      console.error("[cart] merged a line but could not retire it:", consumeError.message);
+    }
+
     merged++;
   }
 
