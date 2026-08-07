@@ -295,10 +295,49 @@ The whole site currently tells Google and everyone else to stay out. That is on
 purpose: a shop indexed with placeholder pictures and a half-finished checkout
 is a reputation problem that outlives the fix.
 
-When you are ready, set `SITE_INDEXABLE=true` in Vercel — **Production only**,
-so preview builds stay hidden — and redeploy. That is the entire change. Only
-the exact word `true` opens it, so a typo keeps you safely hidden rather than
-accidentally visible.
+Three steps, and **please do not skip the third**. This is the one instruction in
+this guide whose failure is completely silent: if you get it wrong, the deploy
+succeeds, everything looks fine, and your shop stays invisible to Google.
+
+**Step 1.** In Vercel → your project → *Settings* → *Environment Variables*, set
+
+```
+SITE_INDEXABLE = true
+```
+
+for **Production only**. Leave Preview alone, so preview builds stay hidden. Only
+the exact word `true` opens the door, so a typo keeps you safely hidden rather
+than accidentally visible.
+
+**Step 2 — build fresh, do not just redeploy.** In Vercel → *Deployments* → the
+`…` menu on the latest production deployment → **Redeploy**, and **untick "Use
+existing Build Cache"**. Pushing any commit works too.
+
+A normal redeploy is *not* enough. The instruction that tells search engines to
+stay away is written into the site when it is built, not when it is served, so
+reusing a cached build reuses the old instruction. Half the change takes effect
+and half does not, and nothing warns you.
+
+**Step 3 — check it actually worked.** Open a terminal and run these two, with
+your real domain:
+
+```bash
+curl -I https://foot-vault.vercel.app/ | grep -i x-robots-tag
+curl https://foot-vault.vercel.app/robots.txt
+```
+
+The first must print **nothing at all**. If it prints `x-robots-tag: noindex`,
+step 2 did not take — redeploy again with the build cache unticked.
+
+The second must show `Allow: /`. A few paths stay disallowed on purpose —
+`/cart`, `/checkout`, `/account`, `/wishlist`, `/search`, `/order`, `/admin` —
+because there is nothing on them for a search engine and they are different for
+every visitor. That is correct and you should leave it alone.
+
+One thing that will look wrong and is not: on Vercel **preview** deployments a
+`x-robots-tag: noindex` header always comes back, whatever you set. Vercel adds
+that itself to every preview so unfinished work never gets indexed. It does not
+happen on your production domain.
 
 There is also an optional fifth: Supabase Auth has **leaked-password protection
 turned off**. It matters little while sign-in is Google-only, but it costs

@@ -147,7 +147,7 @@ See `.env.example` for the full list and the reasoning attached to each one.
 | `RAZORPAY_KEY_SECRET` | Secret. Basic-auth password, and the HMAC key for the *browser callback* signature |
 | `RAZORPAY_WEBHOOK_SECRET` | A **different** secret. HMAC key for `x-razorpay-signature`, and only that |
 | `EMAIL_API_KEY`, `EMAIL_FROM` | Names only. Nothing reads them yet; the console adapter is what ships |
-| `SITE_INDEXABLE` | Only the exact string `true` lets search engines in. Anything else is noindex |
+| `SITE_INDEXABLE` | Only the exact string `true` lets search engines in. Anything else is noindex. Changing it needs a **fresh build**, not a redeploy — the header is baked into the build manifest |
 
 **There is deliberately no `NEXT_PUBLIC_RAZORPAY_KEY_ID`.** The key id is
 publishable, but a `NEXT_PUBLIC_` variable is inlined into every page in the
@@ -300,7 +300,9 @@ DKIM), set `EMAIL_API_KEY` and `EMAIL_FROM`, then a developer adds one adapter
 file.
 
 **4. Indexing is off.** Set `SITE_INDEXABLE=true` in Vercel — Production only,
-so previews stay hidden — and redeploy.
+so previews stay hidden — then trigger a **fresh build** with the build cache
+**unchecked**, and verify with `curl -I` that no `X-Robots-Tag` comes back. A
+plain redeploy is not enough and fails silently; see `docs/admin-guide.md`.
 
 Optional: leaked-password protection is off in Supabase Auth. Low relevance
 while sign-in is Google-only, and free to turn on.

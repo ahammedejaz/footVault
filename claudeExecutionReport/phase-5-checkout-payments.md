@@ -180,7 +180,7 @@ exactly like a configuration problem.
 Idempotency is an insert-first claim on `payment_events` with
 `unique (provider, event_id)`; a `23505` means somebody else already owns the
 work. The key is derived as `<event type>:<entity id>`, **not** taken from
-`x-razorpay-event-id` — see §3.5.
+`x-razorpay-event-id` — see decision 5 in §3.
 
 ### Part D — the checkout UI (`src/components/checkout/`, `src/app/(storefront)/`)
 
@@ -360,26 +360,71 @@ beside the value it guards can be bypassed by the next event type somebody
 adds.** There is now no way to obtain a `PaymentOutcome` from that module
 without passing one of them.
 
-### 4.7 An integration break between the payment adapter and the order code
+### 4.7 Two modules both claimed the same idempotency row, so no order could ever confirm
 
 Caught by Agent B while integrating against Agent C's module. **It would have
 silently prevented every Razorpay order from ever confirming** — a captured
-payment, a 200 in the log, and an order left in `pending` with no error
-anywhere, which is the worst shape a bug can take in this codebase.
+payment, a 200 in the log, and an order left in `pending` forever with no error
+anywhere.
 
-*Recorded here without its mechanism, deliberately.* The phase's consolidated
-handoff records that it happened and what it would have cost, and not the line
-that caused it. Inventing a plausible root cause for a bug we cannot cite would
-undermine every other root cause in this section, so this one is marked
-incomplete instead. What the seam looks like now is written into
-`recordProviderOrder` in `src/lib/actions/checkout.ts`: the `payments` row is
-written by the *order* code and not by the adapter, because `src/lib/payments/`
-may not read or write orders, and it has to exist before the modal opens because
-Razorpay can deliver `payment.captured` before the browser callback returns. If
-that row cannot be written, the order is rolled back and the customer is told
-plainly that nothing was charged.
+*Root cause:* both halves of the seam independently implemented the same correct
+pattern. Agent C's `recordAndApply` inserts the claim row into `payment_events`
+and *then* calls Agent B's `applyPaymentOutcome` — which **also** did an
+insert-first claim. The second insert hit the `unique (provider, event_id)`
+constraint that its own request had satisfied three lines earlier, got `23505`,
+and read that as "somebody else is already handling this event". Every genuine
+webhook would therefore have returned `duplicate`, the route would have answered
+200, and nothing would have moved.
 
-### 4.8 `/account/orders` had no route from the site chrome
+Neither module was wrong on its own. "Insert first, treat a unique violation as
+a duplicate" is exactly the right shape, and it is the right shape in both
+files. What was missing was an owner for the seam **between** them, and the
+failure mode of getting that wrong is the worst one available here: no
+exception, no non-2xx, no red line, just paid orders that stay `pending`.
+
+*Fix (Agent B):* the inner claim now **resolves** the `23505` instead of
+assuming what it means. It reads the existing row back — a row with a
+`processed_at` is genuinely handled and returns `duplicate`; a row without one
+is *adopted*, and this call finishes it. Adoption is not a loophole, it is the
+supported shape: `recordAndApply` claims first on purpose, so that the ledger
+write happens before anything reads an order, and leaves `order_id`,
+`processed_at` and `result` to the order code.
+
+The inner claim was kept rather than deleted, which is the right call. It costs
+one insert, and it is what makes `applyPaymentOutcome` safe to call from
+anywhere that is *not* the webhook route — including its own harness, which is
+how `audit:checkout` exercises it.
+
+### 4.8 Lifting `noindex` needs a fresh build, not a redeploy
+
+*Symptom:* the owner flips the switch, the deploy succeeds, and the store stays
+invisible to search engines with no error anywhere. This is exactly the failure
+shape this codebase fears most, and every document in the repo described the
+broken procedure.
+
+*Root cause:* `next.config.ts`'s `headers()` is evaluated **at build time**, and
+its result is written into `.next/routes-manifest.json`. An incremental build
+reuses that manifest. So `isIndexable()` is re-read for `robots.ts`, which is a
+runtime route — but *not* for the header rule, which was baked in when the
+noindex build ran.
+
+*Measured, not reasoned about:* after setting the flag on Preview and
+redeploying, `robots.txt` correctly flipped to `Allow: /` while
+`X-Robots-Tag: noindex` **persisted from the cached manifest**. The two layers
+that `robots.ts` promises "cannot disagree" had disagreed. A clean rebuild
+emitted zero header rules, correctly.
+
+*Fix:* documentation, in `README.md`, `.env.example` and `docs/admin-guide.md` —
+the instruction now says to trigger a fresh build with the build cache
+**unchecked**, and adds a verification step, because a procedure whose failure
+is silent needs one:
+
+```bash
+curl -I https://foot-vault.vercel.app/ | grep -i x-robots-tag   # must print nothing
+curl https://foot-vault.vercel.app/robots.txt                   # must show Allow: /
+```
+
+### 4.9 `/account/orders` had no route from the site chrome
 
 *Root cause:* the pages were built and linked to each other, and nothing in the
 header or the account menu linked *in*. The keyboard path the quality gate
@@ -497,27 +542,58 @@ ourselves:
 
 ## 6 · Measurements
 
-Every number here is one that was actually produced. Where a suite has not
-reported yet, it says so rather than being left out.
+Every number here was produced by running the thing. Where a figure is a ceiling
+rather than a forecast, it says so.
 
-### 6.1 Suites, with the actual numbers
+### 6.1 Static gates
+
+| Gate | Result |
+|---|---|
+| `npm run typecheck` | clean |
+| `npm run lint` | clean |
+| `npm run build` | succeeded |
+| `npm run shapes` | **13 cached shapes unchanged at `v2`** |
+
+### 6.2 The suites this phase wrote
 
 | Suite | Result |
 |---|---|
-| `npm run audit:security` | **121 pass / 0 fail / 0 skip** (117 pass / 4 fail before the fixes) |
-| `npm run audit:checkout` | **45 pass** (32 before; 13 new checks for E-1, E-2 and E-3) |
+| `npm run audit:security` | **121 pass / 0 fail / 0 skip** — 117 pass / 4 fail before the E-1…E-5 fixes |
+| `npm run audit:checkout` | **45 checks, all passed** — 32 before; 13 new for E-1, E-2 and E-3 |
 | `npm run audit:cart` | **12 pass** |
 | Agent C's payment suite | **174 assertions green** |
-| `npm run shapes` | **13 cached shapes unchanged at `v2`** |
 
-### 6.2 Checkout UI (Agent D)
+### 6.3 The browser and database gate
+
+Measured in-tree against a production build on `:3210`.
+
+| Suite | Result |
+|---|---|
+| `audit:overflow` | **22 routes + 15 populated states × 6 widths, 9,085 interactive elements measured.** No overflow, no tap target under 44px, no input under 16px |
+| `audit:a11y` | **Clean** — no WCAG 2.2 A/AA violations across 22 routes and 15 populated states, at 390px and 1440px |
+| `audit:focus` | **30 of 30.** `outline-width: 2px`, `outline-color: rgb(254, 147, 1)`, halo `rgb(10, 21, 38) 0 0 0 4px` |
+| `audit:keyboard` | clean |
+| `audit:keyboard-checkout` | **13 of 13.** A cash-on-delivery order — `FV-2026-00369` — was placed **by keyboard alone** and then found in the account history. Escape returns focus to the header bag |
+| `audit:interactions` | clean |
+| `audit:links` | **122 pages, 1,833 unique internal links.** No broken link, no missing title, no malformed JSON-LD |
+| `audit:hydration` | **0 hydration warnings and 0 other console messages** |
+| `audit:gallery` | 0px sliver at 360px and 390px; each slide exactly one viewport wide |
+| `audit:auth`, `audit:bag`, `audit:signedin` | all passed |
+
+`audit:focus` is worth pausing on, because it is the suite that exists *because
+of* §4.2. Before the fix, every one of those 30 elements would have reported
+`outline-style: none`. Measuring the computed outline rather than asserting that
+a class is present is the difference between a test that catches that bug and a
+test that agrees with it.
+
+### 6.4 Checkout UI (Agent D)
 
 - **54 overflow and tap-target checks** — 9 states × 6 widths — **0 failures**.
 - **14 axe scans**, **0 violations**.
 - **12 tab stops** from page load to the place-order button, **0 traps**, **0
   stops without a visible focus indicator**.
 
-### 6.3 Visual (Agent A)
+### 6.5 Visual (Agent A)
 
 | Measurement | Before | After |
 |---|---|---|
@@ -527,33 +603,100 @@ reported yet, it says so rather than being left out.
 | Cart dead zone | 562px | **24px** |
 | Column mismatch | 480px | **0** |
 
-### 6.4 The abandoned-order sweep, in production
+### 6.6 Lighthouse, and the question that has been open since Phase 3
 
-Job 1, `*/10 * * * *`, active. **2 runs, 0 failures, 6 real leaked orders
-released.** Verified by the lead directly against `cron.job` and
-`cron.job_run_details`, not read off a log.
+Phase 4 recorded, as its first known imperfection, that Lighthouse had never
+been measured on real infrastructure — localhost has no network latency to
+Supabase, and every route being dynamic means a slow database round trip lands
+directly in TTFB in a way localhost cannot show. That is now settled. Both sets
+of numbers are below, because each answers a different question and neither
+answers both.
 
-### 6.5 · ⚠️ PENDING — Agent F's quality gate
+**On the Vercel preview** — `foot-vault-git-feat-phase-5-checkout-payments`,
+mobile, `--throttling-method=devtools`, warmed. **These are the realistic
+numbers**: real CDN, real cold starts, real round trips to Supabase.
 
-> **PLACEHOLDER. DO NOT SHIP THIS DOCUMENT WITH THIS SECTION IN IT.**
->
-> Agent F (QA, audits, Lighthouse) had not reported when this report was
-> written. The following are outstanding and will be filled in from F's numbers:
->
-> - `npm run audit` — the full browser and database gate, pass/fail counts per
->   script
-> - `npm run audit:overflow` — routes × widths, failures
-> - `npm run audit:a11y` — scans, violations
-> - `npm run audit:keyboard` and `audit:keyboard-checkout`
-> - `npm run audit:focus`, `audit:gallery`, `audit:hydration`
-> - `npm run audit:lighthouse` — mobile, local production build,
->   `--throttling-method=devtools` (LCP, CLS, TBT, performance score). Note that
->   `--throttling-method=simulate` skews badly on localhost and reports roughly
->   4s LCP against a 1.6s reality; the devtools method is the one to quote.
-> - Server timing: cold and warm TTFB on `/checkout` and `/order/[orderNumber]`
->
-> Anything F reports as a failure or a skip goes in verbatim. A gate that has
-> never failed has not been run.
+| Route | Perf | A11y | Best practices | SEO | LCP | CLS | TBT |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| home | 93 | 100 | 100 | 58 | 2.61s | 0.000 | 47ms |
+| shop | 94 | 100 | 100 | 61 | 2.57s | 0.000 | 33ms |
+| product | 91 | 100 | 100 | 61 | 2.95s | 0.000 | 43ms |
+| cart | 96 | 100 | 100 | 54 | 2.26s | 0.001 | 11ms |
+| checkout | 94 | 100 | 100 | 54 | 2.53s | 0.000 | 12ms |
+
+Performance, accessibility and best practices meet the gate on all five routes.
+CLS is **0.000** on four of them and 0.001 on the fifth, which is the Phase 3
+and Phase 4 layout work holding under a real network.
+
+**SEO does not meet the gate on the preview, and it cannot.** Vercel injects
+`x-robots-tag: noindex` into every preview deployment, regardless of what the
+application says. This was proved rather than assumed: setting
+`SITE_INDEXABLE=true` on Preview and redeploying made *our own*
+`noindex, nofollow, noarchive` header disappear and flipped `robots.txt` to
+`Allow: /` — and a plain `x-robots-tag: noindex` **remained**. That header is
+Vercel's. Production, which has no such header from us, returns none at all. So
+**SEO ≥ 90 is not measurable on any Vercel preview deployment, by anyone,
+ever.** It is not a defect in this codebase and no amount of work here would
+move it.
+
+**Locally, clean build, `SITE_INDEXABLE=true`** — run specifically to isolate
+the markup from Vercel's preview policy:
+
+| Route | Perf | A11y | Best practices | SEO | LCP |
+|---|---:|---:|---:|---:|---:|
+| home | 99 | 100 | 100 | **100** | 1.69s |
+| shop | 99 | 100 | 100 | **100** | 1.96s |
+| product | 99 | 100 | 100 | **100** | 1.92s |
+| cart | 99 | 100 | 100 | 63 | 1.70s |
+| checkout | 99 | 100 | 100 | 63 | 1.62s |
+
+The three public routes score **99 / 100 / 100 / 100** — a clean sweep of all
+four categories.
+
+**The honest caveat on those local numbers:** a production build served from the
+same machine as the browser has no CDN, no cold start and no real round-trip
+time. 99 is a ceiling, not a forecast. The preview numbers — 91 to 96 — are the
+ones to plan against, and they are the ones a customer will experience.
+
+#### `/cart` and `/checkout` score 63 on SEO, and that is correct
+
+Say this plainly rather than reporting a pass: **the brief's quality gate is
+internally contradictory on these two routes.**
+
+It asks for Lighthouse SEO ≥ 90 on `/cart` and `/checkout`. `src/app/robots.ts`
+**deliberately disallows** both, along with `/wishlist`, `/search`, `/account`,
+`/admin` and `/order` — they are per-visitor or infinite, none of them is worth
+a crawl budget, and each carries `robots: noindex` in its own metadata as well.
+That is ordinary, correct e-commerce practice, and it predates this phase.
+
+You cannot ask a crawler to stay out of a page and then score that page on how
+crawlable it is. Lighthouse is reporting the disallow, accurately. Three of the
+four categories pass on those routes; the fourth fails **by design**, and the
+design is right. The gate is what needs amending, not `robots.ts`.
+
+### 6.7 The abandoned-order sweep, in production
+
+`pg_cron` job 1, `*/10 * * * *`, active. **4 runs — 20:30, 20:40, 20:50, 21:00 —
+all `succeeded`, exactly on the ten-minute tick.** Verified directly against
+`cron.job` and `cron.job_run_details` rather than read off a log. Between them
+those runs auto-released **6 real leaked orders** that the phase's own testing
+had created and abandoned, which is the E-1 fix doing its job on live data
+before anyone asked it to.
+
+### 6.8 Teardown, verified rather than assumed
+
+The harnesses write real orders, real payment rows and real accounts, so the
+sweep afterwards is part of the measurement:
+
+- **restocked 22**, deleted **22 orders**, **23 carts**, **16 accounts**;
+- final state: **0** `fv-%@example.com` accounts, **0** rows in
+  `payment_events`, **0** variants with negative stock, and every variant back
+  to its seeded level less whatever outstanding orders still hold.
+
+**Four orders remain**, and deliberately so: they belong to the owner's own real
+account, and the teardown refuses to sweep on a pattern match that could catch a
+real customer. A cleanup script that deletes real orders because they resemble
+test data is a worse bug than the mess it tidies.
 
 ---
 
@@ -612,6 +755,21 @@ The list is longer than we would like, which is the correct length for it to be.
   documentation agent caught it while checking the file against
   `src/lib/payments/config.ts`, which had it right. A wrong setup instruction in
   the one file an owner copies is worse than no instruction.
+
+- **The header comment on `payment-state.ts` said the sweep did not ship.** It
+  read "see the note in the report about the sweep this phase does not ship" —
+  written before E-1 was fixed, and never revisited when
+  `release_abandoned_orders()` landed. So the file that implements the most
+  security-sensitive logic in the phase told its next reader the opposite of the
+  truth about the highest-severity finding in it. Found during the documentation
+  pass, by reading the code against the handoff instead of trusting either.
+  Corrected to name the function, the `pg_cron` job and the window.
+
+- **The launch-day instruction for lifting `noindex` was wrong, and wrong in the
+  silent direction.** "Set `SITE_INDEXABLE=true` and redeploy" is what three
+  documents said, and a plain redeploy does not do it. See §4.8 — this was
+  caught by measuring the deployed headers rather than by reasoning about the
+  config.
 
 ---
 
@@ -683,6 +841,14 @@ Honestly, the things we are least confident about.
     `audit:checkout` §9 covers the actual fix. Two suites disagreeing about the
     same behaviour is a thing to fix rather than explain, and it is not fixed.
 
+15. **`.env.local` holds a `SHIPROCKET_API_KEY` that no code reads and that is
+    not in `.env.example`.** Presumably the owner's groundwork for a shipping
+    integration. It is named here rather than left to be discovered, because an
+    unused secret in an environment is still a secret in an environment: it has
+    to be rotated when anything else is, it will be copied into Vercel by
+    somebody following the setup, and the first person to find it will have to
+    work out from scratch whether it is live. Either wire it or remove it.
+
 ---
 
 ## 9 · Blocked on the owner
@@ -718,15 +884,27 @@ confirmations in spam — then set `EMAIL_API_KEY` and `EMAIL_FROM` in Vercel pe
 environment. A developer then adds `src/lib/email/<provider>-adapter.ts` and
 returns it from `getEmailAdapter()`. Nothing else changes.
 
-### 9.4 Go live with indexing
+### 9.4 Go live with indexing — and do not just redeploy
 
-Set `SITE_INDEXABLE=true` in Vercel, **Production only** so previews stay
-hidden, and redeploy. Only the exact string `true` opens it.
+Three steps, and the third is not optional. See §4.8 for why.
+
+1. Set `SITE_INDEXABLE=true` in Vercel, **Production only**, so previews stay
+   hidden. Only the exact string `true` opens it.
+2. Trigger a **fresh build** — push a commit, or redeploy with *Use existing
+   Build Cache* **unchecked**. A plain redeploy reuses the build output, and the
+   `X-Robots-Tag: noindex` header is baked into it. It will not lift.
+3. **Verify**, because this procedure fails silently:
+
+   ```bash
+   curl -I https://foot-vault.vercel.app/ | grep -i x-robots-tag   # must print nothing
+   curl https://foot-vault.vercel.app/robots.txt                   # must show Allow: /
+   ```
 
 ### 9.5 Optional
 
-Enable leaked-password protection in Supabase Auth. Currently off; low relevance
-while sign-in is Google-only.
+Enable leaked-password protection in Supabase Auth. **Verified disabled** —
+Supabase's own security advisor reports `auth_leaked_password_protection` as
+off. Low relevance while sign-in is Google-only, and free to turn on.
 
 **Phase 4's two blockers are cleared.** Google OAuth is enabled and real accounts
 have been created through it, and `SUPABASE_SERVICE_ROLE_KEY` now has a value —
@@ -788,11 +966,12 @@ and what was found stale rather than merely missing:
 | File | Corrected |
 |---|---|
 | `README.md` | "the whole quality gate, all eight below" → the real list of 18 `audit:*` scripts, plus `shapes`. Both "what is blocked" items were **false** — Google OAuth is enabled and the service-role key has a value. Added the env-var table, the Razorpay test-mode setup, how to run checkout locally, and the note that the webhook cannot reach localhost |
-| `.env.example` | The webhook-secret instruction said Razorpay generates it. **You invent it.** Also corrected the dashboard path, and added the two email names the code asks for |
+| `.env.example` | The webhook-secret instruction said Razorpay generates it. **You invent it.** Also corrected the dashboard path, added the two email names the code asks for, and replaced "redeploy" with the fresh-build-plus-verify procedure |
 | `docs/architecture.md` | "The unit is claimed at checkout (Phase 5)" was in the future tense. "The callback does three things" was four. The merge description was Phase 4's line-by-line version. Added the state machine, the payment seam, webhook authority, idempotency, the sweep, error boundaries, the shape snapshot and the indexing gate |
 | `docs/database.md` | Said **21 tables**; there are **23**. `orders` was listed with 19 columns and 3 policies; it has 23 and 4. The Functions table predated every Phase 5 function and was also missing the pre-existing `rls_auto_enable` and `color_family`. Added the new tables, enums, columns, grants, policies and `pg_cron` |
 | `docs/rls-tests.md` | Coverage table said 21 of 21. §6b.1's "Google is not enabled" and "the service-role key is empty" caveats were both stale. Added §9: the guest-order access model, the payment tables, and E-7's `SECURITY DEFINER` table including `adopt_guest_orders` |
-| `docs/admin-guide.md` | Still said checkout "leads to a page that does not exist yet". Added the whole orders section — statuses, changing one by hand, why cancelling restocks and returning does not, the self-cancelling sweep, COD — and the four owner tasks |
+| `docs/admin-guide.md` | Still said checkout "leads to a page that does not exist yet". Added the whole orders section — statuses, changing one by hand, why cancelling restocks and returning does not, the self-cancelling sweep, COD — and the four owner tasks, with the go-live procedure rewritten around §4.8 and given a `curl` that proves it worked |
+| `src/lib/orders/payment-state.ts` | Not a doc, but a comment that had become a lie: it said the abandoned-order sweep "this phase does not ship". Corrected by its owner to name `release_abandoned_orders()`, `pg_cron` job 1, the thirty-minute window and the migration |
 
 ---
 
@@ -814,13 +993,26 @@ single agent writing both halves would never have hit.
 
 ### What it returned
 
-**1. Agent B caught an integration break in Agent C's code** (§4.7). This is the
-strongest single item. It would have silently prevented **every** Razorpay order
-from ever confirming — no exception, no failed request, no red line in a log,
-just orders that stay `pending` while their customers' money is gone. An agent
-integrating against somebody else's module tests the seam between them. An agent
-who wrote both sides tests what they meant by both, which is the same
-assumption twice.
+**1. Agent B caught an integration break in Agent C's code** (§4.7). It would
+have silently prevented **every** Razorpay order from ever confirming — no
+exception, no failed request, no red line in a log, just paid orders that sit in
+`pending` forever.
+
+It is worth being precise about what this proves, because the honest reading
+cuts both ways. The bug was *caused* by the division of labour: two agents
+independently implemented the same correct idempotency pattern, and a single
+author writing both halves would almost certainly not have written it twice. But
+it was also *caught* by the division of labour, before it shipped, because an
+agent integrating against somebody else's module has to test the seam between
+them — whereas an agent who wrote both sides tests what they meant by both,
+which is the same assumption checked twice.
+
+So the fair claim is not "multi-agent prevented a bug". It is that **splitting
+the work changes which bugs you get, and this split traded a class of bug that
+is invisible for a class of bug that surfaces at the boundary.** A silent
+never-confirms is the worst failure this system can produce; a seam that two
+agents disagree about is the loudest. Trading the first for the second is a good
+trade even when the second is more frequent.
 
 **2. Agent E found a high-severity vulnerability that both implementing agents
 had classified as a known imperfection.** Agent B and Agent C had each
@@ -861,8 +1053,17 @@ find it.
 **Keep:** contracts before implementations; the adversarial reviewer as a
 separate role with no code to defend; a browser-driving agent.
 
-**Change:** contracts should be *exercised* before they are published — the
-`line2` bug dies instantly against four round-trip cases through the schema, and
-we wrote those cases only after two agents had already been misled. And the
-one-writer-per-file rule needs an escalation path that is cheaper than breaking
-it, because the lead broke it rather than wait.
+**Change:** three things.
+
+*Contracts should be exercised before they are published.* The `line2` bug dies
+instantly against four round-trip cases through the schema, and we wrote those
+cases only after two agents had already been misled by the contract that was
+supposed to stop exactly that.
+
+*Every seam needs a named owner, not just every file.* §4.7 happened because
+`payment_events` had two writers and no owner — one-writer-per-*file* is not the
+same rule as one-writer-per-*invariant*, and idempotency is an invariant that
+spans two modules. The file rule would not have caught it and did not.
+
+*The one-writer-per-file rule needs an escalation path cheaper than breaking
+it,* because the lead broke it rather than wait (§7).

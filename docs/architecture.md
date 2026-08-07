@@ -577,4 +577,12 @@ proxy's matcher deliberately skips static assets and the OG-image routes, and
 `next.config.ts` is evaluated outside the app's module graph and cannot resolve
 the `@/` alias.
 
-Going live is one environment variable and a redeploy.
+**Going live is one environment variable and a *fresh build*, not a redeploy.**
+`headers()` is evaluated at build time and its result is written into
+`.next/routes-manifest.json`, which an incremental build reuses. Measured on a
+preview: after setting the flag and redeploying, `robots.txt` correctly flipped
+to `Allow: /` while `X-Robots-Tag: noindex` persisted from the cached manifest —
+so the two layers that this design promises cannot disagree, did. A clean
+rebuild emitted no header rules, correctly. The owner-facing procedure in
+`docs/admin-guide.md` therefore ends with a `curl` that checks the header is
+actually gone, because the failure is silent.
