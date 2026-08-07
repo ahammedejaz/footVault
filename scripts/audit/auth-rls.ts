@@ -33,6 +33,8 @@ import { readFileSync } from "node:fs";
 import { createServerClient } from "@supabase/ssr";
 import { createClient, type Session } from "@supabase/supabase-js";
 
+import { maybeRow, rows } from "../../src/lib/queries/run";
+
 /* ------------------------------------------------------------------ env --- */
 
 for (const line of readFileSync(".env.local", "utf8").split("\n")) {
@@ -66,6 +68,19 @@ const ELEVATED = Boolean(SERVICE && SERVICE.trim().length > 0);
 const admin = ELEVATED
   ? createClient(URL_, SERVICE, { auth: { persistSession: false } })
   : null;
+
+
+/*
+ * Reads go through the app's own run/rows/maybeRow helpers rather than
+ * destructuring by hand.
+ *
+ * A harness that drops `error` is worse than production code that does: an RLS
+ * denial and a genuinely empty table both arrive as zero rows, so "customer
+ * reads zero rows of another customer's profile" would pass just as happily if
+ * the query had been rejected for some unrelated reason. These throw instead,
+ * which fails the run loudly and honestly — and it is the same rule the app is
+ * held to, since footvault/no-unchecked-supabase-error covers this directory too.
+ */
 
 /* ---------------------------------------------------------------- report --- */
 
@@ -156,11 +171,14 @@ async function main() {
     global: { headers: { Authorization: `Bearer ${customer.session.access_token}` } },
   });
 
-  const { data: ownRow } = await asCustomer
-    .from("profiles")
-    .select("id, role, full_name")
-    .eq("id", customer.id)
-    .single();
+  const ownRow = await maybeRow<{ id: string; role: string; full_name: string | null }>(
+    "read own profile",
+    asCustomer
+      .from("profiles")
+      .select("id, role, full_name")
+      .eq("id", customer.id)
+      .maybeSingle(),
+  );
 
   check(
     "handle_new_user ignores a role in the provider payload",
@@ -185,11 +203,10 @@ async function main() {
     escalation ? `${escalation.code}: ${escalation.message}` : "UPDATE SUCCEEDED — ESCALATION",
   );
 
-  const { data: afterAttempt } = await asCustomer
-    .from("profiles")
-    .select("role")
-    .eq("id", customer.id)
-    .single();
+  const afterAttempt = await maybeRow<{ role: string }>(
+    "re-read own profile",
+    asCustomer.from("profiles").select("role").eq("id", customer.id).maybeSingle(),
+  );
   check(
     "their role is still customer afterwards",
     afterAttempt?.role === "customer",
@@ -205,11 +222,17 @@ async function main() {
   );
 
   // 4 ── no reading somebody else's profile ----------------------------------
-  const { data: otherRows } = await asCustomer.from("profiles").select("id").eq("id", other.id);
+  // This one is *expected* to come back empty. rows() throws on a real error, so
+  // an RLS denial fails the run rather than quietly looking like the pass it is
+  // meant to prove.
+  const otherRows = await rows<{ id: string }>(
+    "read another customer's profile",
+    asCustomer.from("profiles").select("id").eq("id", other.id),
+  );
   check(
     "customer reads zero rows of another customer's profile",
-    (otherRows?.length ?? 0) === 0,
-    `${otherRows?.length ?? 0} rows`,
+    otherRows.length === 0,
+    `${otherRows.length} rows`,
   );
 
   // 5 ── /admin is a 404 unless you are an admin ------------------------------
@@ -255,7 +278,11 @@ async function main() {
       auth: { persistSession: false },
       global: { headers: { Authorization: `Bearer ${ownerSession.access_token}` } },
     });
-    const { data: isAdminTrue } = await asAdmin.rpc("is_admin");
+    // The rpc builder's `data` is typed `any` rather than `T | null`, which run()
+    // will not accept, so this one is destructured directly — the rule is happy
+    // as long as `error` is read, which it is.
+    const { data: isAdminTrue, error: adminRpcError } = await asAdmin.rpc("is_admin");
+    if (adminRpcError) throw new Error(`is_admin() as admin: ${adminRpcError.message}`);
     check("is_admin() returns true for an admin", isAdminTrue === true, `returned ${isAdminTrue}`);
 
     const adminAdmin = await fetch(`${APP}/admin`, {
