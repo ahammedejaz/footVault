@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 1000" width="800" height="1000" role="img">
+  <defs>
+    <radialGradient id="bg" cx="0.5" cy="0.42" r="0.78">
+      <stop offset="0" stop-color="#fdfdfe"/>
+      <stop offset="1" stop-color="#e9edf3"/>
+    </radialGradient>
+    <radialGradient id="contact" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#0a1526" stop-opacity="0.20"/>
+      <stop offset="1" stop-color="#0a1526" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="800" height="1000" fill="url(#bg)"/>
+  <ellipse cx="400" cy="534" rx="210" ry="330" fill="url(#contact)"/>
+  <g transform="translate(259.0 148) scale(0.94)">
+    <defs><clipPath id="outsole-adidasadizeroslmens"><path d="M150 4 C232 4 296 58 296 138 C296 200 282 250 268 292 C252 340 238 372 232 410 C226 452 224 486 230 524 C240 580 244 626 240 668 C234 736 200 776 150 776 C100 776 66 736 60 668 C56 626 60 580 70 524 C76 486 74 452 68 410 C62 372 48 340 32 292 C18 250 4 200 4 138 C4 58 68 4 150 4 Z"/></clipPath></defs>
+    <path d="M150 4 C232 4 296 58 296 138 C296 200 282 250 268 292 C252 340 238 372 232 410 C226 452 224 486 230 524 C240 580 244 626 240 668 C234 736 200 776 150 776 C100 776 66 736 60 668 C56 626 60 580 70 524 C76 486 74 452 68 410 C62 372 48 340 32 292 C18 250 4 200 4 138 C4 58 68 4 150 4 Z" fill="#363636"/>
+    <g clip-path="url(#outsole-adidasadizeroslmens)">
+      <rect x="27" y="40" width="246" height="17" rx="8.5" fill="rgba(255,255,255,0.20)"/>
+      <rect x="27" y="85" width="246" height="17" rx="8.5" fill="rgba(255,255,255,0.20)"/>
+      <rect x="27" y="130" width="246" height="17" rx="8.5" fill="rgba(255,255,255,0.20)"/>
+      <rect x="27" y="175" width="246" height="17" rx="8.5" fill="rgba(255,255,255,0.20)"/>
+      <rect x="27" y="220" width="246" height="17" rx="8.5" fill="rgba(255,255,255,0.20)"/>
+      <rect x="27" y="265" width="246" height="17" rx="8.5" fill="rgba(255,255,255,0.20)"/>
+      <rect x="38" y="310" width="224" height="17" rx="8.5" fill="rgba(255,255,255,0.20)"/>
+      <rect x="56" y="355" width="189" height="17" rx="8.5" fill="rgba(255,255,255,0.20)"/>
+      <rect x="73" y="400" width="154" height="17" rx="8.5" fill="rgba(255,255,255,0.20)"/>
+      <rect x="90" y="445" width="120" height="17" rx="8.5" fill="rgba(255,255,255,0.20)"/>
+      <rect x="83" y="490" width="133" height="17" rx="8.5" fill="rgba(255,255,255,0.20)"/>
+      <rect x="72" y="535" width="155" height="17" rx="8.5" fill="rgba(255,255,255,0.20)"/>
+      <rect x="62" y="580" width="177" height="17" rx="8.5" fill="rgba(255,255,255,0.20)"/>
+      <rect x="51" y="625" width="199" height="17" rx="8.5" fill="rgba(255,255,255,0.20)"/>
+      <rect x="40" y="670" width="221" height="17" rx="8.5" fill="rgba(255,255,255,0.20)"/>
+      <rect x="29" y="715" width="243" height="17" rx="8.5" fill="rgba(255,255,255,0.20)"/>
+      <circle cx="150" cy="196" r="62" fill="none" stroke="rgba(255,255,255,0.20)" stroke-width="22"/>
+      <circle cx="150" cy="640" r="46" fill="none" stroke="rgba(255,255,255,0.20)" stroke-width="20"/>
+    </g>
+    <path d="M150 4 C232 4 296 58 296 138 C296 200 282 250 268 292 C252 340 238 372 232 410 C226 452 224 486 230 524 C240 580 244 626 240 668 C234 736 200 776 150 776 C100 776 66 736 60 668 C56 626 60 580 70 524 C76 486 74 452 68 410 C62 372 48 340 32 292 C18 250 4 200 4 138 C4 58 68 4 150 4 Z" fill="none" stroke="rgba(255,255,255,0.34)" stroke-width="3"/>
+  </g>
+  <g font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="19" letter-spacing="1.8" fill="#596475">
+    <text x="48" y="70">ADIDAS</text>
+    <text x="752" y="70" text-anchor="end">OUTSOLE</text>
+    <text x="48" y="956">CORE BLACK</text>
+  </g>
+  <line x1="48" y1="90" x2="752" y2="90" stroke="#d5dce5" stroke-width="1"/>
+  <line x1="48" y1="928" x2="752" y2="928" stroke="#d5dce5" stroke-width="1"/>
+</svg>

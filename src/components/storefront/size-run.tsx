@@ -1,10 +1,5 @@
 import { cn } from "@/lib/utils";
-
-export type SizeRunEntry = {
-  /** UK size as text, so half sizes and kids' sizes stay expressible. */
-  size: string;
-  available: boolean;
-};
+import type { SizeAvailability } from "@/lib/catalog-types";
 
 /**
  * The signature element.
@@ -15,22 +10,21 @@ export type SizeRunEntry = {
  * exist in their size. That honesty is the whole point; a run that quietly
  * drops the sizes it lacks is just a shorter run.
  *
- * `compact` is the read-only strip used on cards. The product page uses the
- * default size, where chips clear 48px and the selection is interactive
- * (wired in Phase 3).
+ * `compact` is the read-only strip on cards. The full size is the interactive
+ * selector on the product page, where each chip clears the 44px tap floor.
  */
 export function SizeRun({
   sizes,
   compact = false,
   className,
 }: {
-  sizes: SizeRunEntry[];
+  sizes: SizeAvailability[];
   compact?: boolean;
   className?: string;
 }) {
   if (sizes.length === 0) return null;
 
-  const availableCount = sizes.filter((entry) => entry.available).length;
+  const available = sizes.filter((entry) => entry.available);
 
   return (
     <div className={className}>
@@ -39,6 +33,7 @@ export function SizeRun({
           "flex flex-wrap font-mono tabular-nums",
           compact ? "gap-x-2 gap-y-1 text-xs tracking-[0.06em]" : "gap-2",
         )}
+        aria-hidden={compact ? true : undefined}
       >
         {sizes.map((entry) => (
           <li
@@ -46,11 +41,9 @@ export function SizeRun({
             className={cn(
               compact
                 ? "leading-4"
-                : "border-border flex h-12 min-w-12 items-center justify-center rounded-lg border px-2 text-base",
+                : "border-border flex h-11 min-w-11 items-center justify-center rounded-lg border px-3 text-base",
               entry.available
-                ? compact
-                  ? "text-foreground"
-                  : "text-foreground"
+                ? "text-foreground"
                 : "text-dim line-through decoration-1",
             )}
           >
@@ -58,14 +51,13 @@ export function SizeRun({
           </li>
         ))}
       </ul>
-      <p className="sr-only">
-        {availableCount === 0
-          ? "Sold out in every size."
-          : `Available in UK ${sizes
-              .filter((entry) => entry.available)
-              .map((entry) => entry.size)
-              .join(", ")}.`}
-      </p>
+      {compact ? (
+        <p className="sr-only">
+          {available.length === 0
+            ? "Sold out in every size."
+            : `Available in UK ${available.map((entry) => entry.size).join(", ")}.`}
+        </p>
+      ) : null}
     </div>
   );
 }

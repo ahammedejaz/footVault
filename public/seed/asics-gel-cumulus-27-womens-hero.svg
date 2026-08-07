@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 1000" width="800" height="1000" role="img">
+  <defs>
+    <radialGradient id="bg" cx="0.5" cy="0.42" r="0.78">
+      <stop offset="0" stop-color="#fdfdfe"/>
+      <stop offset="1" stop-color="#e9edf3"/>
+    </radialGradient>
+    <radialGradient id="contact" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#0a1526" stop-opacity="0.20"/>
+      <stop offset="1" stop-color="#0a1526" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="800" height="1000" fill="url(#bg)"/>
+  <ellipse cx="400" cy="712" rx="322" ry="36" fill="url(#contact)"/>
+  <g transform="translate(12.4 380.0) scale(1.02)">
+    <defs><clipPath id="sole-asicsgelcumulus27womens"><path d="M6 220 L758 216 C772 268 746 302 692 306 L70 306 C16 302 -6 266 6 220 Z"/></clipPath></defs>
+    <path d="M6 220 L758 216 C772 268 746 302 692 306 L70 306 C16 302 -6 266 6 220 Z" fill="#639699"/>
+    <rect x="-40" y="272" width="840" height="80" fill="#4a6f72" clip-path="url(#sole-asicsgelcumulus27womens)"/>
+    <path d="M6 220 L758 216 C772 268 746 302 692 306 L70 306 C16 302 -6 266 6 220 Z" fill="none" stroke="rgba(10,21,38,0.20)" stroke-width="2"/>
+    
+    <path d="M18 226 C16 188 48 158 106 142 C182 120 260 108 324 94 C376 82 408 60 446 42 C472 30 500 34 514 52 C532 76 558 88 590 86 C626 84 656 66 678 42 C698 20 726 24 740 54 C754 84 760 158 754 226 Z" fill="#7fc0c4" stroke="rgba(10,21,38,0.20)" stroke-width="2" stroke-linejoin="round"/>
+    <path d="M370 86 L404 56 M402 96 L436 66 M434 106 L468 76 M12 270 C120 286 640 284 754 266" fill="none" stroke="rgba(10,21,38,0.20)" stroke-width="4" stroke-linecap="round"/>
+  </g>
+  <g font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="19" letter-spacing="1.8" fill="#596475">
+    <text x="48" y="70">ASICS</text>
+    <text x="752" y="70" text-anchor="end">3/4</text>
+    <text x="48" y="956">DIGITAL AQUA</text>
+  </g>
+  <line x1="48" y1="90" x2="752" y2="90" stroke="#d5dce5" stroke-width="1"/>
+  <line x1="48" y1="928" x2="752" y2="928" stroke="#d5dce5" stroke-width="1"/>
+</svg>

@@ -245,6 +245,99 @@
     min-block-size: 44px;
     min-inline-size: 44px;
   }
+
+  /* --------------------------------------------------------------------------
+     Motion.
+     -------------------------------------------------------------------------- */
+
+  /* The hero's one orchestrated load sequence. Children rise in order rather
+     than each element animating on its own schedule; the whole thing is over
+     in under a second so it never delays the first interaction. */
+  .hero-sequence > * {
+    animation: fv-rise 620ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  }
+  .hero-sequence > *:nth-child(1) { animation-delay: 40ms; }
+  .hero-sequence > *:nth-child(2) { animation-delay: 110ms; }
+  .hero-sequence > *:nth-child(3) { animation-delay: 180ms; }
+  .hero-sequence > *:nth-child(4) { animation-delay: 250ms; }
+  .hero-sequence > *:nth-child(5) { animation-delay: 320ms; }
+
+  @keyframes fv-rise {
+    from {
+      opacity: 0;
+      transform: translate3d(0, 14px, 0);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  /* Scroll reveals, driven entirely by CSS scroll-linked animation — no
+     IntersectionObserver, no hydration cost, and nothing to go wrong on a slow
+     connection. The starting state lives inside @supports so that a browser
+     without `animation-timeline` never hides the content it cannot reveal. */
+  @supports (animation-timeline: view()) {
+    .reveal {
+      animation: fv-rise linear both;
+      animation-timeline: view();
+      animation-range: entry 0% entry 42%;
+    }
+  }
+
+  /* --------------------------------------------------------------------------
+     The product card.
+
+     Two subject-grounded moves, both handled here so the card component stays
+     markup: the image crossfades to the outsole, and a 1px orange rule draws in
+     under the product name.
+     -------------------------------------------------------------------------- */
+  .card-media img {
+    transition: opacity 420ms ease, transform 620ms cubic-bezier(0.2, 0.7, 0.2, 1);
+  }
+  .card-media .card-sole {
+    opacity: 0;
+  }
+  @media (hover: hover) {
+    .product-card:hover .card-media .card-hero,
+    .product-card:focus-within .card-media .card-hero {
+      opacity: 0;
+    }
+    .product-card:hover .card-media .card-sole,
+    .product-card:focus-within .card-media .card-sole {
+      opacity: 1;
+    }
+    .product-card:hover .card-media img,
+    .product-card:focus-within .card-media img {
+      transform: scale(1.03);
+    }
+  }
+
+  .card-rule {
+    display: block;
+    height: 1px;
+    background: var(--fv-orange);
+    transform: scaleX(0);
+    transform-origin: left;
+    transition: transform 320ms cubic-bezier(0.2, 0.7, 0.2, 1);
+  }
+  .product-card:hover .card-rule,
+  .product-card:focus-within .card-rule {
+    transform: scaleX(1);
+  }
+
+  /* Horizontal rails scroll by swipe on a phone and by drag-free overflow on a
+     desktop. Snap keeps a card aligned to the gutter instead of half cut off. */
+  .rail {
+    scroll-snap-type: x mandatory;
+    scrollbar-width: none;
+  }
+  .rail::-webkit-scrollbar {
+    display: none;
+  }
+  .rail > * {
+    scroll-snap-align: start;
+  }
 }
 
 /* Non-negotiable: reduced motion disables all of it. */

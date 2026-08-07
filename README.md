@@ -37,10 +37,29 @@ Open http://localhost:3000. The design system renders at `/style-guide`.
 | `npm run build` | Production build |
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run lint` | ESLint |
+| `npm run seed` | Upsert the seed catalog into Supabase (needs `SUPABASE_SERVICE_ROLE_KEY`) |
+| `npm run seed:sql` | Write `supabase/seed.sql` instead, for `supabase db reset` |
+| `npm run seed:images` | Regenerate the drawn product assets in `public/seed/` |
+
+The seed is idempotent — every write is an upsert on a natural key, so running
+it twice produces one catalog rather than two. `scripts/seed-data.ts` is the
+single source of truth for both the live and the SQL path.
 
 CI runs typecheck, lint and build on every pull request, and fails the build if
 `SUPABASE_SERVICE_ROLE_KEY` is referenced anywhere outside
-`src/lib/supabase/admin.ts`.
+`src/lib/supabase/admin.ts`, or if a Client Component imports a `server-only`
+module. The build runs with placeholder Supabase credentials, so a pull request
+can be verified without live database access.
+
+## Database
+
+The schema lives in `supabase/migrations/`, applied in order through the
+Supabase MCP server. Row Level Security is on for every table in `public`, and
+[`docs/rls-tests.md`](docs/rls-tests.md) records the checks that prove it —
+including the two defects that pass found and fixed.
+
+Money is stored as **integer paise** throughout (₹8,995 is `899500`). Nothing
+touches a float; `src/lib/format.ts` converts at the UI boundary.
 
 ## Environment
 
@@ -76,6 +95,7 @@ docs/
 | Document | Covers |
 |---|---|
 | [`docs/design-system.md`](docs/design-system.md) | Tokens, type scale, measured contrast, the signature element |
+| [`docs/rls-tests.md`](docs/rls-tests.md) | Row Level Security checklist, run against the live database, with results |
 | `PROJECT_BRIEF.md` | Full requirements and build phases |
 
 ## Build status
@@ -83,9 +103,9 @@ docs/
 | Phase | Deliverable | State |
 |---|---|---|
 | 0 | Foundation: tokens, fonts, restyled primitives, base layout, CI | Done |
-| 1 | Supabase schema, RLS, seed data | Next |
-| 2 | Auth and role-based middleware | |
-| 3 | Storefront catalog | |
+| 1 | Supabase schema, RLS, seed data | Done |
+| 2 | Auth and role-based middleware | Next |
+| 3 | Storefront catalog | Partly done — catalog, listing, filters, product page and CMS pages are live on real data; reviews and colourway galleries remain |
 | 4 | Cart and wishlist | |
 | 5 | Checkout and orders | |
 | 6 | Admin CRUD | |

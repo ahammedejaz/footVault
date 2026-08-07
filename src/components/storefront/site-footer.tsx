@@ -1,15 +1,29 @@
 import Link from "next/link";
 
 import { Logo } from "@/components/brand/logo";
+import {
+  getSiteSettings,
+  setting,
+  type ContactSettings,
+} from "@/lib/queries/content";
 import { footerNav, siteConfig } from "@/lib/site-config";
 
 /**
- * Navy footer. Contact details and social links arrive from site_settings in
- * Phase 7 — the owner changing the shop phone number must update the footer and
- * the contact page together, which is why nothing here is hard-coded copy that
- * a customer would act on.
+ * Navy footer.
+ *
+ * The contact block comes from `site_settings`, which is what makes "change the
+ * shop's phone number and see it update in the footer and on the contact page"
+ * true — one row, both places, no deploy.
  */
-export function SiteFooter() {
+export async function SiteFooter() {
+  const settings = await getSiteSettings();
+  const contact = setting<ContactSettings>(settings, "contact", {
+    email: "",
+    phone: "",
+    whatsapp: "",
+    address: "",
+  });
+
   return (
     <footer data-surface="ink" className="mt-auto">
       <div className="tread-rule" aria-hidden="true" />
@@ -20,6 +34,33 @@ export function SiteFooter() {
             <p className="text-muted-foreground mt-5 max-w-xs text-sm">
               {siteConfig.description}
             </p>
+            {contact.phone || contact.email ? (
+              <address className="mt-5 space-y-1 text-sm not-italic">
+                {contact.phone ? (
+                  <p>
+                    <a
+                      href={`tel:${contact.phone.replace(/\s/g, "")}`}
+                      className="hover:text-orange font-mono transition-colors"
+                    >
+                      {contact.phone}
+                    </a>
+                  </p>
+                ) : null}
+                {contact.email ? (
+                  <p>
+                    <a
+                      href={`mailto:${contact.email}`}
+                      className="text-muted-foreground hover:text-orange transition-colors"
+                    >
+                      {contact.email}
+                    </a>
+                  </p>
+                ) : null}
+                {contact.address ? (
+                  <p className="text-muted-foreground max-w-xs">{contact.address}</p>
+                ) : null}
+              </address>
+            ) : null}
           </div>
 
           {footerNav.map((column) => (

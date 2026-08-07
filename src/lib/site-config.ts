@@ -18,11 +18,18 @@ export const siteConfig = {
 /** Returns window in days. Moves to site_settings in Phase 7. */
 export const RETURN_WINDOW_DAYS = 7;
 
+/**
+ * Fallback navigation.
+ *
+ * The header builds its nav from the live category tree; this is what it falls
+ * back to when the database is unreachable, so the shell still renders links
+ * that resolve rather than an empty bar. Every href here is a real route.
+ */
 export const primaryNav = [
   { label: "Men", href: "/shop/men" },
   { label: "Women", href: "/shop/women" },
   { label: "Kids", href: "/shop/kids" },
-  { label: "Sneakers", href: "/shop/sneakers" },
+  { label: "New in", href: "/collection/new-arrivals" },
   { label: "Sale", href: "/shop?on_sale=true" },
 ] as const;
 
@@ -31,7 +38,8 @@ export const footerNav = [
     heading: "Shop",
     links: [
       { label: "All footwear", href: "/shop" },
-      { label: "New arrivals", href: "/shop?sort=newest" },
+      { label: "New arrivals", href: "/collection/new-arrivals" },
+      { label: "Monsoon ready", href: "/collection/monsoon-ready" },
       { label: "Men", href: "/shop/men" },
       { label: "Women", href: "/shop/women" },
       { label: "Kids", href: "/shop/kids" },
@@ -44,7 +52,6 @@ export const footerNav = [
       { label: "Shipping", href: "/page/shipping" },
       { label: "Returns", href: "/page/returns" },
       { label: "Size guide", href: "/page/size-guide" },
-      { label: "Track order", href: "/account/orders" },
     ],
   },
   {
