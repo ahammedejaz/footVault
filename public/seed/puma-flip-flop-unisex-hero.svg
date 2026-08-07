@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 1000" width="800" height="1000" role="img">
+  <defs>
+    <radialGradient id="bg" cx="0.5" cy="0.42" r="0.78">
+      <stop offset="0" stop-color="#fdfdfe"/>
+      <stop offset="1" stop-color="#e9edf3"/>
+    </radialGradient>
+    <radialGradient id="contact" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#0a1526" stop-opacity="0.20"/>
+      <stop offset="1" stop-color="#0a1526" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="800" height="1000" fill="url(#bg)"/>
+  <ellipse cx="400" cy="712" rx="322" ry="36" fill="url(#contact)"/>
+  <g transform="translate(12.4 380.0) scale(1.02)">
+    <defs><clipPath id="sole-pumaflipflopunisex"><path d="M52 238 L706 234 C720 278 694 306 642 308 L116 308 C62 304 40 280 52 238 Z"/></clipPath></defs>
+    <path d="M52 238 L706 234 C720 278 694 306 642 308 L116 308 C62 304 40 280 52 238 Z" fill="#606060"/>
+    <rect x="-40" y="272" width="840" height="80" fill="#3c3c3c" clip-path="url(#sole-pumaflipflopunisex)"/>
+    <path d="M52 238 L706 234 C720 278 694 306 642 308 L116 308 C62 304 40 280 52 238 Z" fill="none" stroke="rgba(255,255,255,0.34)" stroke-width="2"/>
+    <path d="M392 238 L392 168 M392 168 C352 146 306 142 272 154 M392 168 C436 146 486 142 520 156" fill="none" stroke="#1c1c1c" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
+    
+    <path d="M58 272 L700 268" fill="none" stroke="rgba(255,255,255,0.34)" stroke-width="4" stroke-linecap="round"/>
+  </g>
+  <g font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="19" letter-spacing="1.8" fill="#596475">
+    <text x="48" y="70">PUMA</text>
+    <text x="752" y="70" text-anchor="end">3/4</text>
+    <text x="48" y="956">BLACK / WHITE</text>
+  </g>
+  <line x1="48" y1="90" x2="752" y2="90" stroke="#d5dce5" stroke-width="1"/>
+  <line x1="48" y1="928" x2="752" y2="928" stroke="#d5dce5" stroke-width="1"/>
+</svg>

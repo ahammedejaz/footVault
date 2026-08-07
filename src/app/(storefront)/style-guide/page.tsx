@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 
 import { TreadMark } from "@/components/brand/logo";
 import { SizeRun } from "@/components/storefront/size-run";
+import type { SizeAvailability } from "@/lib/catalog-types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -40,14 +41,15 @@ const SCALE = [
   { cls: "text-xs font-mono tracking-[0.06em]", label: "12 / 16 · Geist Mono 400 +0.06em", sample: "SIZE RUN · SKU · ORDER NO." },
 ];
 
-const SAMPLE_RUN = [
-  { size: "6", available: true },
-  { size: "7", available: true },
-  { size: "8", available: true },
-  { size: "9", available: true },
-  { size: "10", available: false },
-  { size: "11", available: true },
-  { size: "12", available: false },
+/** Shaped like the real thing: SizeRun now takes stock counts, not a boolean. */
+const SAMPLE_RUN: SizeAvailability[] = [
+  { size: "6", stock: 6, available: true },
+  { size: "7", stock: 4, available: true },
+  { size: "8", stock: 9, available: true },
+  { size: "9", stock: 2, available: true },
+  { size: "10", stock: 0, available: false },
+  { size: "11", stock: 5, available: true },
+  { size: "12", stock: 0, available: false },
 ];
 
 function Section({

@@ -70,3 +70,23 @@ jobs:
             echo "$hits"
             exit 1
           fi
+
+      # A Client Component that imports a server-only module is a build error in
+      # Next, but only if the import is a *value* import. A type-only import is
+      # erased, compiles fine, and quietly invites the next edit to turn it into
+      # a real one. This keeps the boundary structural: shared view models live
+      # in src/lib/catalog-types.ts, which has no server dependency.
+      - name: Assert client components do not reach server-only modules
+        run: |
+          offenders=""
+          for f in $(grep -rln '"use client"' src || true); do
+            if grep -qE 'from "@/lib/supabase/(server|admin|static)"|from "@/lib/queries/' "$f"; then
+              offenders="$offenders$f\n"
+            fi
+          done
+          if [ -n "$offenders" ]; then
+            echo "Client components importing a server-only module:"
+            printf "$offenders"
+            exit 1
+          fi
+
