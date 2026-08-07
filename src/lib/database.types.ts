@@ -563,6 +563,7 @@ export type Database = {
       }
       orders: {
         Row: {
+          cart_id: string | null
           contact_email: string | null
           contact_phone: string | null
           coupon_code: string | null
@@ -570,20 +571,24 @@ export type Database = {
           customer_note: string | null
           discount_total: number
           grand_total: number
+          guest_token: string | null
           id: string
           order_number: string
           payment_method: string
+          payment_reference: string | null
           payment_status: Database["public"]["Enums"]["payment_status"]
           placed_at: string
           shipping_address: Json
           shipping_fee: number
           status: Database["public"]["Enums"]["order_status"]
+          stock_restored_at: string | null
           subtotal: number
           tax_total: number
           updated_at: string
           user_id: string | null
         }
         Insert: {
+          cart_id?: string | null
           contact_email?: string | null
           contact_phone?: string | null
           coupon_code?: string | null
@@ -591,20 +596,24 @@ export type Database = {
           customer_note?: string | null
           discount_total?: number
           grand_total: number
+          guest_token?: string | null
           id?: string
           order_number?: string
           payment_method?: string
+          payment_reference?: string | null
           payment_status?: Database["public"]["Enums"]["payment_status"]
           placed_at?: string
           shipping_address: Json
           shipping_fee?: number
           status?: Database["public"]["Enums"]["order_status"]
+          stock_restored_at?: string | null
           subtotal: number
           tax_total?: number
           updated_at?: string
           user_id?: string | null
         }
         Update: {
+          cart_id?: string | null
           contact_email?: string | null
           contact_phone?: string | null
           coupon_code?: string | null
@@ -612,20 +621,30 @@ export type Database = {
           customer_note?: string | null
           discount_total?: number
           grand_total?: number
+          guest_token?: string | null
           id?: string
           order_number?: string
           payment_method?: string
+          payment_reference?: string | null
           payment_status?: Database["public"]["Enums"]["payment_status"]
           placed_at?: string
           shipping_address?: Json
           shipping_fee?: number
           status?: Database["public"]["Enums"]["order_status"]
+          stock_restored_at?: string | null
           subtotal?: number
           tax_total?: number
           updated_at?: string
           user_id?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "orders_cart_id_fkey"
+            columns: ["cart_id"]
+            isOneToOne: false
+            referencedRelation: "carts"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "orders_user_id_fkey"
             columns: ["user_id"]
@@ -670,6 +689,89 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      payment_events: {
+        Row: {
+          event_id: string
+          event_type: string
+          id: string
+          order_id: string | null
+          processed_at: string | null
+          provider: Database["public"]["Enums"]["payment_provider"]
+          received_at: string
+          result: string | null
+        }
+        Insert: {
+          event_id: string
+          event_type: string
+          id?: string
+          order_id?: string | null
+          processed_at?: string | null
+          provider: Database["public"]["Enums"]["payment_provider"]
+          received_at?: string
+          result?: string | null
+        }
+        Update: {
+          event_id?: string
+          event_type?: string
+          id?: string
+          order_id?: string | null
+          processed_at?: string | null
+          provider?: Database["public"]["Enums"]["payment_provider"]
+          received_at?: string
+          result?: string | null
+        }
+        Relationships: []
+      }
+      payments: {
+        Row: {
+          amount: number
+          created_at: string
+          currency: string
+          id: string
+          order_id: string
+          provider: Database["public"]["Enums"]["payment_provider"]
+          provider_order_id: string | null
+          provider_payment_id: string | null
+          raw_status: string | null
+          status: Database["public"]["Enums"]["payment_txn_status"]
+          updated_at: string
+        }
+        Insert: {
+          amount: number
+          created_at?: string
+          currency?: string
+          id?: string
+          order_id: string
+          provider: Database["public"]["Enums"]["payment_provider"]
+          provider_order_id?: string | null
+          provider_payment_id?: string | null
+          raw_status?: string | null
+          status?: Database["public"]["Enums"]["payment_txn_status"]
+          updated_at?: string
+        }
+        Update: {
+          amount?: number
+          created_at?: string
+          currency?: string
+          id?: string
+          order_id?: string
+          provider?: Database["public"]["Enums"]["payment_provider"]
+          provider_order_id?: string | null
+          provider_payment_id?: string | null
+          raw_status?: string | null
+          status?: Database["public"]["Enums"]["payment_txn_status"]
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payments_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       product_images: {
         Row: {
@@ -1005,7 +1107,19 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      adopt_guest_orders: { Args: never; Returns: number }
+      assert_cart_stock: { Args: { p_cart_id: string }; Returns: undefined }
       can_access_cart: { Args: { cart: string }; Returns: boolean }
+      cancel_order_with_restock: {
+        Args: {
+          p_changed_by?: string
+          p_order_id: string
+          p_reason: string
+          p_release_cart?: boolean
+          p_require_unpaid?: boolean
+        }
+        Returns: string
+      }
       catalog_query: {
         Args: {
           p_brands?: string[]
@@ -1027,6 +1141,30 @@ export type Database = {
         Returns: Json
       }
       color_family: { Args: { hex: string }; Returns: string }
+      create_order_with_stock: {
+        Args: {
+          p_cart_id: string
+          p_contact_email?: string
+          p_contact_phone?: string
+          p_customer_note?: string
+          p_free_shipping_above: number
+          p_guest_token?: string
+          p_initial_status: Database["public"]["Enums"]["order_status"]
+          p_payment_method: string
+          p_payment_status: Database["public"]["Enums"]["payment_status"]
+          p_shipping_address: Json
+          p_shipping_flat_fee: number
+          p_user_id?: string
+        }
+        Returns: {
+          grand_total: number
+          item_count: number
+          order_id: string
+          order_number: string
+          shipping_fee: number
+          subtotal: number
+        }[]
+      }
       current_guest_token: { Args: never; Returns: string }
       discontinued_product_hint: {
         Args: { p_slug: string }
@@ -1037,9 +1175,21 @@ export type Database = {
         }[]
       }
       is_admin: { Args: never; Returns: boolean }
+      merge_guest_cart: {
+        Args: { p_guest_token: string; p_max_line_quantity: number }
+        Returns: {
+          dropped: number
+          guest_cart_consumed: boolean
+          merged: number
+        }[]
+      }
       next_order_number: { Args: never; Returns: string }
       owns_order: { Args: { order_ref: string }; Returns: boolean }
       product_is_live: { Args: { product_ref: string }; Returns: boolean }
+      release_abandoned_orders: {
+        Args: { p_older_than_minutes?: number }
+        Returns: number
+      }
     }
     Enums: {
       cart_status: "active" | "converted" | "abandoned"
@@ -1061,7 +1211,14 @@ export type Database = {
         | "delivered"
         | "cancelled"
         | "returned"
+      payment_provider: "cod" | "razorpay"
       payment_status: "unpaid" | "paid" | "refunded"
+      payment_txn_status:
+        | "created"
+        | "pending"
+        | "captured"
+        | "failed"
+        | "refunded"
       section_type:
         | "hero"
         | "category_grid"
@@ -1219,7 +1376,15 @@ export const Constants = {
         "cancelled",
         "returned",
       ],
+      payment_provider: ["cod", "razorpay"],
       payment_status: ["unpaid", "paid", "refunded"],
+      payment_txn_status: [
+        "created",
+        "pending",
+        "captured",
+        "failed",
+        "refunded",
+      ],
       section_type: [
         "hero",
         "category_grid",

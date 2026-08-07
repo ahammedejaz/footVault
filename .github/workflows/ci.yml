@@ -29,6 +29,16 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      # unstable_cache keys on its key parts and never on the code that
+      # produced the value, so adding a field to a cached return type does not
+      # invalidate what is already on disk — the new code reads old objects
+      # silently missing it. Phase 4 shipped that (`variantId` on
+      # SizeAvailability) and add-to-bag quietly believed no size had been
+      # chosen. This fails the build when a cached shape changes and
+      # SHAPE_VERSION does not. See scripts/shape-snapshot.ts.
+      - name: Cached shapes match SHAPE_VERSION
+        run: npm run shapes
+
       # Placeholder values only. The build must not require live Supabase
       # credentials — if it does, something is reaching the database at build
       # time that should be reaching it at request time.

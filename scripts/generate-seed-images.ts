@@ -31,8 +31,6 @@ const H = 1000;
 const INK = "#0a1526";
 const FOG = "#e9edf3";
 const PAPER = "#fdfdfe";
-const LINE = "#d5dce5";
-const STEEL = "#596475";
 
 type Shape = SeedProduct["footwearType"];
 
@@ -171,20 +169,88 @@ function palette(hex: string) {
   };
 }
 
-function escapeXml(value: string): string {
-  return value.replace(/[<>&'"]/g, (c) =>
-    ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", "'": "&apos;", '"': "&quot;" })[c]!,
-  );
+/* -------------------------------------------------------------------------- */
+/* one frame, one scale                                                        */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The content box every product asset is fitted into, inside the 800x1000
+ * canvas. 48px of horizontal padding and 120px of vertical, so a boot shaft and
+ * a flip-flop both sit inside the same rectangle and no card can be the one
+ * whose shoe touches the edge.
+ *
+ * The padding lives here rather than in the card's CSS on purpose. It is a
+ * percentage of the frame, so it is the same 6% on a 156px card in a phone grid
+ * and on a 296px card in a desktop rail; 8px of CSS padding would be 5% of one
+ * and 10% of the other, which is the inconsistency this box exists to remove.
+ */
+const CONTENT = { x: 48, y: 120, w: W - 96, h: H - 240 };
+
+/**
+ * The bounding box of one or more path strings.
+ *
+ * Every path in this file is absolute `M`/`L`/`C` with plain `x y` pairs and a
+ * bare `Z`, so the numbers pair up in order and min/max over them is the box.
+ * Control points are included, which over-estimates a curve's true extent by a
+ * few pixels — the error is in the safe direction: the art is fitted slightly
+ * smaller than it needs to be rather than slightly clipped.
+ */
+function pathBounds(paths: string[], pad = 0) {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const d of paths) {
+    const numbers = d.match(/-?\d*\.?\d+/g) ?? [];
+    for (let i = 0; i + 1 < numbers.length; i += 2) {
+      const x = Number(numbers[i]);
+      const y = Number(numbers[i + 1]);
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+    }
+  }
+  return {
+    x: minX - pad,
+    y: minY - pad,
+    w: maxX - minX + pad * 2,
+    h: maxY - minY + pad * 2,
+  };
 }
 
-type Meta = { brand: string; colorName: string; view: string };
+/**
+ * Fit a drawing's box into CONTENT, constrained by whichever dimension binds
+ * first, and centre what is left over.
+ *
+ * This is the whole answer to "the boot fills its frame and the Gazelle does
+ * not". Before, every profile was drawn at a fixed 1.02 with a shared ground
+ * line, so a boot — which carries 500 units of shaft above the same sole —
+ * occupied twice the canvas of a sneaker and the two cards beside each other
+ * read as two different card sizes. Fitting by `min(sx, sy)` makes every
+ * product exactly as wide as the content box and never taller than it, so the
+ * visual weight is a property of the frame rather than of the subject.
+ */
+function fitTransform(box: { x: number; y: number; w: number; h: number }) {
+  const scale = Math.min(CONTENT.w / box.w, CONTENT.h / box.h);
+  return {
+    scale,
+    tx: CONTENT.x + (CONTENT.w - box.w * scale) / 2 - box.x * scale,
+    ty: CONTENT.y + (CONTENT.h - box.h * scale) / 2 - box.y * scale,
+  };
+}
 
 /**
  * The frame every asset shares: a soft vignette rather than a pattern, so the
- * shoe is the only thing with contrast, and two mono captions on the shoebox
- * label's hairline rules.
+ * shoe is the only thing with contrast.
+ *
+ * It used to carry three mono captions on hairline rules — brand top left, view
+ * top right, colourway bottom left. They were the wrong layer. Baked into the
+ * image they scaled with it, so on a 156px card the brand rendered at under 4px
+ * and on an 80px bag thumbnail it was grey noise; and because they were pixels
+ * rather than text, the card's wishlist heart could sit on top of "ADIDAS" and
+ * turn it into "IDAS" with nothing in the DOM to say so. They are now real DOM
+ * in the card's label row, where they stay 12px at every card size and where
+ * the heart is a sibling that cannot overlap them.
  */
-function frame(body: string, meta: Meta): string {
+function frame(body: string): string {
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img">
   <defs>
     <radialGradient id="bg" cx="0.5" cy="0.42" r="0.78">
@@ -198,13 +264,6 @@ function frame(body: string, meta: Meta): string {
   </defs>
   <rect width="${W}" height="${H}" fill="url(#bg)"/>
 ${body}
-  <g font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="19" letter-spacing="1.8" fill="${STEEL}">
-    <text x="48" y="70">${escapeXml(meta.brand.toUpperCase())}</text>
-    <text x="${W - 48}" y="70" text-anchor="end">${escapeXml(meta.view)}</text>
-    <text x="48" y="${H - 44}">${escapeXml(meta.colorName.toUpperCase())}</text>
-  </g>
-  <line x1="48" y1="90" x2="${W - 48}" y2="90" stroke="${LINE}" stroke-width="1"/>
-  <line x1="48" y1="${H - 72}" x2="${W - 48}" y2="${H - 72}" stroke="${LINE}" stroke-width="1"/>
 </svg>
 `;
 }
@@ -214,12 +273,19 @@ function heroProfileSvg(product: SeedProduct, color: { name: string; hex: string
   const c = palette(color.hex);
   const id = product.slug.replace(/[^a-z0-9]/gi, "");
 
-  // The band is 760 wide with its ground line at y=300. Scaled to 0.87 and
-  // translated so the ground sits at y=644, a boot shaft still clears the top
-  // rule and a low slide still clears the bottom one.
-  const scale = 1.02;
-  const tx = (W - 760 * scale) / 2;
-  const ty = 688 - 302 * scale;
+  // Half the widest stroke this drawing paints, so a strap centred on the edge
+  // of its own path still lands inside the content box.
+  const pad = Math.max(2, (p.strapWidth ?? 0) / 2);
+  const drawn = [p.sole, p.upper, p.straps, p.detail].filter(
+    (d): d is string => typeof d === "string",
+  );
+  const { scale, tx, ty } = fitTransform(pathBounds(drawn, pad));
+
+  // The contact shadow follows the sole rather than a constant: once the art is
+  // fitted, "the ground" is wherever this product's sole ends up.
+  const sole = pathBounds([p.sole]);
+  const groundY = ty + (sole.y + sole.h) * scale;
+  const shadowRx = (sole.w * scale) / 2.3;
 
   const strapStroke = p.straps
     ? `<path d="${p.straps}" fill="none" stroke="${c.upper}" stroke-width="${p.strapWidth}" stroke-linecap="round" stroke-linejoin="round"/>`
@@ -231,8 +297,8 @@ function heroProfileSvg(product: SeedProduct, color: { name: string; hex: string
     ? `<path d="${p.detail}" fill="none" stroke="${c.seam}" stroke-width="4" stroke-linecap="round"/>`
     : "";
 
-  const body = `  <ellipse cx="${W / 2}" cy="712" rx="322" ry="36" fill="url(#contact)"/>
-  <g transform="translate(${tx.toFixed(1)} ${ty.toFixed(1)}) scale(${scale})">
+  const body = `  <ellipse cx="${W / 2}" cy="${(groundY + 22).toFixed(0)}" rx="${shadowRx.toFixed(0)}" ry="34" fill="url(#contact)"/>
+  <g transform="translate(${tx.toFixed(1)} ${ty.toFixed(1)}) scale(${scale.toFixed(4)})">
     <defs><clipPath id="sole-${id}"><path d="${p.sole}"/></clipPath></defs>
     <path d="${p.sole}" fill="${c.midsole}"/>
     <rect x="-40" y="272" width="840" height="80" fill="${c.outsole}" clip-path="url(#sole-${id})"/>
@@ -242,7 +308,7 @@ function heroProfileSvg(product: SeedProduct, color: { name: string; hex: string
     ${detail}
   </g>`;
 
-  return frame(body, { brand: product.brand, colorName: color.name, view: "3/4" });
+  return frame(body);
 }
 
 function soleSvg(product: SeedProduct, color: { name: string; hex: string }): string {
@@ -261,12 +327,12 @@ function soleSvg(product: SeedProduct, color: { name: string; hex: string }): st
     return `<rect x="${(150 - w / 2).toFixed(0)}" y="${y}" width="${w.toFixed(0)}" height="17" rx="8.5" fill="${c.tread}"/>`;
   }).join("\n      ");
 
-  const scale = 0.94;
-  const tx = (W - 300 * scale) / 2;
-  const ty = 148;
+  // Fitted by the same rule as the profile, so the crossfade between the two is
+  // two views of one object rather than two differently-sized pictures.
+  const { scale, tx, ty } = fitTransform(pathBounds([OUTSOLE], 2));
 
-  const body = `  <ellipse cx="${W / 2}" cy="${H / 2 + 34}" rx="210" ry="330" fill="url(#contact)"/>
-  <g transform="translate(${tx.toFixed(1)} ${ty}) scale(${scale})">
+  const body = `  <ellipse cx="${W / 2}" cy="${H / 2}" rx="${((300 * scale) / 1.4).toFixed(0)}" ry="${((780 * scale) / 2.3).toFixed(0)}" fill="url(#contact)"/>
+  <g transform="translate(${tx.toFixed(1)} ${ty.toFixed(1)}) scale(${scale.toFixed(4)})">
     <defs><clipPath id="outsole-${id}"><path d="${OUTSOLE}"/></clipPath></defs>
     <path d="${OUTSOLE}" fill="${c.outsole}"/>
     <g clip-path="url(#outsole-${id})">
@@ -277,7 +343,7 @@ function soleSvg(product: SeedProduct, color: { name: string; hex: string }): st
     <path d="${OUTSOLE}" fill="none" stroke="${c.seam}" stroke-width="3"/>
   </g>`;
 
-  return frame(body, { brand: product.brand, colorName: color.name, view: "OUTSOLE" });
+  return frame(body);
 }
 
 /* -------------------------------------------------------------------------- */

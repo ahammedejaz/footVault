@@ -23,6 +23,7 @@ import { createClient, type Session } from "@supabase/supabase-js";
 import { chromium } from "playwright";
 
 import { maybeRow } from "../../src/lib/queries/run";
+import { BASE_URL } from "./routes";
 
 for (const line of readFileSync(".env.local", "utf8").split("\n")) {
   const m = /^([A-Z0-9_]+)=(.*)$/.exec(line.trim());
@@ -30,7 +31,11 @@ for (const line of readFileSync(".env.local", "utf8").split("\n")) {
 }
 const URL_ = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-const BASE = "http://localhost:3210";
+// Was a hard-coded 3210. Every other harness honours AUDIT_BASE_URL, and this
+// one silently did not — so pointing the suite at an out-of-tree build (the
+// only way to audit while somebody else owns the repo's .next) left exactly
+// one script measuring whatever stale server happened to be on 3210.
+const BASE = BASE_URL;
 
 async function cookieJar(session: Session) {
   const jar = new Map<string, string>();

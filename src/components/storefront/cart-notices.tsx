@@ -28,7 +28,11 @@ export function CartNotices({ adjustments }: { adjustments: CartAdjustment[] }) 
   return (
     <div
       role="status"
-      className="border-state-low/40 bg-state-low/5 mb-6 rounded-lg border p-4"
+      // Both halves of this were cut tokens, so the panel drew with no border
+      // colour and no tint — a notice that did not read as one. Neutral rather
+      // than warm on purpose: design-system §7 cut the second orange because it
+      // fights the accent, and this is a status message, not an error.
+      className="border-border bg-muted mb-6 rounded-lg border p-4"
     >
       <p className="font-mono text-xs tracking-[0.06em] uppercase">
         Your bag changed since you left it

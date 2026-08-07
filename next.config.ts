@@ -1,6 +1,29 @@
 import type { NextConfig } from "next";
 
+import { NOINDEX_HEADER, isIndexable } from "./src/lib/indexing";
+
 const nextConfig: NextConfig = {
+  /**
+   * Keep the store out of search results until the owner says otherwise.
+   *
+   * Emitted here rather than from `src/proxy.ts` because "site-wide" has to
+   * mean site-wide: the proxy's matcher deliberately skips static assets and
+   * image files, and the OG image routes under `/opengraph-image` are exactly
+   * the kind of thing that gets indexed on its own. A header set in the config
+   * covers every response the deployment serves.
+   *
+   * The gate is read at build time, so lifting it is one env var plus a
+   * redeploy. See `src/lib/indexing.ts`.
+   */
+  async headers() {
+    if (isIndexable()) return [];
+    return [
+      {
+        source: "/:path*",
+        headers: [{ key: "X-Robots-Tag", value: NOINDEX_HEADER }],
+      },
+    ];
+  },
   images: {
     /**
      * next/image only serves the qualities named here — Next 16 defaults the

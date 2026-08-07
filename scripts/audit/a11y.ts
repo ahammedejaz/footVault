@@ -14,9 +14,11 @@
  *   npx tsx scripts/audit/a11y.ts
  */
 import AxeBuilder from "@axe-core/playwright";
-import { chromium, type Page } from "playwright";
+import { chromium, type Browser, type Page } from "playwright";
 
+import { buildFixture, type QaFixture } from "./fixtures";
 import { AUDIT_ROUTES, BASE_URL } from "./routes";
+import { auditStates, jarFor, type AuditState } from "./states";
 
 
 /**
@@ -62,6 +64,33 @@ async function waitForReady(page: Page, path: string) {
     });
   // Let images settle into their reserved boxes before measuring.
   await page.waitForTimeout(250);
+  await settleAnimations(page);
+}
+
+/**
+ * Wait for every running CSS animation to finish before measuring.
+ *
+ * The bag drawer slides in from `+40px` and the hero rises on load. Measured
+ * part-way through, the drawer's right edge sits 4.8px past the viewport and
+ * the harness reports three overflowing children of a panel that is flush by
+ * the time anybody sees it. That is a lie about the page, produced by the only
+ * observer fast enough to catch the animation.
+ *
+ * Infinite animations are excluded — a spinner never finishes — and the whole
+ * thing races a 2s cap so one stuck animation cannot hang the run.
+ */
+async function settleAnimations(page: Page) {
+  await page.evaluate(async () => {
+    const finite = document.getAnimations().filter((animation) => {
+      const timing = animation.effect?.getTiming();
+      return timing !== undefined && timing.iterations !== Infinity;
+    });
+    if (finite.length === 0) return;
+    await Promise.race([
+      Promise.allSettled(finite.map((animation) => animation.finished)),
+      new Promise((resolve) => setTimeout(resolve, 2_000)),
+    ]);
+  });
 }
 
 const TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa", "best-practice"];
@@ -89,69 +118,144 @@ async function openOverlays(page: Page, path: string) {
   }
 }
 
-async function main() {
-  const browser = await chromium.launch();
-  let violations = 0;
+/** Report a scan's violations once each, and say how many were new. */
+function report(
+  label: string,
+  results: { violations: Awaited<ReturnType<AxeBuilder["analyze"]>>["violations"] }[],
+): number {
+  const seen = new Set<string>();
+  let count = 0;
+  for (const violation of results.flatMap((result) => result.violations)) {
+    if (seen.has(violation.id)) continue;
+    seen.add(violation.id);
+    count++;
+    console.log(`\n${label}\n  ${violation.id} (${violation.impact}) — ${violation.help}`);
+    for (const node of violation.nodes.slice(0, 3)) {
+      console.log(`    ${node.html.replace(/\s+/g, " ").slice(0, 150)}`);
+      const reason = node.failureSummary?.split("\n").slice(1, 2).join(" ") ?? "";
+      if (reason) console.log(`      ${reason.trim().slice(0, 200)}`);
+    }
+    if (violation.nodes.length > 3) {
+      console.log(`    …and ${violation.nodes.length - 3} more`);
+    }
+  }
+  return count;
+}
 
-  for (const width of [390, 1440]) {
+/**
+ * The states axe never saw.
+ *
+ * A dialog nobody has opened is a dialog nobody has checked — and so is a bag
+ * with nothing in it. Each state is scanned twice where it has an action: once
+ * on arrival and once after, because a Radix modal marks everything outside
+ * itself `aria-hidden` and a single scan taken with one open checks the dialog
+ * and nothing else.
+ */
+async function scanStates(
+  browser: Browser,
+  fixture: QaFixture,
+  width: number,
+): Promise<number> {
+  const states = auditStates(fixture).filter((state) => !state.once || width === 390);
+  const byJar = new Map<AuditState["as"], AuditState[]>();
+  for (const state of states) {
+    byJar.set(state.as, [...(byJar.get(state.as) ?? []), state]);
+  }
+
+  let violations = 0;
+  for (const [as, group] of byJar) {
     const context = await browser.newContext({
       viewport: { width, height: 900 },
       isMobile: width < 768,
       hasTouch: width < 768,
       deviceScaleFactor: 1,
     });
+    await context.addCookies(jarFor(fixture, as));
     const page = await context.newPage();
-    // 60s rather than the 30s default: the first pass after a cold
-    // `.next/cache/images` has to generate every optimised image on demand, and
-    // a product page asking for four at once can sit well past 30s. Nothing
-    // about that is a property of the site — it is the optimiser warming up —
-    // so it should not read as a failure.
     page.setDefaultNavigationTimeout(60_000);
 
-    for (const route of AUDIT_ROUTES) {
-      await visit(page, route.path);
-      await waitForReady(page, route.path);
-
-      // Scan the page, *then* the overlays. A Radix modal marks everything
-      // outside itself `aria-hidden`, so scanning only after opening one checks
-      // the dialog and nothing else — which is how a broken <dl> on the product
-      // page survived a "clean" run of this script.
+    for (const state of group) {
+      await visit(page, state.path);
+      await waitForReady(page, state.name);
       const passes = [await new AxeBuilder({ page }).withTags(TAGS).analyze()];
-      await openOverlays(page, route.path);
-      if (route.path.startsWith("/product/")) {
-        passes.push(await new AxeBuilder({ page }).withTags(TAGS).analyze());
-      }
-
-      const seen = new Set<string>();
-      for (const violation of passes.flatMap((r) => r.violations)) {
-        if (seen.has(violation.id)) continue;
-        seen.add(violation.id);
-        violations++;
-        console.log(
-          `\n[${width}] ${route.path}\n  ${violation.id} (${violation.impact}) — ${violation.help}`,
-        );
-        for (const node of violation.nodes.slice(0, 3)) {
-          console.log(`    ${node.html.replace(/\s+/g, " ").slice(0, 150)}`);
-          const reason = node.failureSummary?.split("\n").slice(1, 2).join(" ") ?? "";
-          if (reason) console.log(`      ${reason.trim().slice(0, 200)}`);
-        }
-        if (violation.nodes.length > 3) {
-          console.log(`    …and ${violation.nodes.length - 3} more`);
+      if (state.after) {
+        try {
+          await state.after(page);
+          passes.push(await new AxeBuilder({ page }).withTags(TAGS).analyze());
+        } catch (error) {
+          console.log(
+            `\n[${width}] ${state.name} — could not reach the state: ${(error as Error).message.split("\n")[0]}`,
+          );
+          violations++;
         }
       }
+      violations += report(`[${width}] ${state.name}`, passes);
     }
     await context.close();
   }
+  return violations;
+}
 
-  await browser.close();
+async function main() {
+  const browser = await chromium.launch();
+  let violations = 0;
+
+  process.stdout.write("building fixtures… ");
+  const fixture = await buildFixture(browser);
+  process.stdout.write(
+    `bag=${fixture.guest.lines} order=${fixture.guestOrder.orderNumber} account=${fixture.account.orderNumber}\n`,
+  );
+
+  try {
+    for (const width of [390, 1440]) {
+      const context = await browser.newContext({
+        viewport: { width, height: 900 },
+        isMobile: width < 768,
+        hasTouch: width < 768,
+        deviceScaleFactor: 1,
+      });
+      const page = await context.newPage();
+      // 60s rather than the 30s default: the first pass after a cold
+      // `.next/cache/images` has to generate every optimised image on demand, and
+      // a product page asking for four at once can sit well past 30s. Nothing
+      // about that is a property of the site — it is the optimiser warming up —
+      // so it should not read as a failure.
+      page.setDefaultNavigationTimeout(60_000);
+
+      for (const route of AUDIT_ROUTES) {
+        await visit(page, route.path);
+        await waitForReady(page, route.path);
+
+        // Scan the page, *then* the overlays. A Radix modal marks everything
+        // outside itself `aria-hidden`, so scanning only after opening one checks
+        // the dialog and nothing else — which is how a broken <dl> on the product
+        // page survived a "clean" run of this script.
+        const passes = [await new AxeBuilder({ page }).withTags(TAGS).analyze()];
+        await openOverlays(page, route.path);
+        if (route.path.startsWith("/product/")) {
+          passes.push(await new AxeBuilder({ page }).withTags(TAGS).analyze());
+        }
+        violations += report(`[${width}] ${route.path}`, passes);
+      }
+      await context.close();
+
+      violations += await scanStates(browser, fixture, width);
+    }
+  } finally {
+    await browser.close();
+  }
+
+  const stateCount = auditStates(fixture).length;
   if (violations === 0) {
     console.log(
-      `Clean: axe found no WCAG 2.2 A/AA violations across ${AUDIT_ROUTES.length} routes at 390px and 1440px.`,
+      `Clean: axe found no WCAG 2.2 A/AA violations across ${AUDIT_ROUTES.length} routes and ` +
+        `${stateCount} populated states at 390px and 1440px.`,
     );
   } else {
     console.log(`\n${violations} violation groups.`);
     process.exitCode = 1;
   }
+  console.log(`  (left behind: ${fixture.ledger.emails.join(", ")}, orders ${fixture.ledger.orderNumbers.join(", ")})`);
 }
 
 void main();

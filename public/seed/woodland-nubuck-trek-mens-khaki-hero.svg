@@ -10,8 +10,8 @@
     </radialGradient>
   </defs>
   <rect width="800" height="1000" fill="url(#bg)"/>
-  <ellipse cx="400" cy="712" rx="322" ry="36" fill="url(#contact)"/>
-  <g transform="translate(12.4 380.0) scale(1.02)">
+  <ellipse cx="400" cy="761" rx="304" ry="34" fill="url(#contact)"/>
+  <g transform="translate(48.0 446.2) scale(0.9437)">
     <defs><clipPath id="sole-woodlandnubucktrekmens"><path d="M14 242 L730 240 C744 284 720 308 674 310 L70 310 C22 308 2 284 14 242 Z"/></clipPath></defs>
     <path d="M14 242 L730 240 C744 284 720 308 674 310 L70 310 C22 308 2 284 14 242 Z" fill="#9a917c"/>
     <rect x="-40" y="272" width="840" height="80" fill="#83785e" clip-path="url(#sole-woodlandnubucktrekmens)"/>
@@ -20,11 +20,4 @@
     <path d="M22 240 C20 202 52 172 112 156 C190 134 262 122 322 108 C366 98 396 78 428 62 L428 -168 C428 -186 448 -196 484 -196 L666 -196 C704 -196 724 -186 724 -168 L724 214 C724 230 722 236 720 240 Z" fill="#6f6244" stroke="rgba(255,255,255,0.34)" stroke-width="2" stroke-linejoin="round"/>
     <path d="M452 -152 L698 -152 M452 -104 L698 -104 M452 -56 L698 -56 M452 -8 L698 -8 M452 40 L698 40 M120 156 C152 194 162 216 160 240" fill="none" stroke="rgba(255,255,255,0.34)" stroke-width="4" stroke-linecap="round"/>
   </g>
-  <g font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="19" letter-spacing="1.8" fill="#596475">
-    <text x="48" y="70">WOODLAND</text>
-    <text x="752" y="70" text-anchor="end">3/4</text>
-    <text x="48" y="956">KHAKI</text>
-  </g>
-  <line x1="48" y1="90" x2="752" y2="90" stroke="#d5dce5" stroke-width="1"/>
-  <line x1="48" y1="928" x2="752" y2="928" stroke="#d5dce5" stroke-width="1"/>
 </svg>

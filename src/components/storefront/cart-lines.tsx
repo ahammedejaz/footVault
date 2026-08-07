@@ -27,21 +27,45 @@ import { cn } from "@/lib/utils";
  * nothing until it is needed, and on a phone it is the difference between a
  * list you can edit and a list you are careful with.
  */
+/**
+ * What heading level each product name should be.
+ *
+ * Deliberately its own prop rather than something inferred from `compact`. The
+ * two happen to correlate today and are not the same question: `compact` is
+ * about width, this is about where the list sits in the document outline. On
+ * `/cart` the page's own `<h1>Your bag</h1>` is directly above, so the names
+ * are `h2`. In the drawer, Radix renders `Dialog.Title` as an `h2`, so they are
+ * `h3`. It was hardcoded to `h3` for both, which was right in the drawer and
+ * produced `h1 -> h3 -> h2` on the page — a skipped level and then a jump back
+ * up, which is how a screen-reader user loses the shape of the page.
+ */
+type HeadingLevel = "h2" | "h3";
+
 export function CartLines({
   lines,
   onChanged,
   compact,
+  headingLevel = "h2",
+  className,
 }: {
   lines: CartLine[];
   /** Re-read the server. The drawer refetches; the page revalidates. */
   onChanged?: () => void;
   /** The drawer is narrower and drops the SKU line. */
   compact?: boolean;
+  headingLevel?: HeadingLevel;
+  className?: string;
 }) {
   return (
-    <ul className="divide-border divide-y">
+    <ul className={cn("divide-border divide-y", className)}>
       {lines.map((line) => (
-        <CartLineRow key={line.id} line={line} onChanged={onChanged} compact={compact} />
+        <CartLineRow
+          key={line.id}
+          line={line}
+          onChanged={onChanged}
+          compact={compact}
+          headingLevel={headingLevel}
+        />
       ))}
     </ul>
   );
@@ -51,11 +75,14 @@ function CartLineRow({
   line,
   onChanged,
   compact,
+  headingLevel,
 }: {
   line: CartLine;
   onChanged?: () => void;
   compact?: boolean;
+  headingLevel: HeadingLevel;
 }) {
+  const Heading = headingLevel;
   const [optimistic, setOptimistic] = useState<number | null>(null);
   const [removed, setRemoved] = useState(false);
   const [pending, startTransition] = useTransition();
@@ -147,37 +174,62 @@ function CartLineRow({
             alt=""
             fill
             loading="lazy"
+            // Contain, matching the card: the same asset, and at 80px a crop
+            // costs a shoe its toe. It also lines the thumbnail up with what
+            // the customer clicked, which a crop does not.
             sizes="80px"
-            className="object-cover"
+            className="object-contain"
           />
         ) : null}
       </Link>
 
-      <div className="min-w-0 flex-1">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            {line.brand ? (
-              <p className="text-muted-foreground font-mono text-xs tracking-[0.14em] uppercase">
-                {line.brand}
-              </p>
-            ) : null}
-            <h3 className="mt-0.5 text-sm font-medium">
-              <Link href={`/product/${line.productSlug}`} className="hover:text-orange-ink">
-                {line.productName}
-              </Link>
-            </h3>
-            <p className="text-muted-foreground mt-1 font-mono text-xs tracking-[0.06em] tabular-nums">
-              UK {line.size} · {line.color}
-              {compact ? null : ` · ${line.sku}`}
-            </p>
-          </div>
+      {/*
+        One wrapping flex line, ordered twice.
 
-          <p className="shrink-0 font-mono text-sm font-medium tabular-nums">
-            {formatPaise(line.unitPrice * quantity)}
+        Narrow — and in the drawer at every width — it reads details, price,
+        then the controls on their own row underneath, which is the shape a
+        380px column can hold. On the bag page from `lg` the controls move up
+        between the details and the price, so the three groups share one line
+        and the price is a step away from the shoe rather than stranded at the
+        far side of an empty half-column. Ordering rather than two renderings:
+        one price in the DOM, read once.
+      */}
+      <div className="flex min-w-0 flex-1 flex-wrap items-start gap-x-6 gap-y-3">
+        <div className="order-1 min-w-0 flex-1">
+          {line.brand ? (
+            <p className="text-muted-foreground font-mono text-xs tracking-[0.14em] uppercase">
+              {line.brand}
+            </p>
+          ) : null}
+          {/*
+            `hit-44` rather than a taller box. The name is a 14px line inside a
+            three-line block, and giving the anchor 44px of its own would space
+            the brand, the name and the size apart until the row stopped reading
+            as one item. The audit measured this link at 98x18 with a bag in it
+            — /cart is in the audit's route list but the harness never puts
+            anything in the bag, so every line-item control has been unmeasured
+            since the bag shipped.
+          */}
+          <Heading className="mt-0.5 text-sm font-medium">
+            <Link
+              href={`/product/${line.productSlug}`}
+              className="hit-44 hover:text-orange-ink"
+            >
+              {line.productName}
+            </Link>
+          </Heading>
+          <p className="text-muted-foreground mt-1 font-mono text-xs tracking-[0.06em] tabular-nums">
+            UK {line.size} · {line.color}
+            {compact ? null : ` · ${line.sku}`}
           </p>
         </div>
 
-        <div className="mt-3 flex flex-wrap items-center gap-3">
+        <div
+          className={cn(
+            "order-3 flex w-full flex-wrap items-center gap-3",
+            compact ? null : "md:order-2 md:w-auto md:flex-none",
+          )}
+        >
           <QuantityStepper
             quantity={quantity}
             max={ceiling}
@@ -189,7 +241,10 @@ function CartLineRow({
           <button
             type="button"
             onClick={remove}
-            className="hit-44 text-muted-foreground hover:text-state-low inline-flex min-h-9 items-center gap-1.5 rounded-lg text-xs transition-colors"
+            // `hover:text-state-low` was inert: --state-low was cut from the
+            // palette in the design system and never removed from here, so the
+            // one destructive control in the bag had no hover state at all.
+            className="hit-44 text-muted-foreground hover:text-foreground inline-flex min-h-9 items-center gap-1.5 rounded-lg text-xs transition-colors"
           >
             <Trash2 className="size-3.5" aria-hidden />
             Remove
@@ -198,12 +253,24 @@ function CartLineRow({
             </span>
           </button>
 
+          {/* Same cut token, same silence. Stock pressure is the one thing on
+              this row a customer has to act on, and it was rendering in body
+              colour. `--fv-orange-ink` is the palette's text orange, 5.20:1. */}
           {line.stock <= 3 ? (
-            <span className="text-state-low font-mono text-xs tracking-[0.06em]">
+            <span className="text-orange-ink font-mono text-xs tracking-[0.06em]">
               Only {line.stock} left
             </span>
           ) : null}
         </div>
+
+        <p
+          className={cn(
+            "order-2 shrink-0 font-mono text-sm font-medium tabular-nums",
+            compact ? null : "md:order-3",
+          )}
+        >
+          {formatPaise(line.unitPrice * quantity)}
+        </p>
       </div>
     </li>
   );

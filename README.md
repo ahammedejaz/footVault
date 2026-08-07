@@ -18,6 +18,10 @@ homepage, without touching code.
 | Mutations | Server Actions, Zod-validated server-side |
 | Auth | Supabase Auth — **Google only**, PKCE, sessions in cookies |
 | Cart | Rows in `carts`, keyed by an httpOnly `guest_token` cookie. Never localStorage |
+| Orders | One Postgres transaction. Prices recomputed server-side; stock claimed at checkout |
+| Payments | Cash on delivery and Razorpay, behind one `PaymentAdapter`. `fetch` + `node:crypto`, **no SDK** |
+| Email | Behind an `EmailAdapter`. Console adapter until a provider is configured |
+| Scheduled work | `pg_cron`, inside Supabase. One job: the abandoned-order sweep |
 | Client UI state | Zustand — the bag drawer, and nothing the server owns |
 | Deployment | Vercel |
 
@@ -39,34 +43,69 @@ Open http://localhost:3000. The design system renders at `/style-guide`.
 | `npm run build` | Production build |
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run lint` | ESLint |
+| `npm run shapes` | Fails if a cached return type changed without a `SHAPE_VERSION` bump. **Runs in CI** |
+| `npm run shapes:write` | Re-record the shape snapshot after a deliberate change |
 | `npm run seed` | Upsert the seed catalog into Supabase (needs `SUPABASE_SERVICE_ROLE_KEY`) |
 | `npm run seed:sql` | Write `supabase/seed.sql` instead, for `supabase db reset` |
 | `npm run seed:images` | Regenerate the drawn product assets in `public/seed/` |
-| `npm run audit` | The whole quality gate, all eight below |
+| `npm run audit` | The browser and database gate — every `audit:*` below except `security`, `lighthouse`, `shots` and `teardown` |
 | `npm run audit:overflow` | Six widths × every route — overflow, 44px tap targets, 16px inputs |
 | `npm run audit:a11y` | axe-core, WCAG 2.2 A/AA, at 390px and 1440px, overlays included |
 | `npm run audit:keyboard` | home → category → filter → product → size, by keyboard only |
+| `npm run audit:keyboard-checkout` | The checkout path by keyboard, to the place-order button |
+| `npm run audit:focus` | The composite focus indicator actually paints on every interactive element |
+| `npm run audit:gallery` | The product gallery's runtime behaviour |
+| `npm run audit:hydration` | Headless-Chromium console: no hydration mismatch below `<body>` |
 | `npm run audit:interactions` | The behaviour a screenshot cannot show |
 | `npm run audit:links` | Crawls every internal link; checks titles and JSON-LD |
 | `npm run audit:auth` | Role escalation over real HTTP; `/admin` 404s for everyone but an admin |
 | `npm run audit:cart` | Merge on sign-in against the live database, RLS in force |
 | `npm run audit:bag` | The whole purchase path in Chromium at 390px |
 | `npm run audit:signedin` | The signed-in storefront: saved list, account menu, account cart |
+| `npm run audit:checkout` | Checkout, orders and webhook idempotency against the live database |
+| `npm run audit:security` | The adversarial regression suite, through the real webhook route over HTTP |
+| `npm run audit:lighthouse` | Performance on a local production build, `--throttling-method=devtools` |
 | `npm run audit:shots` | Full-page screenshots at all six widths |
+| `npm run audit:teardown` | Sweeps accounts and rows a crashed harness left behind |
 
 The audits drive a real browser against a running build, so they need
 `npm run build && npm start` first and a reachable database. They are not in CI
-for that reason — CI builds with placeholder credentials on purpose.
+for that reason — CI builds with placeholder credentials on purpose. `npm run
+shapes` is the exception and does run in CI, because it reads types through the
+TypeScript compiler and needs no database, no build and no browser.
+
+Two of them want more than a running server:
+
+```bash
+# The order/webhook suites write real rows. They sweep after themselves and
+# print the counts, so the sweep can be checked rather than believed.
+npm run audit:checkout
+
+# The adversarial suite posts to the real webhook route, so it needs the same
+# secret the server was started with, and the port that server is on.
+RAZORPAY_WEBHOOK_SECRET=<the value your server was started with> \
+FV_BASE_URL=http://localhost:3491 \
+npm run audit:security
+```
 
 The seed is idempotent — every write is an upsert on a natural key, so running
 it twice produces one catalog rather than two. `scripts/seed-data.ts` is the
 single source of truth for both the live and the SQL path.
 
-CI runs typecheck, lint and build on every pull request, and fails the build if
-`SUPABASE_SERVICE_ROLE_KEY` is referenced anywhere outside
+CI runs typecheck, lint, the shape snapshot and build on every pull request, and
+fails the build if `SUPABASE_SERVICE_ROLE_KEY` is referenced anywhere outside
 `src/lib/supabase/admin.ts`, or if a Client Component imports a `server-only`
 module. The build runs with placeholder Supabase credentials, so a pull request
 can be verified without live database access.
+
+The shape step is the one that is not obvious. `unstable_cache` keys on its key
+parts and never on the code that produced the value, so adding a field to a
+cached return type does *not* invalidate the entries already on disk — the new
+code reads old objects silently missing it. Phase 4 shipped exactly that
+(`variantId` on `SizeAvailability`) and add-to-bag quietly believed no size had
+been chosen. `npm run shapes` expands all 13 cached return types structurally
+through the TypeScript checker and fails when one changes without a
+`SHAPE_VERSION` bump.
 
 CI also fails if a `"use server"` file exports anything but an async function.
 That one is not theoretical: Phase 4 shipped a plain constant from an actions
@@ -97,9 +136,65 @@ touches a float; `src/lib/format.ts` converts at the UI boundary.
 
 ## Environment
 
-See `.env.example` for the full list. `SUPABASE_SERVICE_ROLE_KEY` is server-only
-— it bypasses Row Level Security and must never carry a `NEXT_PUBLIC_` prefix or
-reach a client component.
+See `.env.example` for the full list and the reasoning attached to each one.
+
+| Variable | Notes |
+|---|---|
+| `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Public by design |
+| `SUPABASE_SERVICE_ROLE_KEY` | **Server-only.** Bypasses RLS; never a `NEXT_PUBLIC_` prefix, never outside `src/lib/supabase/admin.ts`. Checkout needs it — the order transaction runs through the admin client |
+| `NEXT_PUBLIC_SITE_URL` | Absolute origin for `metadataBase`, OG images and the sitemap. Not the OAuth redirect |
+| `RAZORPAY_KEY_ID` | Publishable. Reaches the browser, but only inside a `PaymentInitiation` the server returns |
+| `RAZORPAY_KEY_SECRET` | Secret. Basic-auth password, and the HMAC key for the *browser callback* signature |
+| `RAZORPAY_WEBHOOK_SECRET` | A **different** secret. HMAC key for `x-razorpay-signature`, and only that |
+| `EMAIL_API_KEY`, `EMAIL_FROM` | Names only. Nothing reads them yet; the console adapter is what ships |
+| `SITE_INDEXABLE` | Only the exact string `true` lets search engines in. Anything else is noindex |
+
+**There is deliberately no `NEXT_PUBLIC_RAZORPAY_KEY_ID`.** The key id is
+publishable, but a `NEXT_PUBLIC_` variable is inlined into every page in the
+bundle, including the ones that will never take a payment. The server hands it
+over inside the payment initiation, at the moment an order exists and is about
+to be paid — same value, a hundredth of the exposure, and rotating it does not
+need a redeploy of the whole site.
+
+Every Razorpay value is set **separately for Preview and Production** in Vercel,
+so a preview build can never take a live payment and a preview webhook secret
+can never verify a production event.
+
+## Running checkout locally
+
+```bash
+npm run build && npm start          # the audits need a production build
+```
+
+Then `/cart` → **Checkout**. Two ways through it:
+
+**Cash on delivery** needs nothing configured. The order is `confirmed` the
+moment it is placed, its stock is decremented in the same transaction, and the
+confirmation email is printed to your terminal by the console email adapter.
+
+**Razorpay** needs `RAZORPAY_KEY_ID` and `RAZORPAY_KEY_SECRET` from a **test
+mode** account:
+
+1. <https://dashboard.razorpay.com> → toggle to **Test Mode** (top of the
+   sidebar; test keys start `rzp_test_`).
+2. *Account & Settings* → *API Keys* → **Generate Test Key**. You are shown the
+   secret once.
+3. Put both in `.env.local`. Neither takes a `NEXT_PUBLIC_` prefix.
+4. Restart. Razorpay now appears as a payment choice — with no keys it is
+   filtered out of the list entirely, on purpose, because a customer who picks a
+   method that 500s has been failed twice.
+5. Test cards are in Razorpay's docs; `4111 1111 1111 1111` with any future
+   expiry and any CVV succeeds.
+
+**The webhook cannot reach localhost.** Razorpay posts server-to-server to a
+public HTTPS URL, so on a laptop the browser callback is the only thing that
+confirms an order. That is enough to develop against, and it is exactly the
+degraded mode the code is written for: the callback verifies a signature and
+reads the payment back from Razorpay's API, and the webhook — when it exists —
+applies the same outcome through the same seam under a different idempotency
+key. To exercise the webhook properly, either deploy to a preview and register
+the URL, or run `npm run audit:security`, which posts real HMAC-signed events at
+the local route.
 
 ## Layout
 
@@ -107,20 +202,31 @@ reach a client component.
 src/
   app/
     (storefront)/     storefront route group and its layout
-    auth/callback/    OAuth code exchange, cart merge, pending intents
+      checkout/       one page, not a wizard
+      order/          the confirmation and receipt, by order number
+      account/        orders, addresses
+    auth/callback/    OAuth code exchange, cart merge, order adoption, pending intents
     admin/            admin route group (placeholder until Phase 6)
-    api/              cart JSON for the drawer, search suggestions
+    api/              cart JSON for the drawer, search suggestions,
+                        payments/razorpay/webhook — the only route an outsider posts to
+    global-error.tsx  the boundary that can catch a failing root layout
+    error.tsx         RouteError — everything below the root layout
   components/
     ui/               restyled shadcn primitives
     brand/            logo and mark
     storefront/
+    checkout/         the checkout flow, order detail, timeline, totals
     admin/
   lib/
     supabase/         server.ts, client.ts, proxy.ts, static.ts, admin.ts
     actions/          server actions, grouped by domain
     queries/          server-only reads; cached.ts holds the LCP-path cache
     cart/             the bag's token and the merge
+    orders/           the state machine, and the only writer of order state
+    payments/         the PaymentAdapter seam; cod.ts and razorpay.ts behind it
+    email/            the EmailAdapter seam; console adapter until a provider exists
     validations/      Zod schemas, shared client and server
+    indexing.ts       the noindex gate, dependency-free for next.config.ts
     catalog-types.ts  view models with no server dependency —
     cart-types.ts       the client half imports from these
     database.types.ts
@@ -135,11 +241,13 @@ docs/
 |---|---|
 | [`docs/design-system.md`](docs/design-system.md) | Tokens, type scale, measured contrast, the signature element |
 | [`docs/rls-tests.md`](docs/rls-tests.md) | Row Level Security checklist, run against the live database, with results |
-| [`docs/architecture.md`](docs/architecture.md) | How the pieces fit: rendering, caching, the client/server boundary, the bag |
+| [`docs/architecture.md`](docs/architecture.md) | How the pieces fit: rendering, caching, the client/server boundary, the bag, the order state machine, the payment seam |
 | [`docs/database.md`](docs/database.md) | Every table, its policies, and the functions with their grants |
-| [`docs/admin-guide.md`](docs/admin-guide.md) | For the shop owner. How to make yourself an admin, and what you can change |
+| [`docs/admin-guide.md`](docs/admin-guide.md) | For the shop owner. How to make yourself an admin, what you can change, and what to do with an order |
 | [`docs/phase-3-report.md`](docs/phase-3-report.md) | What Phase 3 changed, what it measured, and what it did not finish |
 | [`claudeExecutionReport/phase-4-cart-wishlist.md`](claudeExecutionReport/phase-4-cart-wishlist.md) | Phase 4, in full: decisions, bugs, measurements, known imperfections |
+| [`claudeExecutionReport/phase-5-checkout-payments.md`](claudeExecutionReport/phase-5-checkout-payments.md) | Phase 5, in full — and what a six-agent build cost and returned |
+| [`claudeExecutionReport/phase-5-security-review.md`](claudeExecutionReport/phase-5-security-review.md) | The adversarial review of checkout, orders and payments: eight findings, five fixed |
 | `PROJECT_BRIEF.md` | Full requirements and build phases |
 
 ## Signing in
@@ -151,9 +259,9 @@ does not already give.
 
 **Customers never need an account to buy.** Signing in is what makes a bag
 survive a new phone, keeps a saved list, and puts orders in one place. Checkout
-stays open to guests.
-
-Before sign-in works you need to enable the provider — see *What is blocked* below.
+stays open to guests, and a guest who signs in afterwards keeps the order they
+placed — `/auth/callback` moves it onto the new account before it drops the
+guest cookie, and refuses to drop the cookie if that fails.
 
 ## A note on phase order
 
@@ -164,26 +272,38 @@ run over real HTTP — see §6b.1.
 
 ## What is blocked
 
-Two things need the account owner, and nothing in the code can do them:
+Phase 4's two blockers are **cleared**. Google OAuth is enabled on the Supabase
+project and real accounts have been created through it, and
+`SUPABASE_SERVICE_ROLE_KEY` now has a value in `.env.local` — which matters more
+than it used to, because checkout runs its order transaction through the admin
+client and does not work without it. What replaced them are four owner tasks,
+written out step by step for a non-developer in
+[`docs/admin-guide.md`](docs/admin-guide.md):
 
-**1. Google OAuth is not enabled on the Supabase project.** Every sign-in
-surface is built and will work the moment it is. Steps:
+**1. `RAZORPAY_WEBHOOK_SECRET` is not set.** You invent this value
+(`openssl rand -hex 32`); Razorpay does not generate it. Register the webhook at
+`https://<domain>/api/payments/razorpay/webhook` — public HTTPS only —
+subscribed to `payment.captured`, `payment.failed`, `payment.authorized` and
+`order.paid`, then set the same string in Vercel for Preview and Production
+separately and redeploy. Until it exists, the webhook route rejects everything
+with a 400, which is the correct direction to fail but means a customer whose
+browser never comes back is charged and left `pending`.
 
-1. Google Cloud Console → *APIs & Services* → *Credentials* → **Create OAuth
-   client ID** → *Web application*.
-2. Authorised redirect URI:
-   `https://ahumjhwqgmskjsitctcj.supabase.co/auth/v1/callback`
-3. Supabase dashboard → *Authentication* → *Providers* → **Google**: paste the
-   client ID and secret, enable it.
-4. Supabase → *Authentication* → *URL Configuration* → **Redirect URLs**, add:
-   - `http://localhost:3000/auth/callback`
-   - `https://<your-vercel-domain>/auth/callback`
-   - `https://*-<your-team>.vercel.app/auth/callback` for previews
+**2. No real Razorpay payment has ever completed.** Every branch around it is
+proven — dismissal, blocked script, resume, webhook capture, signature forgery,
+replay — but the actual test-card → callback → confirmation round trip needs a
+human typing into Razorpay's own iframe. Do it once before launch.
 
-**2. `SUPABASE_SERVICE_ROLE_KEY` is empty in `.env.local`.** The name is there,
-the value is not, which looks configured at a glance. `npm run seed` and three
-checks in `npm run audit:auth` need it. Supabase dashboard → *Project Settings*
-→ *API* → **service_role**.
+**3. No email provider is connected.** Confirmations are written and sent, but
+the only adapter prints them to the server log. Verify a sending domain (SPF +
+DKIM), set `EMAIL_API_KEY` and `EMAIL_FROM`, then a developer adds one adapter
+file.
+
+**4. Indexing is off.** Set `SITE_INDEXABLE=true` in Vercel — Production only,
+so previews stay hidden — and redeploy.
+
+Optional: leaked-password protection is off in Supabase Auth. Low relevance
+while sign-in is Google-only, and free to turn on.
 
 ## Build status
 
@@ -194,8 +314,8 @@ checks in `npm run audit:auth` need it. Supabase dashboard → *Project Settings
 | 2 | Auth and role-based middleware | Done — folded into Phase 4 |
 | 3 | Storefront catalog | Done — see [`docs/phase-3-report.md`](docs/phase-3-report.md) |
 | 4 | Cart and wishlist | Done — see [`claudeExecutionReport/phase-4-cart-wishlist.md`](claudeExecutionReport/phase-4-cart-wishlist.md) |
-| 5 | Checkout and orders | |
+| 5 | Checkout, orders and payments | Done — see [`claudeExecutionReport/phase-5-checkout-payments.md`](claudeExecutionReport/phase-5-checkout-payments.md) |
 | 6 | Admin CRUD | |
 | 7 | Admin appearance and CMS | |
-| 8 | Reviews, coupons, dashboard, polish | |
+| 8 | Reviews, coupons, refunds, dashboard, polish | |
 | 9 | Production deploy and owner documentation | |

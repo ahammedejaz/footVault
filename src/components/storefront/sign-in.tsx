@@ -55,8 +55,12 @@ export function GoogleSignInForm({
         <GoogleMark className="size-4" />
         {pending ? "Opening Google…" : label}
       </Button>
+      {/* `text-state-low` was inert: the token was cut from the palette in
+          design-system §7 and never removed here, so a sign-in failure was
+          announced to a screen reader and rendered in body colour to everyone
+          else. An error has to look like one. */}
       {state.error ? (
-        <p role="alert" className="text-state-low mt-3 text-sm text-pretty">
+        <p role="alert" className="text-destructive mt-3 text-sm text-pretty">
           {state.error}
         </p>
       ) : null}

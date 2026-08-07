@@ -9,11 +9,23 @@
  *
  *   npx tsx scripts/audit/overflow.ts
  */
-import { chromium, type Page } from "playwright";
+import { chromium, type Browser, type Page } from "playwright";
 
+import { buildFixture, type QaFixture } from "./fixtures";
 import { AUDIT_ROUTES, AUDIT_WIDTHS, BASE_URL } from "./routes";
+import { auditStates, jarFor, type AuditState } from "./states";
 
 type Finding = { kind: string; detail: string };
+
+/**
+ * How much was actually looked at.
+ *
+ * "No tap target under 44px" is a much weaker sentence when nobody knows
+ * whether it measured four controls or four thousand — and the reason this file
+ * changed at all is that /cart was in the route list while its line-item
+ * controls were never on screen to be counted.
+ */
+let interactiveSeen = 0;
 
 /**
  * Wait for the real page, not its skeleton.
@@ -58,6 +70,33 @@ async function waitForReady(page: Page, path: string) {
     });
   // Let images settle into their reserved boxes before measuring.
   await page.waitForTimeout(250);
+  await settleAnimations(page);
+}
+
+/**
+ * Wait for every running CSS animation to finish before measuring.
+ *
+ * The bag drawer slides in from `+40px` and the hero rises on load. Measured
+ * part-way through, the drawer's right edge sits 4.8px past the viewport and
+ * the harness reports three overflowing children of a panel that is flush by
+ * the time anybody sees it. That is a lie about the page, produced by the only
+ * observer fast enough to catch the animation.
+ *
+ * Infinite animations are excluded — a spinner never finishes — and the whole
+ * thing races a 2s cap so one stuck animation cannot hang the run.
+ */
+async function settleAnimations(page: Page) {
+  await page.evaluate(async () => {
+    const finite = document.getAnimations().filter((animation) => {
+      const timing = animation.effect?.getTiming();
+      return timing !== undefined && timing.iterations !== Infinity;
+    });
+    if (finite.length === 0) return;
+    await Promise.race([
+      Promise.allSettled(finite.map((animation) => animation.finished)),
+      new Promise((resolve) => setTimeout(resolve, 2_000)),
+    ]);
+  });
 }
 
 
@@ -65,8 +104,9 @@ async function inspect(page: Page, width: number): Promise<Finding[]> {
   // No named helper functions inside this body: the TypeScript loader adds a
   // `__name` shim to anything it can name, and that identifier does not exist
   // in the page. Everything the browser side needs is inline.
-  return page.evaluate((viewport) => {
+  const result = await page.evaluate((viewport) => {
     const findings: { kind: string; detail: string }[] = [];
+    let interactive = 0;
 
     if (document.documentElement.scrollWidth > viewport + 1) {
       findings.push({
@@ -109,10 +149,11 @@ async function inspect(page: Page, width: number): Promise<Finding[]> {
       // deliberate: a stretched link (`::after { position: absolute; inset: 0 }`)
       // covers its whole card, and a thin control can carry an invisible 44px
       // pad through `::before`. Measure the effective area, not the text.
-      const interactive = el.matches(
+      const isInteractive = el.matches(
         'a[href], button:not([disabled]), input:not([type="hidden"]), select, textarea, [role="radio"], [role="button"], [role="tab"]',
       );
-      if (interactive) {
+      if (isInteractive) {
+        interactive++;
         // sr-only until focused — a skip link is 1×1 by design and grows to a
         // real control the moment it is reachable.
         const hidden =
@@ -186,62 +227,137 @@ async function inspect(page: Page, width: number): Promise<Finding[]> {
         }
       }
     }
-    return findings;
+    return { findings, interactive };
   }, width);
+  interactiveSeen += result.interactive;
+  return result.findings;
 }
 
-async function main() {
-  const browser = await chromium.launch();
-  const problems: string[] = [];
+/**
+ * The stateful half.
+ *
+ * A separate context per (width, identity) rather than one per width: the whole
+ * point of these is that the cookies differ, and a context can only hold one
+ * set. Grouped by identity so the six jars cost six contexts a width, not one
+ * per state.
+ */
+async function walkStates(
+  browser: Browser,
+  fixture: QaFixture,
+  width: number,
+  problems: string[],
+) {
+  const states = auditStates(fixture).filter(
+    (state) => !state.once || width === AUDIT_WIDTHS[0],
+  );
+  const byJar = new Map<AuditState["as"], AuditState[]>();
+  for (const state of states) {
+    byJar.set(state.as, [...(byJar.get(state.as) ?? []), state]);
+  }
 
-  for (const width of AUDIT_WIDTHS) {
-    // A progress line, because this walks 90 pages and a silent ten minutes is
-    // indistinguishable from a hang.
-    process.stdout.write(`${width}px `);
+  for (const [as, group] of byJar) {
     const context = await browser.newContext({
       viewport: { width, height: 900 },
       isMobile: width < 768,
       hasTouch: width < 768,
       deviceScaleFactor: 1,
     });
+    await context.addCookies(jarFor(fixture, as));
     const page = await context.newPage();
-    // 60s rather than the 30s default: the first pass after a cold
-    // `.next/cache/images` has to generate every optimised image on demand, and
-    // a product page asking for four at once can sit well past 30s. Nothing
-    // about that is a property of the site — it is the optimiser warming up —
-    // so it should not read as a failure.
     page.setDefaultNavigationTimeout(60_000);
 
-    for (const route of AUDIT_ROUTES) {
-      const response = await visit(page, route.path);
+    for (const state of group) {
+      const response = await visit(page, state.path);
       const status = response?.status() ?? 0;
-      const expected = route.name === "not-found" ? 404 : 200;
-      if (status !== expected) {
-        problems.push(`[${width}] ${route.path} — HTTP ${status}, expected ${expected}`);
+      if (status !== 200) {
+        problems.push(`[${width}] ${state.name} — HTTP ${status}, expected 200`);
+        continue;
       }
-      await waitForReady(page, route.path);
-
+      await waitForReady(page, state.name);
+      try {
+        if (state.after) await state.after(page);
+      } catch (error) {
+        problems.push(
+          `[${width}] ${state.name} — could not reach the state: ${(error as Error).message.split("\n")[0]}`,
+        );
+        continue;
+      }
       for (const finding of await inspect(page, width)) {
-        problems.push(`[${width}] ${route.path} — ${finding.kind}: ${finding.detail}`);
+        problems.push(`[${width}] ${state.name} — ${finding.kind}: ${finding.detail}`);
       }
-      process.stdout.write(".");
+      process.stdout.write("+");
     }
     await context.close();
-    process.stdout.write("\n");
+  }
+}
+
+async function main() {
+  const browser = await chromium.launch();
+  const problems: string[] = [];
+
+  process.stdout.write("building fixtures… ");
+  const fixture = await buildFixture(browser);
+  process.stdout.write(
+    `bag=${fixture.guest.lines} order=${fixture.guestOrder.orderNumber} account=${fixture.account.orderNumber}\n`,
+  );
+
+  try {
+    for (const width of AUDIT_WIDTHS) {
+      // A progress line, because this walks hundreds of pages and a silent ten
+      // minutes is indistinguishable from a hang.
+      process.stdout.write(`${width}px `);
+      const context = await browser.newContext({
+        viewport: { width, height: 900 },
+        isMobile: width < 768,
+        hasTouch: width < 768,
+        deviceScaleFactor: 1,
+      });
+      const page = await context.newPage();
+      // 60s rather than the 30s default: the first pass after a cold
+      // `.next/cache/images` has to generate every optimised image on demand, and
+      // a product page asking for four at once can sit well past 30s. Nothing
+      // about that is a property of the site — it is the optimiser warming up —
+      // so it should not read as a failure.
+      page.setDefaultNavigationTimeout(60_000);
+
+      for (const route of AUDIT_ROUTES) {
+        const response = await visit(page, route.path);
+        const status = response?.status() ?? 0;
+        const expected = route.status ?? 200;
+        if (status !== expected) {
+          problems.push(`[${width}] ${route.path} — HTTP ${status}, expected ${expected}`);
+        }
+        await waitForReady(page, route.path);
+
+        for (const finding of await inspect(page, width)) {
+          problems.push(`[${width}] ${route.path} — ${finding.kind}: ${finding.detail}`);
+        }
+        process.stdout.write(".");
+      }
+      await context.close();
+
+      await walkStates(browser, fixture, width, problems);
+      process.stdout.write("\n");
+    }
+  } finally {
+    await browser.close();
   }
 
-  await browser.close();
-
+  const stateCount = auditStates(fixture).length;
   if (problems.length === 0) {
     console.log(
-      `Clean: ${AUDIT_ROUTES.length} routes × ${AUDIT_WIDTHS.length} widths, no overflow, no tap target under 44px, no input under 16px.`,
+      `Clean: ${AUDIT_ROUTES.length} routes + ${stateCount} populated states × ${AUDIT_WIDTHS.length} widths, ` +
+        `${interactiveSeen} interactive elements measured — no overflow, ` +
+        "no tap target under 44px, no input under 16px.",
     );
+    console.log(`  (left behind: ${fixture.ledger.emails.join(", ")}, orders ${fixture.ledger.orderNumbers.join(", ")})`);
     return;
   }
   // Deduplicated: the same header button at six widths is one problem.
   const unique = [...new Set(problems)];
-  console.log(`${unique.length} findings:\n`);
+  console.log(`${unique.length} findings from ${interactiveSeen} interactive elements measured:\n`);
   for (const problem of unique) console.log("  " + problem);
+  console.log(`\n  (left behind: ${fixture.ledger.emails.join(", ")}, orders ${fixture.ledger.orderNumbers.join(", ")})`);
   process.exitCode = 1;
 }
 

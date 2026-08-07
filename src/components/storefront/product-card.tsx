@@ -23,6 +23,15 @@ import { cn } from "@/lib/utils";
  * The whole card is one link. The `after:absolute inset-0` on the title
  * stretches the hit area over the media without nesting an anchor inside a
  * heading, so the accessible name stays the product name.
+ *
+ * **Nothing is layered over the media.** It used to carry three overlays: the
+ * wishlist heart, a status chip, and — baked into the seed artwork itself — a
+ * caption row of brand and view. The heart sat on the caption and ate the first
+ * two characters of every brand, so ADIDAS rendered as IDAS and WOODLAND as
+ * ODLAND. Moving the heart is not the fix on its own, because the next overlay
+ * put in that corner collides all over again; the rule is that the frame holds
+ * the image and only the image, and every label the card needs is a sibling in
+ * the flow beneath it, where the layout can see it and give it room.
  */
 export function ProductCard({
   product,
@@ -53,19 +62,19 @@ export function ProductCard({
 
   return (
     <article className={cn("product-card group relative", className)}>
+      {/*
+        `object-contain`, not cover: the image is constrained by whichever of
+        its dimensions binds first, so a source that is not 4:5 is letterboxed
+        rather than cropped. The seed art is 4:5 and the two are identical for
+        it — this is what stops the first real photograph the owner uploads from
+        losing its toe.
+
+        No CSS padding on the image. The breathing room lives inside the asset,
+        where it is a percentage of the frame and therefore the same on a 156px
+        card and a 296px one; 8px of CSS padding would be 5% of one and 13% of
+        the other, which is the inconsistency this frame exists to remove.
+      */}
       <div className="card-media bg-fog relative aspect-4/5 overflow-hidden rounded-lg">
-        {/*
-          Above the stretched link, not inside it. The whole card is one anchor;
-          a button nested in an anchor is invalid and, worse, un-pressable —
-          the link swallows the tap. `z-10` and its own stacking put the heart
-          in front of the `after:absolute inset-0` that does the stretching.
-        */}
-        <SaveForLater
-          productId={product.id}
-          productName={product.name}
-          saved={saved}
-          variant="icon"
-        />
         {product.heroImage ? (
           <Image
             src={product.heroImage.url}
@@ -77,7 +86,7 @@ export function ProductCard({
             loading={priority ? "eager" : "lazy"}
             fetchPriority={priority ? "high" : "auto"}
             sizes={sizes}
-            className="card-hero object-cover"
+            className="card-hero object-contain"
           />
         ) : null}
         {product.soleImage ? (
@@ -90,43 +99,70 @@ export function ProductCard({
             fill
             loading="lazy"
             sizes={sizes}
-            className="card-sole object-cover"
+            className="card-sole object-contain"
           />
         ) : null}
-
-        {soldOut ? (
-          <p className="bg-ink/85 text-paper absolute top-3 left-3 rounded-lg px-2 py-1 font-mono text-xs tracking-[0.06em]">
-            SOLD OUT
-          </p>
-        ) : product.salePrice ? (
-          <p className="bg-orange text-ink absolute top-3 left-3 rounded-lg px-2 py-1 font-mono text-xs font-medium tracking-[0.06em]">
-            SALE
-          </p>
-        ) : null}
       </div>
 
-      <div className="mt-3">
-        {product.brandName ? (
-          <p className="text-muted-foreground font-mono text-xs tracking-[0.06em] uppercase">
-            {product.brandName}
-          </p>
-        ) : null}
-        <Heading className="mt-1 text-base leading-snug font-medium">
-          <Link
-            href={`/product/${product.slug}`}
-            className="rounded-sm after:absolute after:inset-0 after:content-['']"
-          >
-            {product.name}
-          </Link>
-        </Heading>
-        <span className="card-rule mt-1 w-full" aria-hidden="true" />
-        <Price
-          basePrice={product.basePrice}
-          salePrice={product.salePrice}
-          className="mt-2"
+      {/*
+        The label row: brand on the left, the heart as its sibling on the right.
+
+        A flex line rather than a layer, so the button takes real width out of
+        the row and the brand can be shortened by the layout but never covered
+        by a control. `items-center` is what aligns the two — the heart's 36px
+        box and the label's 16px line share an optical centre instead of a
+        top edge, and the 44px touch target comes from `.hit-44`'s invisible
+        ::before rather than from making the box itself 44px and pushing the
+        product name down a row.
+      */}
+      <div className="mt-3 flex items-center justify-between gap-2">
+        <p
+          data-card-brand
+          className="text-muted-foreground min-w-0 truncate font-mono text-xs tracking-[0.06em] uppercase"
+        >
+          {product.brandName ?? ""}
+        </p>
+        <SaveForLater
+          productId={product.id}
+          productName={product.name}
+          saved={saved}
+          variant="icon"
+          // `relative inset-auto` un-sticks the icon variant's card-corner
+          // placement — tailwind-merge drops `absolute top-2 right-2` for it —
+          // while `relative` is still what `.hit-44`'s ::before needs to anchor
+          // to. The translucent pill went with the overlay: on a card it now
+          // sits on the page ground, not on an image.
+          className="relative inset-auto shrink-0 bg-transparent backdrop-blur-none hover:bg-fog"
         />
-        <SizeRun sizes={product.sizes} className="mt-3" />
       </div>
+
+      <Heading className="text-base leading-snug font-medium">
+        <Link
+          href={`/product/${product.slug}`}
+          className="rounded-sm after:absolute after:inset-0 after:content-['']"
+        >
+          {product.name}
+        </Link>
+      </Heading>
+      <span className="card-rule mt-1 w-full" aria-hidden="true" />
+      <Price
+        basePrice={product.basePrice}
+        salePrice={product.salePrice}
+        className="mt-2"
+      />
+      {/*
+        Sold out is stated once, here, above a size run in which every size is
+        struck through. The SALE chip that used to sit in the opposite corner is
+        gone outright: `Price` already prints the old price struck through and
+        the percentage off, so the chip was a third rendering of a fact the row
+        below it was already carrying — and it was carrying it in a layer.
+      */}
+      {soldOut ? (
+        <p className="bg-ink text-paper mt-2 inline-block rounded-lg px-2 py-1 font-mono text-xs tracking-[0.06em]">
+          SOLD OUT
+        </p>
+      ) : null}
+      <SizeRun sizes={product.sizes} className="mt-3" />
     </article>
   );
 }

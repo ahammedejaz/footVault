@@ -8,14 +8,19 @@ import { Button } from "@/components/ui/button";
 import { reportBoundaryError, type BoundaryError } from "@/lib/report-error";
 
 /**
- * The last-resort error boundary.
+ * The boundary for a route that fails outside the storefront group.
  *
  * An error inside the storefront is caught by (storefront)/error.tsx, which
- * keeps the header and footer. This one only runs when something above that
- * failed — the layout itself — so there is no chrome to keep, and it renders
+ * keeps the header and footer. This one has no chrome to keep, so it renders
  * its own `main` rather than leaving the document without a landmark.
+ *
+ * It is **not** the last resort, despite what this comment used to say. An
+ * error boundary catches throws from below it, and this file sits *inside* the
+ * root layout — so a root layout that throws blows straight past it. That is
+ * `app/global-error.tsx`, which exists now because production spent two hours
+ * serving a bare 500 proving the point.
  */
-export default function GlobalError({
+export default function RouteError({
   error,
   reset,
 }: {
