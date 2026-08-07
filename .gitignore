@@ -38,3 +38,14 @@ pnpm-debug.log*
 # Supabase
 .branches
 .temp
+
+# Next.js / Vercel
+/.next/
+/out/
+.vercel
+*.tsbuildinfo
+next-env.d.ts
+.pnp.*
+.yarn/*
+/coverage
+*.pem

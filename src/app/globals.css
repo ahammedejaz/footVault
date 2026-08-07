@@ -1,0 +1,260 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+/* ==========================================================================
+   Foot Vault design tokens — see docs/design-system.md
+   Palette derived from the logo: navy #033894 + orange #FE9301.
+   One accent. Everything else earns its place through spacing and hierarchy.
+   ========================================================================== */
+
+:root {
+  /* --- raw brand tokens --------------------------------------------------- */
+  --fv-ink: #0a1526; /* navy-black. hero, footer, admin chrome */
+  --fv-ink-soft: #0e2a5c; /* raised navy — cards on dark, admin sidebar */
+  --fv-blue: #033894; /* logo blue, exact. mark only */
+  --fv-steel: #596475; /* secondary text. 5.83:1 paper, 5.29:1 fog */
+  --fv-line: #c8d0db; /* hairlines, input borders */
+  --fv-fog: #eef1f5; /* cards, section bands */
+  --fv-paper: #fbfcfd; /* page base */
+  --fv-orange: #fe9301; /* logo orange, exact. CTA fills, active states */
+  --fv-orange-ink: #a85400; /* orange for TEXT on light. 5.20:1 */
+  --fv-green: #1f7a55; /* admin status chips ONLY */
+  --fv-dim: #98a1ae; /* struck-through sold-out sizes */
+
+  /* Outer ring of the composite focus indicator. Orange alone is 2.18:1 on
+     paper — below the 3:1 non-text floor — so a contrasting ring carries the
+     visibility while the orange carries the brand. Flips on dark surfaces. */
+  --fv-focus-halo: var(--fv-ink);
+
+  /* --- shadcn semantic layer, remapped onto the brand --------------------- */
+  --background: var(--fv-paper);
+  --foreground: var(--fv-ink);
+  --card: var(--fv-paper);
+  --card-foreground: var(--fv-ink);
+  --popover: var(--fv-paper);
+  --popover-foreground: var(--fv-ink);
+
+  /* The one that matters: white on orange is 2.24:1 and fails. Every CTA is
+     navy text on an orange fill (8.18:1). */
+  --primary: var(--fv-orange);
+  --primary-foreground: var(--fv-ink);
+
+  --secondary: var(--fv-fog);
+  --secondary-foreground: var(--fv-ink);
+  --muted: var(--fv-fog);
+  --muted-foreground: var(--fv-steel);
+  --accent: var(--fv-fog);
+  --accent-foreground: var(--fv-ink);
+  --destructive: #b3261e;
+  --border: var(--fv-line);
+  --input: var(--fv-line);
+  --ring: var(--fv-orange);
+
+  --sidebar: var(--fv-ink);
+  --sidebar-foreground: var(--fv-fog);
+  --sidebar-primary: var(--fv-orange);
+  --sidebar-primary-foreground: var(--fv-ink);
+  --sidebar-accent: var(--fv-ink-soft);
+  --sidebar-accent-foreground: var(--fv-paper);
+  --sidebar-border: color-mix(in srgb, var(--fv-fog) 14%, transparent);
+  --sidebar-ring: var(--fv-orange);
+
+  /* A vault is precision. Tight radius — not pill-soft, not zero. */
+  --radius: 0.25rem;
+}
+
+/* --------------------------------------------------------------------------
+   Navy surfaces. Anything inside [data-surface="ink"] — hero, footer, admin
+   chrome — gets the inverted semantic layer, so shadcn primitives dropped onto
+   navy restyle themselves instead of needing per-component overrides.
+   -------------------------------------------------------------------------- */
+[data-surface="ink"] {
+  --background: var(--fv-ink);
+  --foreground: var(--fv-paper);
+  --card: var(--fv-ink-soft);
+  --card-foreground: var(--fv-paper);
+  --popover: var(--fv-ink-soft);
+  --popover-foreground: var(--fv-paper);
+  --secondary: var(--fv-ink-soft);
+  --secondary-foreground: var(--fv-paper);
+  --muted: var(--fv-ink-soft);
+  --muted-foreground: #a8b4c6;
+  --accent: var(--fv-ink-soft);
+  --accent-foreground: var(--fv-paper);
+  --border: color-mix(in srgb, var(--fv-fog) 16%, transparent);
+  --input: color-mix(in srgb, var(--fv-fog) 24%, transparent);
+  --fv-focus-halo: var(--fv-paper);
+
+  background-color: var(--fv-ink);
+  color: var(--fv-paper);
+}
+
+@theme inline {
+  /* --- brand colors as Tailwind utilities: bg-ink, text-steel, … ---------- */
+  --color-ink: var(--fv-ink);
+  --color-ink-soft: var(--fv-ink-soft);
+  --color-blue: var(--fv-blue);
+  --color-steel: var(--fv-steel);
+  --color-line: var(--fv-line);
+  --color-fog: var(--fv-fog);
+  --color-paper: var(--fv-paper);
+  --color-orange: var(--fv-orange);
+  --color-orange-ink: var(--fv-orange-ink);
+  --color-brand-green: var(--fv-green);
+  --color-dim: var(--fv-dim);
+
+  /* --- shadcn semantic colors -------------------------------------------- */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  /* --- type roles --------------------------------------------------------- */
+  /* The raw next/font variables are namespaced --fv-font-* so they cannot
+     collide with these theme keys. `--font-body: var(--font-body)` would be
+     self-referential and silently drop the font. */
+  --font-sans: var(--fv-font-body), ui-sans-serif, system-ui, sans-serif;
+  --font-body: var(--fv-font-body), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--fv-font-display), ui-sans-serif, system-ui, sans-serif;
+  --font-heading: var(--fv-font-display), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+
+  /* --- the scale: 12 · 14 · 16 · 20 · 28 · 40 · 64 -----------------------
+     Off-scale steps are snapped onto their nearest neighbour rather than left
+     at Tailwind's defaults, so `text-3xl` cannot quietly introduce a size the
+     design system never authorised. Nothing outside these seven values ships. */
+  --text-xs: 0.75rem; /* 12 */
+  --text-xs--line-height: 1rem; /* 16 */
+  --text-sm: 0.875rem; /* 14 */
+  --text-sm--line-height: 1.375rem; /* 22 */
+  --text-base: 1rem; /* 16 */
+  --text-base--line-height: 1.625rem; /* 26 */
+  --text-lg: 1.25rem; /* 20 */
+  --text-lg--line-height: 1.75rem; /* 28 */
+  --text-xl: 1.25rem; /* 20 — snapped */
+  --text-xl--line-height: 1.75rem;
+  --text-2xl: 1.75rem; /* 28 */
+  --text-2xl--line-height: 2.125rem; /* 34 */
+  --text-3xl: 1.75rem; /* 28 — snapped */
+  --text-3xl--line-height: 2.125rem;
+  --text-4xl: 2.5rem; /* 40 */
+  --text-4xl--line-height: 2.75rem; /* 44 */
+  --text-5xl: 2.5rem; /* 40 — snapped */
+  --text-5xl--line-height: 2.75rem;
+  --text-6xl: 4rem; /* 64 */
+  --text-6xl--line-height: 3.75rem; /* 60 */
+  --text-7xl: 4rem; /* 64 — snapped */
+  --text-7xl--line-height: 3.75rem;
+
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html {
+    @apply font-body;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    /* No page ever scrolls sideways. Enforced here, not per-component. */
+    overflow-x: clip;
+  }
+
+  /* Display role. Archivo carries a `wdth` axis; expanded width plus tight
+     tracking is what gives headings their squared-off, stencilled stance. */
+  .font-display,
+  h1,
+  h2 {
+    font-variation-settings: "wdth" 112;
+  }
+
+  /* Composite focus indicator. The box-shadow paints a solid halo from the
+     border box outward; the outline paints on top of it at a 1px offset. The
+     result reads as an orange ring bounded by a contrasting hairline — the
+     brand colour stays visible without carrying the contrast burden alone. */
+  :focus-visible {
+    outline: 2px solid var(--fv-orange);
+    outline-offset: 1px;
+    box-shadow: 0 0 0 4px var(--fv-focus-halo);
+  }
+
+  /* Prices, sizes, SKUs and stock counts are tabular so columns of numbers
+     line up in the cart, the order table and the inventory grid. */
+  .font-mono,
+  code,
+  kbd,
+  samp {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@layer utilities {
+  /* The logo's tread, reduced to a repeating siping pattern. Used as a
+     watermark behind the hero, as the rule between homepage sections, and in
+     empty states. Inherits the surface — light-on-dark by default. */
+  .tread-texture {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 32 32'%3E%3Cg fill='%23ffffff'%3E%3Crect x='2' y='4' width='28' height='4' rx='2'/%3E%3Crect x='7' y='13' width='18' height='4' rx='2'/%3E%3Crect x='2' y='22' width='28' height='4' rx='2'/%3E%3C/g%3E%3C/svg%3E");
+    background-size: 32px 32px;
+    opacity: 0.04;
+  }
+
+  .tread-rule {
+    height: 6px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='6' viewBox='0 0 18 6'%3E%3Crect x='0' y='1' width='11' height='4' rx='2' fill='%230a1526'/%3E%3C/svg%3E");
+    background-size: 18px 6px;
+    background-repeat: repeat-x;
+    opacity: 0.22;
+  }
+
+  /* Every interactive element clears 44×44 for touch, per the quality floor. */
+  .tap-target {
+    min-block-size: 44px;
+    min-inline-size: 44px;
+  }
+}
+
+/* Non-negotiable: reduced motion disables all of it. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <rect width="64" height="64" rx="12" fill="#0A1526"/>
+  <g transform="translate(18 4) scale(0.4375)">
+    <mask id="m" maskUnits="userSpaceOnUse" x="0" y="0" width="64" height="128">
+      <path d="M32 4C46 4 57 14 57 30c0 14-5 26-10 36-4 8-5 14-4 22 2 12 1 24-7 31-3 3-5 3-8 0-8-7-9-19-7-31 1-8 0-14-4-22C12 56 7 44 7 30 7 14 18 4 32 4Z" fill="#fff"/>
+      <rect x="14" y="12" width="36" height="5" rx="2.5" fill="#000"/>
+      <rect x="13" y="22" width="38" height="5" rx="2.5" fill="#000"/>
+      <circle cx="32" cy="45" r="11" stroke="#000" stroke-width="5"/>
+      <circle cx="32" cy="45" r="4" fill="#000"/>
+      <rect x="21" y="63" width="22" height="5" rx="2.5" fill="#000"/>
+      <circle cx="32" cy="98" r="9" stroke="#000" stroke-width="5"/>
+      <circle cx="32" cy="98" r="3.5" fill="#000"/>
+    </mask>
+    <rect width="64" height="128" fill="#FE9301" mask="url(#m)"/>
+  </g>
+</svg>

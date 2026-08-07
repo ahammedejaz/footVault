@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Typecheck, lint, build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      # Placeholder values only. The build must not require live Supabase
+      # credentials — if it does, something is reaching the database at build
+      # time that should be reaching it at request time.
+      - name: Build
+        run: npm run build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: placeholder-anon-key
+          NEXT_PUBLIC_SITE_URL: https://footvault.example
+
+  # The service_role key must never reach the browser bundle. This fails the PR
+  # if it is referenced anywhere outside the server-only Supabase admin client.
+  secrets:
+    name: Guard the service_role key
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Assert SUPABASE_SERVICE_ROLE_KEY is server-only
+        run: |
+          matches=$(grep -rn "SUPABASE_SERVICE_ROLE_KEY" src 2>/dev/null \
+            | grep -v "^src/lib/supabase/admin.ts:" || true)
+          if [ -n "$matches" ]; then
+            echo "service_role key referenced outside src/lib/supabase/admin.ts:"
+            echo "$matches"
+            exit 1
+          fi
+
+      - name: Assert no NEXT_PUBLIC_ service key
+        run: |
+          if grep -rn "NEXT_PUBLIC_SUPABASE_SERVICE" . \
+            --exclude-dir=node_modules --exclude-dir=.git 2>/dev/null; then
+            echo "A service key must never carry the NEXT_PUBLIC_ prefix."
+            exit 1
+          fi
