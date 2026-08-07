@@ -2,13 +2,18 @@ import Link from "next/link";
 import { Heart, ShoppingBag } from "lucide-react";
 
 import { Logo } from "@/components/brand/logo";
+import { AccountMenu } from "@/components/storefront/account-menu";
+import { BagAnnouncer } from "@/components/storefront/bag-announcer";
 import { BagLink, SavedLink } from "@/components/storefront/header-links";
 import { MegaNav } from "@/components/storefront/mega-nav";
 import { MobileNav } from "@/components/storefront/mobile-nav";
 import { SearchButton } from "@/components/storefront/search-button";
 import type { NavItem } from "@/components/storefront/nav-types";
 import { deferIfPrerendering } from "@/lib/prerender";
-import { getCategoryTree, getPopularBrands } from "@/lib/queries/catalog";
+import { cachedCategoryTree, cachedPopularBrands } from "@/lib/queries/cached";
+import { getCurrentUser } from "@/lib/auth";
+import { getCartCount } from "@/lib/queries/cart";
+import { getWishlistCount } from "@/lib/queries/wishlist";
 import { primaryNav } from "@/lib/site-config";
 
 /**
@@ -21,7 +26,7 @@ import { primaryNav } from "@/lib/site-config";
  */
 async function getNav(): Promise<NavItem[]> {
   try {
-    const tree = await getCategoryTree();
+    const tree = await cachedCategoryTree();
     if (tree.length === 0) return [...primaryNav];
     return [
       ...tree.map((node) => ({
@@ -51,7 +56,7 @@ async function getNav(): Promise<NavItem[]> {
 /** Entry points offered inside the search overlay before anything is typed. */
 async function getPopularSearches(): Promise<Array<{ label: string; href: string }>> {
   try {
-    const brands = await getPopularBrands(5);
+    const brands = await cachedPopularBrands(5);
     return [
       { label: "New arrivals", href: "/collection/new-arrivals" },
       { label: "On sale", href: "/shop?on_sale=true" },
@@ -73,7 +78,13 @@ async function getPopularSearches(): Promise<Array<{ label: string; href: string
  * 390px without either wrapping or shrinking below the tap floor.
  */
 export async function SiteHeader() {
-  const [nav, popular] = await Promise.all([getNav(), getPopularSearches()]);
+  const [nav, popular, user, bagCount, savedCount] = await Promise.all([
+    getNav(),
+    getPopularSearches(),
+    getCurrentUser(),
+    getCartCount(),
+    getWishlistCount(),
+  ]);
 
   return (
     <header className="bg-background/95 border-border supports-[backdrop-filter]:bg-background/80 sticky top-0 z-50 border-b backdrop-blur">
@@ -81,7 +92,10 @@ export async function SiteHeader() {
           icons together leave no room for gap-2, and the lockup cannot shrink
           because the wordmark must not wrap. */}
       <div className="mx-auto flex h-16 max-w-7xl items-center gap-1 px-4 sm:gap-2 sm:px-6">
-        <MobileNav items={nav} />
+        <MobileNav
+          items={nav}
+          user={user ? { name: user.name, email: user.email } : null}
+        />
 
         <Link
           href="/"
@@ -94,12 +108,14 @@ export async function SiteHeader() {
         <MegaNav items={nav} />
 
         <SearchButton popular={popular} />
-        <SavedLink>
+        <AccountMenu user={user ? { name: user.name, email: user.email } : null} />
+        <SavedLink count={savedCount}>
           <Heart />
         </SavedLink>
-        <BagLink>
+        <BagLink count={bagCount}>
           <ShoppingBag />
         </BagLink>
+        <BagAnnouncer count={bagCount} />
       </div>
     </header>
   );

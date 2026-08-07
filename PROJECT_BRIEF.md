@@ -16,6 +16,36 @@ This is not a demo or a mockup. Every screen must work against real data, on a r
 
 ---
 
+## 0.1 Standing rules (added Phase 4 — these apply to every remaining phase)
+
+**1. Execution reports.** Every phase produces a report at
+`claudeExecutionReport/phase-<n>-<slug>.md`. Each report must contain: what was
+built feature by feature with file paths; every decision taken autonomously with
+a one-line rationale; every bug found and fixed — including bugs in earlier
+phases — with root cause rather than symptom; every measurement with its actual
+number; what was got wrong and caught during self-review; an honest list of
+known imperfections; what is deliberately deferred and to which phase; and
+anything blocked on the owner with the exact steps they need to take. Written
+for a reader who was not watching.
+
+**2. Documentation stays current.** No phase is complete until the docs match
+the code. Each phase updates, as applicable: `README.md`, `.env.example`,
+`docs/architecture.md`, `docs/database.md`, `docs/admin-guide.md`,
+`docs/rls-tests.md`, and inline comments where a decision is non-obvious. A
+stale doc is a bug; treat it as one.
+
+**3. Authority.** Full authority to fix any bug anywhere in the repo, refactor
+what is in the way, add migrations, change dependencies, and adjust tokens where
+measurement justifies it — including in code from earlier phases. What still
+comes to the owner: business policy (pricing, shipping, returns, sizing,
+currency, payment approach), destructive operations on data or git history, and
+scope beyond the current phase.
+
+**4. Skills.** Check which skills are available at the start of every phase and
+use every one that applies.
+
+---
+
 ## 1. The business
 
 - **Name:** Foot Vault
@@ -35,7 +65,7 @@ This is not a demo or a mockup. Every screen must work against real data, on a r
 | Database + Auth + Storage | Supabase, managed **through the Supabase MCP server** |
 | Forms + validation | React Hook Form + Zod (one schema shared by client and server) |
 | Data mutations | Next.js Server Actions, with Zod validation on the server side of every action |
-| State (cart/UI only) | Zustand, persisted to localStorage for guest carts |
+| State (cart/UI only) | Zustand, for client UI state only. **Superseded Phase 4:** guest carts are rows in `carts`, keyed by an httpOnly `guest_token` cookie — never localStorage, which cannot survive a device change and cannot be read by the server. |
 | Images | `next/image`, images served from Supabase Storage |
 | Deployment | Vercel |
 | Version control | GitHub |

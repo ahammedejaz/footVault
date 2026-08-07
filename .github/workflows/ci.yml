@@ -39,6 +39,26 @@ jobs:
           NEXT_PUBLIC_SUPABASE_ANON_KEY: placeholder-anon-key
           NEXT_PUBLIC_SITE_URL: https://footvault.example
 
+      # A "use server" module may only export async functions. Exporting a plain
+      # object from one type-checks, builds clean, and then throws the first
+      # time the action is invoked — which is in production, on a button press.
+      # Phase 4 shipped exactly that (a SIGN_IN_IDLE constant) and only found it
+      # by clicking. `export type` is erased at build time and is fine.
+      - name: Assert "use server" files export only async functions
+        run: |
+          offenders=""
+          for f in $(grep -rl '"use server"' src || true); do
+            hits=$(grep -nE '^export (const|let|var|class|enum|function[^ ]*[^c] )' "$f"               | grep -vE '^\s*[0-9]+:export (async function|type|interface)' || true)
+            if [ -n "$hits" ]; then
+              offenders="$offenders$f\n$hits\n"
+            fi
+          done
+          if [ -n "$offenders" ]; then
+            echo 'A "use server" file may only export async functions:'
+            printf "$offenders"
+            exit 1
+          fi
+
   # The service_role key must never reach the browser bundle. This fails the PR
   # if it is referenced anywhere outside the server-only Supabase admin client.
   secrets:

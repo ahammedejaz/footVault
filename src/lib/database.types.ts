@@ -160,6 +160,7 @@ export type Database = {
           created_at: string
           id: string
           quantity: number
+          unit_price_seen: number | null
           updated_at: string
           variant_id: string
         }
@@ -168,6 +169,7 @@ export type Database = {
           created_at?: string
           id?: string
           quantity?: number
+          unit_price_seen?: number | null
           updated_at?: string
           variant_id: string
         }
@@ -176,6 +178,7 @@ export type Database = {
           created_at?: string
           id?: string
           quantity?: number
+          unit_price_seen?: number | null
           updated_at?: string
           variant_id?: string
         }

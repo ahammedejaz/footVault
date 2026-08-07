@@ -71,6 +71,21 @@ async function openOverlays(page: Page, path: string) {
   if (path.startsWith("/product/")) {
     await page.getByRole("button", { name: /size guide/i }).click().catch(() => {});
     await page.waitForTimeout(200);
+    return;
+  }
+
+  // The bag drawer and the sign-in prompt are new in Phase 4 and are the two
+  // surfaces most likely to be reached mid-purchase, so neither may go
+  // unscanned. Both are opened from the header, which is on every route, so
+  // /wishlist stands in for "anywhere".
+  if (path === "/wishlist") {
+    await page.locator('a[href="/cart"]').first().click().catch(() => {});
+    await page.waitForTimeout(600);
+    await page.keyboard.press("Escape").catch(() => {});
+    await page.waitForTimeout(200);
+    // The account button is above `sm`; below it, sign-in lives in the drawer.
+    await page.getByRole("button", { name: "Sign in" }).first().click().catch(() => {});
+    await page.waitForTimeout(400);
   }
 }
 

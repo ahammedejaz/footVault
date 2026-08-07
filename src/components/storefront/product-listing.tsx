@@ -10,6 +10,7 @@ import {
   SortLinks,
 } from "@/components/storefront/filter-panel";
 import { ProductGrid } from "@/components/storefront/product-card";
+import { getSavedProductIds } from "@/lib/queries/wishlist";
 import { ScrollRestore } from "@/components/storefront/scroll-restore";
 import { listProducts, type ProductFilters } from "@/lib/queries/catalog";
 import {
@@ -44,7 +45,12 @@ export async function ProductListing({
   escape?: { href: string; label: string };
 }) {
   const filters = parseFilters(params, overrides);
-  const { products, total, page, pageCount, facets } = await listProducts(filters);
+  // Read alongside the catalog, never into it: which products this customer has
+  // saved is per-customer, and listProducts() is shared.
+  const [{ products, total, page, pageCount, facets }, savedIds] = await Promise.all([
+    listProducts(filters),
+    getSavedProductIds(),
+  ]);
 
   const chips = activeFilterChips(params, pathname, facets, formatPaise);
   const cleared = clearedHref(params, pathname);
@@ -119,7 +125,7 @@ export async function ProductListing({
             />
           ) : (
             <>
-              <ProductGrid products={products} />
+              <ProductGrid products={products} savedIds={savedIds} />
               <Pagination
                 params={params}
                 pathname={pathname}

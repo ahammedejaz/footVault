@@ -21,6 +21,7 @@ export const AUDIT_ROUTES = [
   { path: "/search", name: "search-landing" },
   { path: "/page/about", name: "page" },
   { path: "/cart", name: "cart" },
+  { path: "/wishlist", name: "wishlist" },
   { path: "/this-route-does-not-exist", name: "not-found" },
 ] as const;
 

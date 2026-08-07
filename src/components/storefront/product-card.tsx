@@ -2,6 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 
 import { Price } from "@/components/storefront/price";
+import { SaveForLater } from "@/components/storefront/save-for-later";
 import { SizeRun } from "@/components/storefront/size-run";
 import type { ProductSummary } from "@/lib/catalog-types";
 import { cn } from "@/lib/utils";
@@ -28,9 +29,17 @@ export function ProductCard({
   priority = false,
   headingLevel = 3,
   sizes = "(max-width: 640px) 46vw, (max-width: 1280px) 31vw, 288px",
+  saved = false,
   className,
 }: {
   product: ProductSummary;
+  /**
+   * Whether this customer has saved it. A prop rather than something the card
+   * fetches: the product itself comes from a cross-request cache, and a
+   * per-customer fact folded into that would show one person's saved items to
+   * the next.
+   */
+  saved?: boolean;
   /** Set on the first row so the LCP image is not lazy. */
   priority?: boolean;
   /** Cards sit under a section heading on the home page and under the page
@@ -45,6 +54,18 @@ export function ProductCard({
   return (
     <article className={cn("product-card group relative", className)}>
       <div className="card-media bg-fog relative aspect-4/5 overflow-hidden rounded-lg">
+        {/*
+          Above the stretched link, not inside it. The whole card is one anchor;
+          a button nested in an anchor is invalid and, worse, un-pressable —
+          the link swallows the tap. `z-10` and its own stacking put the heart
+          in front of the `after:absolute inset-0` that does the stretching.
+        */}
+        <SaveForLater
+          productId={product.id}
+          productName={product.name}
+          saved={saved}
+          variant="icon"
+        />
         {product.heroImage ? (
           <Image
             src={product.heroImage.url}
@@ -113,9 +134,12 @@ export function ProductCard({
 export function ProductGrid({
   products,
   headingLevel = 3,
+  savedIds,
   className,
 }: {
   products: ProductSummary[];
+  /** Which of these this customer has saved. Empty when signed out. */
+  savedIds?: Set<string>;
   headingLevel?: 2 | 3;
   className?: string;
 }) {
@@ -142,6 +166,7 @@ export function ProductGrid({
             product={product}
             priority={index < 4}
             headingLevel={headingLevel}
+            saved={savedIds?.has(product.id) ?? false}
           />
         </li>
       ))}

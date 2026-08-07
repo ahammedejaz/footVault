@@ -2,9 +2,11 @@
 
 import { useEffect } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 
 import { TreadMark } from "@/components/brand/logo";
 import { Button } from "@/components/ui/button";
+import { reportBoundaryError, type BoundaryError } from "@/lib/report-error";
 
 /**
  * An error inside the storefront.
@@ -21,16 +23,13 @@ export default function StorefrontError({
   error,
   reset,
 }: {
-  error: Error & { digest?: string };
+  error: BoundaryError;
   reset: () => void;
 }) {
+  const pathname = usePathname();
   useEffect(() => {
-    console.error("[storefront] unhandled error", {
-      message: error.message,
-      digest: error.digest,
-      stack: error.stack,
-    });
-  }, [error]);
+    reportBoundaryError("storefront", error, pathname);
+  }, [error, pathname]);
 
   return (
     <div className="mx-auto flex max-w-xl flex-col items-center px-4 py-24 text-center sm:px-6">

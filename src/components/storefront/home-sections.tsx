@@ -1,12 +1,20 @@
-import Image, { getImageProps } from "next/image";
+import Image from "next/image";
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
+
+import { imageSourceProps, type SharedImageProps } from "@/lib/image-layout";
 
 import { ProductCard } from "@/components/storefront/product-card";
 import { Rail } from "@/components/storefront/rail";
 import { Button } from "@/components/ui/button";
-import { getCategoryTiles, getCollection, listProducts } from "@/lib/queries/catalog";
-import { getBanner, type HomepageSection } from "@/lib/queries/content";
+import {
+  cachedBanner,
+  cachedCategoryTiles,
+  cachedCollection,
+  cachedCollectionProducts,
+} from "@/lib/queries/cached";
+import { getSavedProductIds } from "@/lib/queries/wishlist";
+import type { HomepageSection } from "@/lib/queries/content";
 
 /**
  * The homepage is whatever `homepage_sections` says it is, in that order.
@@ -49,7 +57,7 @@ function payloadStringArray(payload: Record<string, unknown>, key: string): stri
  * budget spent twice. `<source media>` lets it choose before it fetches.
  */
 async function Hero({ section }: { section: HomepageSection }) {
-  const banner = await getBanner("home_hero");
+  const banner = await cachedBanner("home_hero");
 
   const title = section.title ?? banner?.headline ?? "Every step counts";
   const subtitle = section.subtitle ?? banner?.subtext;
@@ -63,9 +71,13 @@ async function Hero({ section }: { section: HomepageSection }) {
   const desktop = banner?.imageUrl ?? null;
   const mobile = banner?.mobileImageUrl ?? desktop;
 
-  const common = {
+  // What both crops genuinely agree on — and nothing else. `SharedImageProps`
+  // forbids a layout key here: the two crops have deliberately different boxes,
+  // which is the whole point of art-directing them, so a layout is not
+  // something they can share. Writing `fill` into this object is now the
+  // compile error rather than the 500.
+  const common: SharedImageProps = {
     alt: "",
-    fill: true,
     priority: true,
     // The hero occupies the full width at every breakpoint. Stating that lets
     // the browser pick a candidate from the srcset before layout, which is the
@@ -73,13 +85,17 @@ async function Hero({ section }: { section: HomepageSection }) {
     // the stylesheet has landed.
     sizes: "100vw",
     quality: 82,
-  } as const;
+  };
 
+  // Sized rather than filled: these render as a bare <img> that the parent
+  // positions with CSS (`absolute inset-0 size-full object-cover`), so the box
+  // is already owned. What next/image still needs from us is each crop's
+  // intrinsic size, because that is what the srcset candidates are built from.
   const desktopProps = desktop
-    ? getImageProps({ ...common, src: desktop, width: 1920, height: 1000 }).props
+    ? imageSourceProps(common, desktop, { width: 1920, height: 1000 })
     : null;
   const mobileProps = mobile
-    ? getImageProps({ ...common, src: mobile, width: 900, height: 720 }).props
+    ? imageSourceProps(common, mobile, { width: 900, height: 720 })
     : null;
 
   return (
@@ -160,7 +176,7 @@ async function Hero({ section }: { section: HomepageSection }) {
 async function CategoryGrid({ section }: { section: HomepageSection }) {
   const slugs = payloadStringArray(section.payload, "category_slugs");
   if (slugs.length === 0) return null;
-  const tiles = await getCategoryTiles(slugs);
+  const tiles = await cachedCategoryTiles(slugs);
   if (tiles.length === 0) return null;
 
   return (
@@ -213,9 +229,11 @@ async function ProductRail({ section }: { section: HomepageSection }) {
   const slug = payloadString(section.payload, "collection_slug");
   if (!slug) return null;
 
-  const [collection, page] = await Promise.all([
-    getCollection(slug),
-    listProducts({ collectionSlug: slug, perPage: 8 }),
+  const [collection, page, savedIds] = await Promise.all([
+    cachedCollection(slug),
+    cachedCollectionProducts(slug, 8),
+    // Outside the cached pair on purpose — this one is per-customer.
+    getSavedProductIds(),
   ]);
   if (!collection || page.products.length === 0) return null;
 
@@ -236,6 +254,7 @@ async function ProductRail({ section }: { section: HomepageSection }) {
           >
             <ProductCard
               product={product}
+              saved={savedIds.has(product.id)}
               sizes="(max-width: 640px) 62vw, (max-width: 1024px) 38vw, 288px"
             />
           </li>
