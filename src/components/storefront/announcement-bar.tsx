@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { AnnouncementDismiss } from "@/components/storefront/announcement-dismiss";
+import { prerenderOrDefer } from "@/lib/prerender";
 import {
   getSiteSettings,
   setting,
@@ -37,7 +38,7 @@ function keyFor(text: string): string {
 }
 
 export async function AnnouncementBar() {
-  const settings = await getSiteSettings();
+  const settings = await prerenderOrDefer("announcement", getSiteSettings);
   const announcement = setting<AnnouncementSettings>(settings, "announcement", {
     text: "Free returns within 7 days",
     href: "/page/returns",

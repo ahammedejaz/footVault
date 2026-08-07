@@ -1,5 +1,6 @@
 import { ImageResponse } from "next/og";
 
+import { prerenderOrDefer } from "@/lib/prerender";
 import { getSiteSettings, setting } from "@/lib/queries/content";
 
 /**
@@ -17,7 +18,7 @@ export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
 export default async function OpengraphImage() {
-  const settings = await getSiteSettings();
+  const settings = await prerenderOrDefer("og image", getSiteSettings);
   const name = setting<string>(settings, "store_name", "Foot Vault");
   const tagline = setting<string>(settings, "store_tagline", "Every step counts");
 

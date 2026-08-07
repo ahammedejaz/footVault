@@ -5,6 +5,7 @@ import {
   InstagramIcon,
   WhatsAppIcon,
 } from "@/components/brand/social-icons";
+import { prerenderOrDefer } from "@/lib/prerender";
 import { getCategoryTree } from "@/lib/queries/catalog";
 import {
   getSiteSettings,
@@ -36,11 +37,9 @@ function iconFor(name: string) {
 }
 
 export async function SiteFooter() {
-  const [settings, pages, tree] = await Promise.all([
-    getSiteSettings(),
-    listPages(),
-    getCategoryTree(),
-  ]);
+  const [settings, pages, tree] = await prerenderOrDefer("footer", () =>
+    Promise.all([getSiteSettings(), listPages(), getCategoryTree()]),
+  );
 
   const contact = setting<ContactSettings>(settings, "contact", {
     email: "",

@@ -199,41 +199,53 @@ from real data.
 
 ## What I got wrong and caught
 
-1. **The gallery downloaded every image twice.** A touch carousel and a desktop
+1. **Making pages static broke the credential-less CI build.** `/` and the two
+   Open Graph routes are now rendered during `next build` — and CI builds with
+   placeholder Supabase credentials on purpose, so that a pull request can be
+   verified without live database access. The first CI run failed on
+   `getaddrinfo ENOTFOUND placeholder.supabase.co`. `src/lib/prerender.ts` now
+   applies the rule `staticParamsOr` already established — at build time there
+   is no customer waiting, so a route that cannot read its data defers to
+   on-demand rendering via `connection()` rather than being baked with whatever
+   fallback was lying around. Outside a production build it rethrows, so a
+   customer still gets `error.tsx` rather than a page pretending the shop is
+   empty.
+
+2. **The gallery downloaded every image twice.** A touch carousel and a desktop
    pane side by side, one hidden with `lg:hidden` — and `display: none` stops an
    element painting, not its image loading. The waterfall showed the LCP image
    requested at High priority and again at Low. One DOM tree now.
 
-2. **My own accessibility audit had a blind spot.** It opened the size guide
+3. **My own accessibility audit had a blind spot.** It opened the size guide
    *before* scanning, and a Radix modal marks everything outside itself
    `aria-hidden` — so it was checking the dialog and nothing else. It reported
    clean while Lighthouse was reporting a broken `<dl>` on the same page. Now it
    scans the page first, then the overlays, and the `<dl>` is fixed (an
    icon-plus-text layout produces `div > div > dt`, which is invalid).
 
-3. **The audits were measuring skeletons.** A dynamic route streams its
+4. **The audits were measuring skeletons.** A dynamic route streams its
    `loading.tsx` fallback first; at the `load` event the real content is in the
    DOM but still inside a hidden container. The first run reported "no
    level-one heading" on every listing page. Everything now waits for a visible
    `h1`.
 
-4. **The desktop hero ran off the frame.** Scaled 1.5× from 44% of the width, it
+5. **The desktop hero ran off the frame.** Scaled 1.5× from 44% of the width, it
    overran the right edge by 65px and read as an abstract blue shape. And the
    *mobile* hero put the shoe directly behind the headline — no scrim fixes
    that, so below `md` the image is now a band above the copy rather than a
    backdrop behind it.
 
-5. **`role="group"` on the gallery scroller orphaned its list items.** Added to
+6. **`role="group"` on the gallery scroller orphaned its list items.** Added to
    fix "scrollable region must have keyboard access"; it overrode the list role
    and every `<li>` became a violation. `tabIndex` and a label were the fix.
 
-6. **The colour-family buckets were wrong twice.** HSL saturation is unstable at
+7. **The colour-family buckets were wrong twice.** HSL saturation is unstable at
    the extremes — "Cloud White" (94% light, 3% chroma) reported s = 0.27 and
    came out Beige; "White / Green" came out Yellow. Chroma is the honest test,
    and the cut had to move from 0.10 to 0.075 before Bone and Sea Salt stopped
    being Grey.
 
-7. **Overwriting `--fv-muted` was not a preference.** I went looking for why
+8. **Overwriting `--fv-muted` was not a preference.** I went looking for why
    Lighthouse scored accessibility at 96 and found the token the design system
    specified for struck-through sizes measured 2.54:1.
 

@@ -7,6 +7,7 @@ import { MegaNav } from "@/components/storefront/mega-nav";
 import { MobileNav } from "@/components/storefront/mobile-nav";
 import { SearchButton } from "@/components/storefront/search-button";
 import type { NavItem } from "@/components/storefront/nav-types";
+import { deferIfPrerendering } from "@/lib/prerender";
 import { getCategoryTree, getPopularBrands } from "@/lib/queries/catalog";
 import { primaryNav } from "@/lib/site-config";
 
@@ -36,6 +37,9 @@ async function getNav(): Promise<NavItem[]> {
       { label: "Sale", href: "/shop?on_sale=true" },
     ];
   } catch (error) {
+    // At build time, render this route on demand rather than baking a
+    // navigation that would never recover.
+    await deferIfPrerendering("header nav", error);
     console.error(
       "[header] category tree unavailable, falling back to the static nav",
       error,
@@ -57,6 +61,7 @@ async function getPopularSearches(): Promise<Array<{ label: string; href: string
       })),
     ];
   } catch (error) {
+    await deferIfPrerendering("header popular searches", error);
     console.error("[header] popular searches unavailable", error);
     return [{ label: "All footwear", href: "/shop" }];
   }

@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { HomeSection } from "@/components/storefront/home-sections";
 import { Button } from "@/components/ui/button";
+import { prerenderOrDefer } from "@/lib/prerender";
 import { getHomepageSections } from "@/lib/queries/content";
 
 /**
@@ -19,7 +20,7 @@ import { getHomepageSections } from "@/lib/queries/content";
 export const revalidate = 3600;
 
 export default async function HomePage() {
-  const sections = await getHomepageSections();
+  const sections = await prerenderOrDefer("homepage", getHomepageSections);
 
   if (sections.length === 0) {
     return (

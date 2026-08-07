@@ -1,5 +1,6 @@
 import { ImageResponse } from "next/og";
 
+import { prerenderOrDefer } from "@/lib/prerender";
 import { getProduct } from "@/lib/queries/catalog";
 import { formatPaise } from "@/lib/format";
 
@@ -26,7 +27,7 @@ export default async function ProductOpengraphImage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const product = await getProduct(slug);
+  const product = await prerenderOrDefer(`og image(${slug})`, () => getProduct(slug));
 
   const brand = product?.brandName ?? "Foot Vault";
   const name = product?.name ?? "No longer stocked";
