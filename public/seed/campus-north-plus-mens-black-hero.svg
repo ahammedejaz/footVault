@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 1000" width="800" height="1000" role="img">
+  <defs>
+    <radialGradient id="bg" cx="0.5" cy="0.42" r="0.78">
+      <stop offset="0" stop-color="#fdfdfe"/>
+      <stop offset="1" stop-color="#e9edf3"/>
+    </radialGradient>
+    <radialGradient id="contact" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#0a1526" stop-opacity="0.20"/>
+      <stop offset="1" stop-color="#0a1526" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="800" height="1000" fill="url(#bg)"/>
+  <ellipse cx="400" cy="712" rx="322" ry="36" fill="url(#contact)"/>
+  <g transform="translate(12.4 380.0) scale(1.02)">
+    <defs><clipPath id="sole-campusnorthplusmens"><path d="M10 236 L754 234 C762 274 742 300 700 302 L66 302 C22 300 2 274 10 236 Z"/></clipPath></defs>
+    <path d="M10 236 L754 234 C762 274 742 300 700 302 L66 302 C22 300 2 274 10 236 Z" fill="#5e5e5e"/>
+    <rect x="-40" y="272" width="840" height="80" fill="#393939" clip-path="url(#sole-campusnorthplusmens)"/>
+    <path d="M10 236 L754 234 C762 274 742 300 700 302 L66 302 C22 300 2 274 10 236 Z" fill="none" stroke="rgba(255,255,255,0.34)" stroke-width="2"/>
+    
+    <path d="M14 236 C12 198 44 168 102 152 C178 130 256 118 320 104 C372 92 404 70 442 52 C468 40 494 44 508 62 C526 86 552 98 584 96 C620 94 650 76 672 52 C692 30 720 34 734 64 C748 94 754 168 752 236 Z" fill="#191919" stroke="rgba(255,255,255,0.34)" stroke-width="2" stroke-linejoin="round"/>
+    <path d="M366 96 L400 66 M398 106 L432 76 M430 116 L464 86 M462 122 L494 96 M118 152 C150 192 160 214 158 236" fill="none" stroke="rgba(255,255,255,0.34)" stroke-width="4" stroke-linecap="round"/>
+  </g>
+  <g font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="19" letter-spacing="1.8" fill="#596475">
+    <text x="48" y="70">CAMPUS</text>
+    <text x="752" y="70" text-anchor="end">3/4</text>
+    <text x="48" y="956">BLACK</text>
+  </g>
+  <line x1="48" y1="90" x2="752" y2="90" stroke="#d5dce5" stroke-width="1"/>
+  <line x1="48" y1="928" x2="752" y2="928" stroke="#d5dce5" stroke-width="1"/>
+</svg>

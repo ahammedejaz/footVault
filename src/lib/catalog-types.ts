@@ -21,7 +21,18 @@ export type SizeAvailability = {
   stock: number;
 };
 
-export type ProductColor = { name: string; hex: string | null };
+export type ProductColor = {
+  name: string;
+  hex: string | null;
+  /** The bucket the colour filter uses: Black, Blue, Brown … See color_family(). */
+  family: string | null;
+  /** Sizes available in this colourway, so a swatch can narrow the run. */
+  sizes: SizeAvailability[];
+  /** This colourway's own photography, when it has any. */
+  images: ProductImage[];
+};
+
+export type ProductImage = { url: string; alt: string; color: string | null };
 
 export type ProductSummary = {
   id: string;
@@ -35,9 +46,9 @@ export type ProductSummary = {
   basePrice: number;
   salePrice: number | null;
   /** Three-quarter view. Every product has one; the seed guarantees it. */
-  heroImage: { url: string; alt: string } | null;
+  heroImage: ProductImage | null;
   /** The outsole. The card crossfades to it on hover. */
-  soleImage: { url: string; alt: string } | null;
+  soleImage: ProductImage | null;
   sizes: SizeAvailability[];
   colors: ProductColor[];
   inStock: boolean;
@@ -48,7 +59,7 @@ export type ProductDetail = ProductSummary & {
   material: string | null;
   metaTitle: string | null;
   metaDescription: string | null;
-  images: Array<{ url: string; alt: string }>;
+  images: ProductImage[];
   variants: Array<{
     id: string;
     size: string;
@@ -57,4 +68,41 @@ export type ProductDetail = ProductSummary & {
     sku: string;
     stock: number;
   }>;
+};
+
+/** One filter option and the number of products behind it. */
+export type Facet = { value: string; label: string; count: number };
+
+export type CatalogFacets = {
+  sizes: Facet[];
+  colors: Facet[];
+  brands: Facet[];
+  genders: Facet[];
+  inStock: number;
+  onSale: number;
+  price: { min: number; max: number } | null;
+};
+
+/**
+ * The swatch a colour family is drawn with.
+ *
+ * Deliberately fixed rather than borrowed from the first matching variant: a
+ * "Black" chip that renders as #131313 on one listing and #17181c on the next
+ * reads as a rendering bug, and a "White" chip drawn from a variant hex would
+ * be invisible on paper without a border of its own.
+ */
+export const COLOR_FAMILY_SWATCH: Record<string, string> = {
+  Black: "#111418",
+  Grey: "#8b929c",
+  White: "#f4f6f8",
+  Beige: "#d9c9b0",
+  Brown: "#6b4a30",
+  Red: "#b32d28",
+  Orange: "#e07b1f",
+  Yellow: "#e0b91f",
+  Green: "#2f6b45",
+  Teal: "#1f7d84",
+  Blue: "#2a4a80",
+  Purple: "#6a4b96",
+  Pink: "#d1749a",
 };

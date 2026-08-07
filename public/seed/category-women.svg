@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 900" width="1200" height="900" role="img">
+  <defs>
+    <pattern id="tread" width="64" height="64" patternUnits="userSpaceOnUse">
+      <g fill="#ffffff" opacity="0.06">
+        <rect x="4" y="8" width="56" height="8" rx="4"/>
+        <rect x="14" y="26" width="36" height="8" rx="4"/>
+        <rect x="4" y="44" width="56" height="8" rx="4"/>
+      </g>
+    </pattern>
+    <linearGradient id="band" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#12294c"/>
+      <stop offset="1" stop-color="#0a1526"/>
+    </linearGradient>
+    <radialGradient id="contact" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#000000" stop-opacity="0.4"/>
+      <stop offset="1" stop-color="#000000" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1200" height="900" fill="url(#band)"/>
+  <rect width="1200" height="900" fill="url(#tread)"/>
+  <ellipse cx="600" cy="666" rx="360" ry="34" fill="url(#contact)"/>
+  <g transform="translate(159.2 297.7) scale(1.16)">
+    <defs><clipPath id="cat-sole"><path d="M10 236 L754 234 C762 274 742 300 700 302 L66 302 C22 300 2 274 10 236 Z"/></clipPath></defs>
+    <path d="M10 236 L754 234 C762 274 742 300 700 302 L66 302 C22 300 2 274 10 236 Z" fill="#b5b0a8"/>
+    <rect x="-40" y="272" width="840" height="80" fill="#87837d" clip-path="url(#cat-sole)"/>
+    
+    <path d="M14 236 C12 198 44 168 102 152 C178 130 256 118 320 104 C372 92 404 70 442 52 C468 40 494 44 508 62 C526 86 552 98 584 96 C620 94 650 76 672 52 C692 30 720 34 734 64 C748 94 754 168 752 236 Z" fill="#e8e2d8" stroke="rgba(10,21,38,0.20)" stroke-width="2" stroke-linejoin="round"/>
+    <path d="M366 96 L400 66 M398 106 L432 76 M430 116 L464 86 M462 122 L494 96 M118 152 C150 192 160 214 158 236" fill="none" stroke="rgba(10,21,38,0.20)" stroke-width="4" stroke-linecap="round"/>
+  </g>
+</svg>

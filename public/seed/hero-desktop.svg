@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1000" width="1920" height="1000" role="img">
+  <defs>
+    <pattern id="tread" width="64" height="64" patternUnits="userSpaceOnUse">
+      <g fill="#ffffff" opacity="0.05">
+        <rect x="4" y="8" width="56" height="8" rx="4"/>
+        <rect x="14" y="26" width="36" height="8" rx="4"/>
+        <rect x="4" y="44" width="56" height="8" rx="4"/>
+      </g>
+    </pattern>
+    <radialGradient id="glow" cx="0.7" cy="0.62" r="0.66">
+      <stop offset="0" stop-color="#16375f"/>
+      <stop offset="1" stop-color="#0a1526"/>
+    </radialGradient>
+    <radialGradient id="contact" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#000000" stop-opacity="0.5"/>
+      <stop offset="1" stop-color="#000000" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1920" height="1000" fill="url(#glow)"/>
+  <rect width="1920" height="1000" fill="url(#tread)"/>
+  <g transform="translate(115 240) scale(0.55) rotate(-14)">
+    <path d="M150 4 C232 4 296 58 296 138 C296 200 282 250 268 292 C252 340 238 372 232 410 C226 452 224 486 230 524 C240 580 244 626 240 668 C234 736 200 776 150 776 C100 776 66 736 60 668 C56 626 60 580 70 524 C76 486 74 452 68 410 C62 372 48 340 32 292 C18 250 4 200 4 138 C4 58 68 4 150 4 Z" fill="none" stroke="#fe9301" stroke-width="9" opacity="0.42"/>
+  </g>
+  <ellipse cx="1496" cy="736" rx="238" ry="22" fill="url(#contact)"/>
+  <g transform="translate(1222.8 502.6) scale(0.72)">
+    <defs><clipPath id="hero-sole"><path d="M6 220 L758 216 C772 268 746 302 692 306 L70 306 C16 302 -6 266 6 220 Z"/></clipPath></defs>
+    <path d="M6 220 L758 216 C772 268 746 302 692 306 L70 306 C16 302 -6 266 6 220 Z" fill="#6180aa"/>
+    <rect x="-40" y="272" width="840" height="90" fill="#fe9301" clip-path="url(#hero-sole)"/>
+    <path d="M6 220 L758 216 C772 268 746 302 692 306 L70 306 C16 302 -6 266 6 220 Z" fill="none" stroke="rgba(255,255,255,0.3)" stroke-width="2"/>
+    <path d="M18 226 C16 188 48 158 106 142 C182 120 260 108 324 94 C376 82 408 60 446 42 C472 30 500 34 514 52 C532 76 558 88 590 86 C626 84 656 66 678 42 C698 20 726 24 740 54 C754 84 760 158 754 226 Z" fill="#1d4a86" stroke="rgba(255,255,255,0.3)" stroke-width="2" stroke-linejoin="round"/>
+    <path d="M370 86 L404 56 M402 96 L436 66 M434 106 L468 76 M12 270 C120 286 640 284 754 266" fill="none" stroke="rgba(255,255,255,0.36)" stroke-width="4" stroke-linecap="round"/>
+  </g>
+</svg>

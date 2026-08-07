@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 900" width="1200" height="900" role="img">
+  <defs>
+    <pattern id="tread" width="64" height="64" patternUnits="userSpaceOnUse">
+      <g fill="#ffffff" opacity="0.06">
+        <rect x="4" y="8" width="56" height="8" rx="4"/>
+        <rect x="14" y="26" width="36" height="8" rx="4"/>
+        <rect x="4" y="44" width="56" height="8" rx="4"/>
+      </g>
+    </pattern>
+    <linearGradient id="band" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#12294c"/>
+      <stop offset="1" stop-color="#0a1526"/>
+    </linearGradient>
+    <radialGradient id="contact" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#000000" stop-opacity="0.4"/>
+      <stop offset="1" stop-color="#000000" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1200" height="900" fill="url(#band)"/>
+  <rect width="1200" height="900" fill="url(#tread)"/>
+  <ellipse cx="600" cy="666" rx="360" ry="34" fill="url(#contact)"/>
+  <g transform="translate(159.2 297.7) scale(1.16)">
+    <defs><clipPath id="cat-sole"><path d="M26 250 L724 246 L722 278 C716 285 704 288 688 288 L64 288 C34 286 18 268 26 250 Z M572 276 L688 272 C698 292 694 308 680 313 C674 315 666 316 656 316 L598 316 C586 316 578 306 578 294 Z"/></clipPath></defs>
+    <path d="M26 250 L724 246 L722 278 C716 285 704 288 688 288 L64 288 C34 286 18 268 26 250 Z M572 276 L688 272 C698 292 694 308 680 313 C674 315 666 316 656 316 L598 316 C586 316 578 306 578 294 Z" fill="#756a63"/>
+    <rect x="-40" y="272" width="840" height="80" fill="#56483f" clip-path="url(#cat-sole)"/>
+    
+    <path d="M32 250 C28 214 66 190 130 178 C214 160 296 146 358 130 C400 119 428 98 464 84 C500 70 542 62 588 62 C650 62 692 84 708 128 C722 166 726 212 722 250 Z" fill="#3a2a20" stroke="rgba(255,255,255,0.34)" stroke-width="2" stroke-linejoin="round"/>
+    <path d="M358 130 C408 142 478 148 566 146 M462 86 L494 136 M544 78 L512 136" fill="none" stroke="rgba(255,255,255,0.34)" stroke-width="4" stroke-linecap="round"/>
+  </g>
+</svg>

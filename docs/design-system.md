@@ -32,7 +32,7 @@ Tagline, from the logo: **Every step counts.**
 --fv-orange     #FE9301  /* logo orange, exact. CTA fills, active states */
 --fv-orange-ink #A85400  /* orange for TEXT on light surfaces */
 --fv-green      #1F7A55  /* admin status chips ONLY — never on the storefront */
---fv-muted      #98A1AE  /* struck-through sold-out sizes */
+--fv-dim        #646E7B  /* struck-through sold-out sizes, zero facet counts */
 ```
 
 **One accent.** Orange is the only decorative hue on the storefront. Everything
@@ -53,6 +53,8 @@ All ratios computed against the actual token values, not estimated.
 | `--fv-steel` on `--fv-fog` | 5.29:1 | secondary on cards |
 | `--fv-blue` on `--fv-paper` | 10.24:1 | mark on light |
 | `--fv-green` on `--fv-paper` | 5.15:1 | admin status |
+| `--fv-dim` on `--fv-paper` | 5.04:1 | sold-out sizes |
+| `--fv-dim` on `--fv-fog` | 4.57:1 | sold-out sizes on cards |
 
 ### Three constraints these measurements force
 
@@ -66,6 +68,12 @@ All ratios computed against the actual token values, not estimated.
    minimum.** Focus is a composite: **2px `--fv-orange` inner ring + 1px
    `--fv-ink` outer ring at 1px offset**. The navy carries the visibility
    (17.81:1); the orange carries the brand.
+4. **The original `--fv-muted #98A1AE` was `2.54:1` on paper — fails.** It was
+   specified for struck-through sold-out sizes, which is *text carrying
+   meaning*, not decoration: "which sizes can I buy" is the question the size
+   run exists to answer. Replaced with `--fv-dim #646E7B` at 5.04:1 on paper
+   and 4.57:1 on fog, still clearly secondary to `--fv-steel` at 5.83:1.
+   Found by the axe pass in Phase 3, not by eye.
 
 ### Surface strategy — navy-dominant
 
@@ -114,11 +122,26 @@ label rather than a row of buttons. Nothing outside this scale ships.
 **Rules:**
 
 - UK is primary. EU, US, and CM appear in the size-guide modal only.
-- Sold-out sizes are struck through in `--fv-muted`. **Never hidden.**
-- On the product page, sold-out sizes remain tappable and open "notify me".
-- Selected size: `--fv-orange` fill, `--fv-ink` label.
-- Chips are 48×48 on the product page (tap target ≥44px), 12px mono on cards.
-- Selecting a size updates the URL.
+- Sold-out sizes are struck through in `--fv-dim`. **Never hidden.**
+- On the product page the run is a `radiogroup`: one tab stop, arrow keys within
+  it, 48×48 chips. Sold-out sizes stay in the run and stay selectable, and their
+  accessible name says "sold out" — the strikethrough is invisible to a screen
+  reader, and dropping them from the tab order would hide exactly the
+  information the strip exists to show. Choosing one is a real answer: the line
+  underneath says so.
+- Selected size: `--fv-ink` fill, `--fv-paper` label. (The brief said orange
+  fill; orange is the *facet* state on the listing, and using it for both made
+  a selected size and an applied filter look like the same kind of thing.)
+- Chips are 12px mono on cards, read-only, `aria-hidden`, with one spoken
+  sentence beside them: "Available in UK 7, 8, 9, 11. Sold out in UK 6, 12."
+- Selecting a size updates the URL — with `replaceState`, not a push. A back
+  button that walks back through five sizes before leaving the page is a back
+  button nobody can use.
+
+**Not yet true:** the design system says a sold-out size opens "notify me".
+There is no notify-me until Phase 8, so selecting one currently surfaces the
+stock line and nothing else. The seam is the `onSelect` handler in
+`size-selector.tsx`.
 
 ## 5. Second move — the outsole
 
@@ -133,8 +156,28 @@ the divider between homepage sections, the empty-bag state, and the 404.
 
 - One orchestrated hero load sequence. No scattered effects.
 - Card hover: image crossfade + 1px orange underline draw-in.
-- Scroll reveals: subtle, once, never repeating.
+- Scroll reveals: subtle, once, never repeating — and they **rise without
+  fading**. An opacity-0 start means everything below the fold is invisible
+  until scrolled to, which an automated accessibility pass reads (correctly) as
+  text with no contrast against its background, and which a customer whose
+  browser stalls the animation reads as a blank page. Reveals are also kept off
+  product cards: a grid where each card animates in as it arrives is a grid you
+  cannot scan, and scanning is exactly what a size run on every card is for.
 - `prefers-reduced-motion: reduce` disables all of it. Non-negotiable.
+
+### Tap targets
+
+44×44 minimum, everywhere, measured programmatically rather than by eye
+(`npm run audit:overflow`). Two utilities carry it:
+
+- `.tap-target` — sets the minimum box. For anything that can afford to be 44px.
+- `.hit-44` — an invisible, centred `::before` that grows the *target* without
+  growing the *box*. The announcement strip is 33px tall on purpose and
+  breadcrumbs are 12px mono; making either 44px tall would push the whole page
+  down. Same technique as `size="sm"` on Button.
+
+WCAG 2.5.8 exempts a link inside a sentence, and the audit encodes that
+exemption rather than padding prose links until the paragraph falls apart.
 
 ## 7. Deviations from PROJECT_BRIEF.md §3
 
@@ -173,6 +216,13 @@ All asset paths resolve through `site_settings`, so the owner can swap them from
 
 ## 10. Settled product decisions
 
+- **Colour filtering:** by *family*, not by colourway name. The catalog holds 39
+  names — "Peacoat Navy", "Wolf Grey", "Fire Orchid", "Bone" — and the men's
+  listing alone offered 26 of them as filter options, which is a glossary rather
+  than a filter. `public.color_family()` buckets the hex the owner already
+  enters into twelve families, so "Blue (7)" is possible without anyone tagging
+  anything twice. Colourway names survive intact on the product page, where the
+  distinction is the point.
 - **Market:** India. `₹` INR, tax-inclusive, Indian digit grouping.
 - **Sizes:** UK primary, EU/US/CM in the size guide.
 - **Seed photography:** generated placeholders (hero + outsole per product),

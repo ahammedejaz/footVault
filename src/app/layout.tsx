@@ -19,6 +19,10 @@ export const metadata: Metadata = {
     title: `${siteConfig.name} — ${siteConfig.tagline}`,
     description: siteConfig.description,
   },
+  // The card image itself comes from the `opengraph-image` route segments, so
+  // it is generated from `site_settings` and the product rather than uploaded
+  // once and left to go stale.
+  twitter: { card: "summary_large_image" },
 };
 
 export const viewport: Viewport = {

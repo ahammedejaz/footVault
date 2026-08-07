@@ -40,6 +40,17 @@ Open http://localhost:3000. The design system renders at `/style-guide`.
 | `npm run seed` | Upsert the seed catalog into Supabase (needs `SUPABASE_SERVICE_ROLE_KEY`) |
 | `npm run seed:sql` | Write `supabase/seed.sql` instead, for `supabase db reset` |
 | `npm run seed:images` | Regenerate the drawn product assets in `public/seed/` |
+| `npm run audit` | The whole quality gate: overflow, axe, keyboard, interactions, links |
+| `npm run audit:overflow` | Six widths × every route — overflow, 44px tap targets, 16px inputs |
+| `npm run audit:a11y` | axe-core, WCAG 2.2 A/AA, at 390px and 1440px, overlays included |
+| `npm run audit:keyboard` | home → category → filter → product → size, by keyboard only |
+| `npm run audit:interactions` | The behaviour a screenshot cannot show |
+| `npm run audit:links` | Crawls every internal link; checks titles and JSON-LD |
+| `npm run audit:shots` | Full-page screenshots at all six widths |
+
+The audits drive a real browser against a running build, so they need
+`npm run build && npm start` first and a reachable database. They are not in CI
+for that reason — CI builds with placeholder credentials on purpose.
 
 The seed is idempotent — every write is an upsert on a natural key, so running
 it twice produces one catalog rather than two. `scripts/seed-data.ts` is the
@@ -50,6 +61,18 @@ CI runs typecheck, lint and build on every pull request, and fails the build if
 `src/lib/supabase/admin.ts`, or if a Client Component imports a `server-only`
 module. The build runs with placeholder Supabase credentials, so a pull request
 can be verified without live database access.
+
+Two project ESLint rules live in `eslint-rules/` and run as part of `npm run
+lint`:
+
+| Rule | Stops |
+|---|---|
+| `footvault/no-unchecked-supabase-error` | Reading a PostgREST result without looking at `error` — the shape that turns a failed query into an empty page. Also catches `.then()` on a builder and a raw builder inside `Promise.all`. |
+| `footvault/no-off-scale-type` | `text-[13px]` and friends. The type scale is seven steps; arbitrary values bypass the theme. |
+
+Every database read goes through `src/lib/queries/run.ts`, which throws on a
+PostgREST error rather than returning nothing. The lint rule is what keeps it
+the only path.
 
 ## Database
 
@@ -96,7 +119,17 @@ docs/
 |---|---|
 | [`docs/design-system.md`](docs/design-system.md) | Tokens, type scale, measured contrast, the signature element |
 | [`docs/rls-tests.md`](docs/rls-tests.md) | Row Level Security checklist, run against the live database, with results |
+| [`docs/phase-3-report.md`](docs/phase-3-report.md) | What Phase 3 changed, what it measured, and what it did not finish |
 | `PROJECT_BRIEF.md` | Full requirements and build phases |
+
+## A note on phase order
+
+Phase 3 was built before Phase 2. Nothing in the storefront needs a session —
+every read is public catalog data through the anon key — so the two do not
+block each other, but it does mean there is no sign-in on the site yet. The
+header has no account control for that reason, and the role-escalation checks in
+`docs/rls-tests.md` §6b are run at the database level rather than through a
+signup form that does not exist.
 
 ## Build status
 
@@ -104,8 +137,8 @@ docs/
 |---|---|---|
 | 0 | Foundation: tokens, fonts, restyled primitives, base layout, CI | Done |
 | 1 | Supabase schema, RLS, seed data | Done |
-| 2 | Auth and role-based middleware | Next |
-| 3 | Storefront catalog | Partly done — catalog, listing, filters, product page and CMS pages are live on real data; reviews and colourway galleries remain |
+| 2 | Auth and role-based middleware | **Not started** — see the note below |
+| 3 | Storefront catalog | Done — see [`docs/phase-3-report.md`](docs/phase-3-report.md) |
 | 4 | Cart and wishlist | |
 | 5 | Checkout and orders | |
 | 6 | Admin CRUD | |

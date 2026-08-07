@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 
 import { TreadMark } from "@/components/brand/logo";
 import { SizeRun } from "@/components/storefront/size-run";
+import { SizeSelectorDemo } from "@/components/storefront/size-selector-demo";
 import type { SizeAvailability } from "@/lib/catalog-types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -132,7 +133,7 @@ export default function StyleGuidePage() {
                 {formatRupees(8995)}
               </p>
               <div className="border-border mt-3 border-t pt-3">
-                <SizeRun sizes={SAMPLE_RUN} compact />
+                <SizeRun sizes={SAMPLE_RUN} />
               </div>
             </div>
           </div>
@@ -141,7 +142,7 @@ export default function StyleGuidePage() {
               On the product page — 48px chips
             </p>
             <div className="mt-3">
-              <SizeRun sizes={SAMPLE_RUN} />
+              <SizeSelectorDemo sizes={SAMPLE_RUN} />
             </div>
           </div>
         </div>

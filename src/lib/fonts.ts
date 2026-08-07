@@ -1,5 +1,4 @@
-import { Archivo, Instrument_Sans } from "next/font/google";
-import { GeistMono } from "geist/font/mono";
+import { Archivo, Geist_Mono, Instrument_Sans } from "next/font/google";
 
 /**
  * Three type roles, per docs/design-system.md §3.
@@ -33,7 +32,20 @@ export const fontBody = Instrument_Sans({
   display: "swap",
 });
 
-export const fontMono = GeistMono;
+/**
+ * Geist Mono through next/font rather than through the `geist` package.
+ *
+ * The package ships one variable file covering every unicode range it has —
+ * 71KB, preloaded, on every page. Google's copy subsets to latin, which is what
+ * this site sets in mono: sizes, SKUs, prices and stock counts. Same typeface,
+ * a fifth of the bytes, and the bytes it saves come straight off the critical
+ * path in front of the LCP image.
+ */
+export const fontMono = Geist_Mono({
+  variable: "--fv-font-mono",
+  subsets: ["latin"],
+  display: "swap",
+});
 
 export const fontVariables = [
   fontDisplay.variable,

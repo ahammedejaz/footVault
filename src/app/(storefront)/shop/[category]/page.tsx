@@ -1,17 +1,16 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { Breadcrumbs } from "@/components/storefront/breadcrumbs";
 import { ProductListing } from "@/components/storefront/product-listing";
 import { getCategory, getCategoryTree } from "@/lib/queries/catalog";
 import { staticParamsOr } from "@/lib/static-params";
 import type { RawSearchParams } from "@/lib/queries/search-params";
 
-export const revalidate = 600;
-
 /**
- * Pre-rendered at build time. There are fifteen categories and they change
- * rarely, so the listing is static until an admin edit revalidates it.
+ * Pre-rendered params, but a dynamic render: the filters live in the query
+ * string, and a page that reads the query string cannot be static. What
+ * generateStaticParams still buys is a warm route on the first request.
  */
 export async function generateStaticParams() {
   return staticParamsOr("categories", async () => {
@@ -31,10 +30,16 @@ export async function generateMetadata({
   const { category: slug } = await params;
   const category = await getCategory(slug);
   if (!category) return {};
+  const title = category.parent ? `${category.parent.name} · ${category.name}` : category.name;
   return {
-    title: category.name,
-    description: category.description ?? undefined,
+    title,
+    description:
+      category.description ??
+      `${title} at Foot Vault. Every size we hold, shown on every shoe.`,
+    // Canonical without the query string: a filtered listing is the same page
+    // with a narrower view, not a page of its own to be indexed.
     alternates: { canonical: `/shop/${category.slug}` },
+    openGraph: { title, description: category.description ?? undefined },
   };
 }
 
@@ -53,37 +58,29 @@ export default async function CategoryPage({
 
   return (
     <>
-      <nav
-        aria-label="Breadcrumb"
-        className="mx-auto max-w-7xl px-4 pt-8 sm:px-6"
-      >
-        <ol className="text-muted-foreground flex flex-wrap items-center gap-1.5 font-mono text-xs tracking-[0.06em]">
-          <li>
-            <Link href="/shop" className="hover:text-foreground">
-              Shop
-            </Link>
-          </li>
-          {parent ? (
-            <>
-              <li aria-hidden>/</li>
-              <li>
-                <Link href={`/shop/${parent.slug}`} className="hover:text-foreground">
-                  {parent.name}
-                </Link>
-              </li>
-            </>
-          ) : null}
-          <li aria-hidden>/</li>
-          <li className="text-foreground">{category.name}</li>
-        </ol>
-      </nav>
+      <div className="mx-auto max-w-7xl px-4 pt-6 sm:px-6">
+        <Breadcrumbs
+          crumbs={[
+            { label: "Home", href: "/" },
+            { label: "Shop", href: "/shop" },
+            ...(parent ? [{ label: parent.name, href: `/shop/${parent.slug}` }] : []),
+            { label: category.name },
+          ]}
+        />
+      </div>
 
       <ProductListing
         params={search}
         pathname={`/shop/${category.slug}`}
         overrides={{ categorySlug: category.slug }}
-        title={parent ? `${parent.name} · ${category.name}` : category.name}
+        eyebrow={parent?.name}
+        heading={category.name}
         description={category.description}
+        escape={
+          parent
+            ? { href: `/shop/${parent.slug}`, label: `Browse all of ${parent.name}` }
+            : { href: "/shop", label: "Browse all footwear" }
+        }
       />
     </>
   );

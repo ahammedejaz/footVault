@@ -671,6 +671,7 @@ export type Database = {
       product_images: {
         Row: {
           alt_text: string | null
+          color: string | null
           created_at: string
           id: string
           is_primary: boolean
@@ -681,6 +682,7 @@ export type Database = {
         }
         Insert: {
           alt_text?: string | null
+          color?: string | null
           created_at?: string
           id?: string
           is_primary?: boolean
@@ -691,6 +693,7 @@ export type Database = {
         }
         Update: {
           alt_text?: string | null
+          color?: string | null
           created_at?: string
           id?: string
           is_primary?: boolean
@@ -712,6 +715,7 @@ export type Database = {
       product_variants: {
         Row: {
           color: string
+          color_family: string | null
           color_hex: string | null
           created_at: string
           id: string
@@ -725,6 +729,7 @@ export type Database = {
         }
         Insert: {
           color: string
+          color_family?: string | null
           color_hex?: string | null
           created_at?: string
           id?: string
@@ -738,6 +743,7 @@ export type Database = {
         }
         Update: {
           color?: string
+          color_family?: string | null
           color_hex?: string | null
           created_at?: string
           id?: string
@@ -778,6 +784,7 @@ export type Database = {
           meta_title: string | null
           name: string
           sale_price: number | null
+          search_keywords: string[]
           slug: string
           updated_at: string
         }
@@ -798,6 +805,7 @@ export type Database = {
           meta_title?: string | null
           name: string
           sale_price?: number | null
+          search_keywords?: string[]
           slug: string
           updated_at?: string
         }
@@ -818,6 +826,7 @@ export type Database = {
           meta_title?: string | null
           name?: string
           sale_price?: number | null
+          search_keywords?: string[]
           slug?: string
           updated_at?: string
         }
@@ -994,7 +1003,36 @@ export type Database = {
     }
     Functions: {
       can_access_cart: { Args: { cart: string }; Returns: boolean }
+      catalog_query: {
+        Args: {
+          p_brands?: string[]
+          p_category_slug?: string
+          p_collection_slug?: string
+          p_colors?: string[]
+          p_gender?: Database["public"]["Enums"]["gender_group"]
+          p_in_stock?: boolean
+          p_limit?: number
+          p_max_price?: number
+          p_min_price?: number
+          p_offset?: number
+          p_on_sale?: boolean
+          p_search?: string
+          p_sizes?: string[]
+          p_sort?: string
+          p_type?: Database["public"]["Enums"]["footwear_type"]
+        }
+        Returns: Json
+      }
+      color_family: { Args: { hex: string }; Returns: string }
       current_guest_token: { Args: never; Returns: string }
+      discontinued_product_hint: {
+        Args: { p_slug: string }
+        Returns: {
+          category_name: string
+          category_slug: string
+          name: string
+        }[]
+      }
       is_admin: { Args: never; Returns: boolean }
       next_order_number: { Args: never; Returns: string }
       owns_order: { Args: { order_ref: string }; Returns: boolean }

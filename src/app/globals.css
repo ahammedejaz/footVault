@@ -20,7 +20,13 @@
   --fv-orange: #fe9301; /* logo orange, exact. CTA fills, active states */
   --fv-orange-ink: #a85400; /* orange for TEXT on light. 5.20:1 */
   --fv-green: #1f7a55; /* admin status chips ONLY */
-  --fv-dim: #98a1ae; /* struck-through sold-out sizes */
+  /* Struck-through sold-out sizes, and every "there is nothing here" count in
+     the filter panel. Was #98a1ae, which measured 2.54:1 on paper and 2.30:1
+     on fog — both well under the 4.5:1 floor for 12px text, and this is text
+     that carries meaning rather than decoration. #646e7b measures 5.04:1 on
+     paper and 4.57:1 on fog, and still reads as clearly secondary to
+     --fv-steel at 5.83:1. */
+  --fv-dim: #646e7b;
 
   /* Outer ring of the composite focus indicator. Orange alone is 2.18:1 on
      paper — below the 3:1 non-text floor — so a contrasting ring carries the
@@ -140,7 +146,7 @@
   --font-body: var(--fv-font-body), ui-sans-serif, system-ui, sans-serif;
   --font-display: var(--fv-font-display), ui-sans-serif, system-ui, sans-serif;
   --font-heading: var(--fv-font-display), ui-sans-serif, system-ui, sans-serif;
-  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+  --font-mono: var(--fv-font-mono), ui-monospace, monospace;
 
   /* --- the scale: 12 · 14 · 16 · 20 · 28 · 40 · 64 -----------------------
      Off-scale steps are snapped onto their nearest neighbour rather than left
@@ -181,6 +187,26 @@
 @layer base {
   * {
     @apply border-border;
+  }
+
+  /*
+    The announcement bar, once dismissed.
+
+    Set by a blocking inline script in announcement-bar.tsx before first paint,
+    so a returning visitor never sees the strip render and then vanish. Hiding
+    it in an effect instead would move the header and everything under it by
+    33px on every load — a layout shift on every page of the site, for the
+    people who have been here most.
+  */
+  [data-fv-announce="off"] [data-announcement] {
+    display: none;
+  }
+
+  /* Anchors and focus targets clear the sticky header rather than landing
+     underneath it. */
+  :target,
+  [id] {
+    scroll-margin-top: 5.5rem;
   }
 
   html {
@@ -246,6 +272,33 @@
     min-inline-size: 44px;
   }
 
+  /*
+    A 44px hit area on a control that must stay visually smaller.
+    
+    The announcement strip is 33px tall on purpose — making its link 44px would
+    make the strip 44px and push the header down by a third. Breadcrumbs are
+    12px mono for the same reason. Both are still things a thumb has to land on,
+    so the target grows without the box growing: an absolutely positioned
+    ::before centred on the element, painting nothing.
+
+    Same technique as `size="sm"` and `size="icon-sm"` on Button, kept here so
+    it can be applied to a plain anchor too.
+  */
+  .hit-44 {
+    position: relative;
+  }
+  .hit-44::before {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    translate: -50% -50%;
+    inline-size: 100%;
+    block-size: 100%;
+    min-inline-size: 44px;
+    min-block-size: 44px;
+  }
+
   /* --------------------------------------------------------------------------
      Motion.
      -------------------------------------------------------------------------- */
@@ -273,15 +326,36 @@
     }
   }
 
-  /* Scroll reveals, driven entirely by CSS scroll-linked animation — no
-     IntersectionObserver, no hydration cost, and nothing to go wrong on a slow
-     connection. The starting state lives inside @supports so that a browser
-     without `animation-timeline` never hides the content it cannot reveal. */
+  /*
+    Scroll reveals, driven entirely by CSS scroll-linked animation — no
+    IntersectionObserver, no hydration cost, nothing to go wrong on a slow
+    connection. The starting state lives inside @supports so a browser without
+    `animation-timeline` never hides content it cannot reveal.
+
+    It rises but never fades. An opacity-0 start means everything below the fold
+    is invisible until scrolled to, which an automated accessibility pass reads
+    — correctly — as text with no contrast against its background, and which a
+    customer on a browser that stalls the animation reads as a blank page. The
+    movement is the effect; the fade was only ever decoration on top of it.
+
+    Deliberately not applied to product cards. A grid where each card animates
+    as it arrives is a grid you cannot scan, and scanning is what a size run
+    printed on every card exists for.
+  */
   @supports (animation-timeline: view()) {
     .reveal {
-      animation: fv-rise linear both;
+      animation: fv-lift linear both;
       animation-timeline: view();
-      animation-range: entry 0% entry 42%;
+      animation-range: entry 0% entry 40%;
+    }
+  }
+
+  @keyframes fv-lift {
+    from {
+      transform: translate3d(0, 16px, 0);
+    }
+    to {
+      transform: none;
     }
   }
 
