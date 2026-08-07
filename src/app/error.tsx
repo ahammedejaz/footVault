@@ -6,9 +6,12 @@ import { TreadMark } from "@/components/brand/logo";
 import { Button } from "@/components/ui/button";
 
 /**
- * Errors say what broke and what to do, and never apologise. The digest is
- * shown because it is the one thing a customer can quote to support that
- * actually helps us find the failure in the logs.
+ * The last-resort error boundary.
+ *
+ * An error inside the storefront is caught by (storefront)/error.tsx, which
+ * keeps the header and footer. This one only runs when something above that
+ * failed — the layout itself — so there is no chrome to keep, and it renders
+ * its own `main` rather than leaving the document without a landmark.
  */
 export default function GlobalError({
   error,
@@ -26,7 +29,7 @@ export default function GlobalError({
   }, [error]);
 
   return (
-    <div className="mx-auto flex max-w-xl flex-col items-center px-4 py-24 text-center sm:px-6">
+    <main className="mx-auto flex max-w-xl flex-col items-center px-4 py-24 text-center sm:px-6">
       <TreadMark className="text-line h-24 w-12" />
       <p className="text-muted-foreground mt-8 font-mono text-xs tracking-[0.06em] uppercase">
         Something failed
@@ -46,6 +49,6 @@ export default function GlobalError({
       <div className="mt-8">
         <Button onClick={reset}>Try again</Button>
       </div>
-    </div>
+    </main>
   );
 }

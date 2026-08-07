@@ -2,9 +2,39 @@ import { defineConfig, globalIgnores } from "eslint/config";
 import nextVitals from "eslint-config-next/core-web-vitals";
 import nextTs from "eslint-config-next/typescript";
 
+import noUncheckedSupabaseError from "./eslint-rules/no-unchecked-supabase-error.mjs";
+import noHardcodedFontSize from "./eslint-rules/no-off-scale-type.mjs";
+
+/**
+ * The two project rules are here rather than in a published plugin because they
+ * encode decisions this repo has already made and paid for:
+ *
+ *  - no-unchecked-supabase-error: a dropped PostgREST error renders as an empty
+ *    page. Phase 1 shipped that bug three times; the shape is now a build
+ *    failure rather than a thing to remember.
+ *  - no-off-scale-type: docs/design-system.md fixes the type scale at seven
+ *    steps. Tailwind ships more, and one `text-3xl` is all it takes for the
+ *    scale to stop being a scale.
+ */
 const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
+
+  {
+    plugins: {
+      footvault: {
+        rules: {
+          "no-unchecked-supabase-error": noUncheckedSupabaseError,
+          "no-off-scale-type": noHardcodedFontSize,
+        },
+      },
+    },
+    rules: {
+      "footvault/no-unchecked-supabase-error": "error",
+      "footvault/no-off-scale-type": "error",
+    },
+  },
+
   // Override default ignores of eslint-config-next.
   globalIgnores([
     // Default ignores of eslint-config-next:

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
+import { Breadcrumbs } from "@/components/storefront/breadcrumbs";
 import { getPage, listPageSlugs } from "@/lib/queries/content";
 import { staticParamsOr } from "@/lib/static-params";
 
@@ -50,7 +51,11 @@ export default async function CmsPage({
     .filter(Boolean);
 
   return (
-    <article className="mx-auto max-w-2xl px-4 py-14 sm:px-6 lg:py-20">
+    <article className="mx-auto max-w-2xl px-4 py-8 sm:px-6 lg:py-12">
+      <Breadcrumbs
+        className="mb-8"
+        crumbs={[{ label: "Home", href: "/" }, { label: page.title }]}
+      />
       <h1 className="font-display text-4xl font-extrabold tracking-[-0.03em] text-balance uppercase">
         {page.title}
       </h1>

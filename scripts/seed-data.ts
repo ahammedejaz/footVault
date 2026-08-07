@@ -26,12 +26,14 @@ export type SeedCategory = {
   parent?: string;
   description?: string;
   sortOrder: number;
+  /** Tile art for the homepage grid. Replaced the moment the owner uploads one. */
+  imageUrl?: string;
 };
 
 export const categories: SeedCategory[] = [
-  { slug: "men", name: "Men", sortOrder: 1, description: "Sneakers, formal shoes, boots and sandals for men." },
-  { slug: "women", name: "Women", sortOrder: 2, description: "Sneakers, flats, sandals and sports shoes for women." },
-  { slug: "kids", name: "Kids", sortOrder: 3, description: "School shoes, sneakers and sandals built for growing feet." },
+  { slug: "men", name: "Men", sortOrder: 1, description: "Sneakers, formal shoes, boots and sandals for men.", imageUrl: "/seed/category-men.svg" },
+  { slug: "women", name: "Women", sortOrder: 2, description: "Sneakers, flats, sandals and sports shoes for women.", imageUrl: "/seed/category-women.svg" },
+  { slug: "kids", name: "Kids", sortOrder: 3, description: "School shoes, sneakers and sandals built for growing feet.", imageUrl: "/seed/category-kids.svg" },
 
   { slug: "mens-sneakers", name: "Sneakers", parent: "men", sortOrder: 1 },
   { slug: "mens-formal", name: "Formal", parent: "men", sortOrder: 2 },
@@ -95,6 +97,12 @@ export type SeedProduct = {
   featured?: boolean;
   description: string;
   colors: SeedColor[];
+  /**
+   * Overrides the gender's run. A clearance line down to its last size has a
+   * run of one — which is a layout case worth having in the seed, because a
+   * size strip of a single chip is where a grid built for seven falls over.
+   */
+  sizeRun?: string[];
   /** Sizes with no stock. Everything else in the run gets stock. */
   soldOut?: string[];
   /** Sizes down to their last pair or two, so "Only 2 left" has something real to say. */
@@ -668,7 +676,108 @@ export const products: SeedProduct[] = [
     ],
     lowStock: { "12C": 1 },
   },
+
+  // ---------------------------------------------------------------------------
+  // Three products that exist because the layout has to survive them.
+  //
+  // A catalog of well-behaved products is a catalog that has never been tested.
+  // These are the cases a real shop produces within a month of opening, and
+  // each one broke something the first time it was rendered.
+  // ---------------------------------------------------------------------------
+  {
+    // Sold out in every size. The size strip is entirely struck through, the
+    // card carries the SOLD OUT flag, and the product page has to say so
+    // without hiding the run — which is the whole promise of the size strip.
+    slug: "adidas-gazelle-indoor-womens",
+    name: "Gazelle Indoor",
+    brand: "adidas",
+    category: "womens-sneakers",
+    gender: "women",
+    footwearType: "sneaker",
+    material: "Suede upper, gum rubber outsole",
+    basePrice: rupees(10999),
+    description:
+      "The indoor court shape, in suede, with the gum sole that marks nothing. This colourway sold through in a fortnight and is not coming back — the run below is the full run.",
+    colors: [{ name: "Collegiate Green", hex: "#2f5340" }],
+    soldOut: ["3", "4", "5", "6", "7", "8"],
+  },
+  {
+    // One size, one colourway, no sale price. Three "only one of these" cases
+    // in a single product, because they tend to arrive together on a clearance
+    // line and the layout has to hold at its narrowest.
+    slug: "woodland-nubuck-trek-mens",
+    name: "Nubuck Trek Boot",
+    brand: "woodland",
+    category: "mens-boots",
+    gender: "men",
+    footwearType: "boot",
+    material: "Nubuck leather upper, stitched-down rubber outsole",
+    basePrice: rupees(6495),
+    description:
+      "End of the line. One pair left, in one size, at the price it always was.",
+    colors: [{ name: "Khaki", hex: "#6f6244" }],
+    sizeRun: ["9"],
+    lowStock: { "9": 1 },
+  },
+  {
+    // Sixty-six characters. Long names are what a distributor's spreadsheet
+    // produces, and they land in card titles, breadcrumbs, the header of the
+    // product page, and the browser tab.
+    slug: "asics-gel-kayano-31-wide-womens",
+    name: "Gel-Kayano 31 Wide Fit Stability Running Trainer for Overpronation",
+    brand: "asics",
+    category: "womens-sports",
+    gender: "women",
+    footwearType: "sports",
+    material: "Engineered knit upper, FF Blast Plus Eco midsole",
+    basePrice: rupees(15999),
+    salePrice: rupees(12799),
+    description:
+      "The stability trainer, in the wide fit, for a foot that rolls in. Guidance comes from the sole geometry rather than a hard post, so it does not fight a neutral stride on the days you have one.",
+    colors: [
+      { name: "Sea Salt", hex: "#e5ddd0" },
+      { name: "Peacoat Navy", hex: "#232c3d" },
+    ],
+    soldOut: ["8"],
+    lowStock: { "7": 2 },
+  },
 ];
+
+/**
+ * Words a customer might search that the copy does not use.
+ *
+ * "Running" appears in none of the running-shoe descriptions — they say
+ * "trainer", "tempo", "race" — and "chappal" appears in none of the sandal
+ * ones. Both are what people actually type.
+ */
+export const SEARCH_KEYWORDS: Record<SeedProduct["footwearType"], string[]> = {
+  sports: ["running", "runner", "trainer", "training", "gym", "jogging", "workout", "marathon"],
+  sneaker: ["casual", "trainers", "lifestyle", "everyday", "street"],
+  formal: ["office", "dress", "wedding", "oxford", "derby", "business"],
+  boot: ["ankle", "hiking", "outdoor", "trekking", "winter"],
+  sandal: ["chappal", "monsoon", "summer", "open", "strappy"],
+  slide: ["chappal", "monsoon", "pool", "beach", "slipper", "sliders"],
+  flipflop: ["chappal", "thong", "beach", "monsoon", "slipper"],
+};
+
+/**
+ * The homepage hero art.
+ *
+ * Two crops of the same scene, not one image letterboxed twice: a 16:9 hero
+ * cropped to a 390px phone loses the shoe entirely, and a phone-shaped hero
+ * stretched across a desktop loses the point. The banners table has carried
+ * `image_url` and `mobile_image_url` since Phase 1 for exactly this.
+ */
+export const heroBanner = {
+  placement: "home_hero",
+  imageUrl: "/seed/hero-desktop.svg",
+  mobileImageUrl: "/seed/hero-mobile.svg",
+  headline: "Every size we hold, shown on every shoe",
+  subtext: "Sneakers, formal shoes, boots and sandals for men, women and kids.",
+  ctaLabel: "Shop all footwear",
+  ctaHref: "/shop",
+  altText: "A running shoe and its outsole against the Foot Vault tread pattern",
+};
 
 // -----------------------------------------------------------------------------
 // Collections — the curated rails the owner reorders from /admin/appearance.

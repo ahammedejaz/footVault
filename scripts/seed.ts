@@ -18,21 +18,26 @@ import {
   brands,
   categories,
   collections,
+  heroBanner,
   homepageSections,
   pages,
   products,
+  SEARCH_KEYWORDS,
   siteSettings,
   SIZE_RUN_KIDS,
   SIZE_RUN_MEN,
   SIZE_RUN_WOMEN,
   type SeedProduct,
 } from "./seed-data";
+import { colorSlug } from "./color-slug";
 
 // -----------------------------------------------------------------------------
 // Derived rows
 // -----------------------------------------------------------------------------
 
 function sizeRunFor(product: SeedProduct): string[] {
+  // A clearance line down to one size overrides its gender's run.
+  if (product.sizeRun) return product.sizeRun;
   if (product.gender === "kids") return SIZE_RUN_KIDS;
   if (product.gender === "women") return SIZE_RUN_WOMEN;
   return SIZE_RUN_MEN;
@@ -115,25 +120,37 @@ export function variantsFor(product: SeedProduct): VariantRow[] {
   return rows;
 }
 
+/**
+ * One hero and one outsole per colourway.
+ *
+ * The outsole is the tread shot every footwear shoot produces and nobody puts
+ * on the card; the card reveals it on hover, and the product page opens on it
+ * as the second frame. Per colourway rather than per product because the
+ * swatches switch the gallery, which they cannot do if there is only one.
+ *
+ * Exactly one primary per product — the first colourway's hero — because
+ * product_images carries a partial unique index that says so.
+ */
 export function imagesFor(product: SeedProduct) {
-  const color = product.colors[0]!;
-  return [
-    {
-      url: `/seed/${product.slug}-hero.svg`,
-      alt: `${product.name} in ${color.name}, side profile`,
-      sortOrder: 0,
-      isPrimary: true,
-    },
-    {
-      // The second image is always the outsole — the tread shot every footwear
-      // shoot produces and nobody puts on the card. The product card reveals it
-      // on hover.
-      url: `/seed/${product.slug}-sole.svg`,
-      alt: `${product.name} outsole`,
-      sortOrder: 1,
-      isPrimary: false,
-    },
-  ];
+  return product.colors.flatMap((color, position) => {
+    const stem = `/seed/${product.slug}-${colorSlug(color.name)}`;
+    return [
+      {
+        url: `${stem}-hero.svg`,
+        alt: `${product.name} in ${color.name}, side profile`,
+        color: color.name,
+        sortOrder: position * 2,
+        isPrimary: position === 0,
+      },
+      {
+        url: `${stem}-sole.svg`,
+        alt: `${product.name} in ${color.name} outsole`,
+        color: color.name,
+        sortOrder: position * 2 + 1,
+        isPrimary: false,
+      },
+    ];
+  });
 }
 
 // -----------------------------------------------------------------------------
@@ -176,11 +193,14 @@ function buildSql(): string {
     "-- --- categories -----------------------------------------------------------",
     "-- Parents first: a child's parent_id is resolved by slug, so the row it",
     "-- points at has to exist by the time the child is inserted.",
-    "insert into public.categories (name, slug, description, sort_order) values",
+    "insert into public.categories (name, slug, description, sort_order, image_url) values",
     parents
-      .map((c) => `  (${q(c.name)}, ${q(c.slug)}, ${q(c.description ?? null)}, ${c.sortOrder})`)
+      .map(
+        (c) =>
+          `  (${q(c.name)}, ${q(c.slug)}, ${q(c.description ?? null)}, ${c.sortOrder}, ${q(c.imageUrl ?? null)})`,
+      )
       .join(",\n") +
-      "\non conflict (slug) do update set name = excluded.name, description = excluded.description, sort_order = excluded.sort_order;",
+      "\non conflict (slug) do update set name = excluded.name, description = excluded.description, sort_order = excluded.sort_order, image_url = excluded.image_url;",
   );
 
   push(
@@ -196,42 +216,62 @@ function buildSql(): string {
 
   push(
     "-- --- products -------------------------------------------------------------",
-    "insert into public.products (name, slug, description, category_id, brand_id, gender, footwear_type, material, base_price, sale_price, is_featured, meta_title, meta_description) values",
+    "insert into public.products (name, slug, description, category_id, brand_id, gender, footwear_type, material, base_price, sale_price, is_featured, meta_title, meta_description, search_keywords) values",
     products
       .map((p) => {
         const metaTitle = `${p.name} — ${brands.find((b) => b.slug === p.brand)?.name ?? ""}`.trim();
         // First sentence. Descriptions that are a single sentence already carry
         // their full stop, so strip before re-adding rather than emit "tap..".
         const metaDescription = p.description.split(". ")[0]!.replace(/\.$/, "") + ".";
-        return `  (${q(p.name)}, ${q(p.slug)}, ${q(p.description)}, (select id from public.categories where slug = ${q(p.category)}), (select id from public.brands where slug = ${q(p.brand)}), ${q(p.gender)}, ${q(p.footwearType)}, ${q(p.material)}, ${p.basePrice}, ${p.salePrice ?? "NULL"}, ${p.featured ? "true" : "false"}, ${q(metaTitle)}, ${q(metaDescription)})`;
+        const keywords = SEARCH_KEYWORDS[p.footwearType] ?? [];
+        return `  (${q(p.name)}, ${q(p.slug)}, ${q(p.description)}, (select id from public.categories where slug = ${q(p.category)}), (select id from public.brands where slug = ${q(p.brand)}), ${q(p.gender)}, ${q(p.footwearType)}, ${q(p.material)}, ${p.basePrice}, ${p.salePrice ?? "NULL"}, ${p.featured ? "true" : "false"}, ${q(metaTitle)}, ${q(metaDescription)}, array[${keywords.map(q).join(", ")}]::text[])`;
       })
       .join(",\n") +
-      "\non conflict (slug) do update set name = excluded.name, description = excluded.description, category_id = excluded.category_id, brand_id = excluded.brand_id, gender = excluded.gender, footwear_type = excluded.footwear_type, material = excluded.material, base_price = excluded.base_price, sale_price = excluded.sale_price, is_featured = excluded.is_featured, meta_title = excluded.meta_title, meta_description = excluded.meta_description;",
+      "\non conflict (slug) do update set name = excluded.name, description = excluded.description, category_id = excluded.category_id, brand_id = excluded.brand_id, gender = excluded.gender, footwear_type = excluded.footwear_type, material = excluded.material, base_price = excluded.base_price, sale_price = excluded.sale_price, is_featured = excluded.is_featured, meta_title = excluded.meta_title, meta_description = excluded.meta_description, search_keywords = excluded.search_keywords;",
   );
 
   push(
     "-- --- images ---------------------------------------------------------------",
+    "-- One hero and one outsole per *colourway*, not per product: the swatches on",
+    "-- the product page change the gallery, which they can only do if the gallery",
+    "-- has something to change to.",
+    "--",
     "-- Set-based rather than one row per image: the URL and the alt text are both",
-    "-- derived from the product, so listing 64 literals would only be 64 more",
-    "-- places for them to drift out of step with scripts/generate-seed-images.ts.",
+    "-- derived from the product and the colour, so listing them as literals would",
+    "-- only be more places for them to drift out of step with",
+    "-- scripts/generate-seed-images.ts. The colour slug below is the SQL twin of",
+    "-- colorSlug() in that file — a mismatch is a broken image, so they change",
+    "-- together.",
     "--",
     "-- Cleared first because product_images has no natural key to upsert on, and",
     "-- the partial unique index on (product_id) where is_primary would reject a",
     "-- second primary before the first was gone.",
     "delete from public.product_images;",
-    "with colorway (product_slug, color) as (values",
-    products.map((p) => `  (${q(p.slug)}, ${q(p.colors[0]!.name)})`).join(",\n"),
+    "with colorway (product_slug, color, position) as (values",
+    products
+      .flatMap((p) =>
+        p.colors.map((c, i) => `  (${q(p.slug)}, ${q(c.name)}, ${i})`),
+      )
+      .join(",\n"),
+    "),",
+    "view (kind, offset_in_pair, suffix) as (values",
+    "  ('hero', 0, ', side profile'),",
+    "  ('sole', 1, ' outsole')",
     ")",
-    "insert into public.product_images (product_id, url, alt_text, sort_order, is_primary)",
-    "select p.id, '/seed/' || p.slug || '-hero.svg',",
-    "       p.name || ' in ' || c.color || ', side profile', 0, true",
-    "  from public.products p join colorway c on c.product_slug = p.slug",
-    "union all",
-    "-- The second image is always the outsole: the tread shot every footwear",
-    "-- shoot produces and nobody puts on the card. The product card reveals it",
-    "-- on hover.",
-    "select p.id, '/seed/' || p.slug || '-sole.svg', p.name || ' outsole', 1, false",
-    "  from public.products p;",
+    "insert into public.product_images (product_id, url, alt_text, sort_order, is_primary, color)",
+    "select p.id,",
+    "       '/seed/' || p.slug || '-'",
+    "         || trim(both '-' from lower(regexp_replace(c.color, '[^a-zA-Z0-9]+', '-', 'g')))",
+    "         || '-' || v.kind || '.svg',",
+    "       p.name || ' in ' || c.color || v.suffix,",
+    "       c.position * 2 + v.offset_in_pair,",
+    "       -- Exactly one primary per product: the first colourway's hero. It is",
+    "       -- what the card shows and what the gallery opens on.",
+    "       c.position = 0 and v.kind = 'hero',",
+    "       c.color",
+    "  from public.products p",
+    "  join colorway c on c.product_slug = p.slug",
+    "  cross join view v;",
   );
 
   push(
@@ -309,6 +349,16 @@ function buildSql(): string {
   );
 
   push(
+    "-- --- the homepage hero ----------------------------------------------------",
+    "-- Two crops of one scene. A 16:9 hero cropped to a 390px phone loses the",
+    "-- shoe; a phone-shaped hero stretched across a desktop loses the point.",
+    "-- placement is the natural key: one hero per placement, replaced on reseed.",
+    "delete from public.banners where placement = " + q(heroBanner.placement) + ";",
+    "insert into public.banners (placement, image_url, mobile_image_url, headline, subtext, cta_label, cta_href, sort_order)",
+    `values (${q(heroBanner.placement)}, ${q(heroBanner.imageUrl)}, ${q(heroBanner.mobileImageUrl)}, ${q(heroBanner.headline)}, ${q(heroBanner.subtext)}, ${q(heroBanner.ctaLabel)}, ${q(heroBanner.ctaHref)}, 0);`,
+  );
+
+  push(
     "-- --- CMS pages ------------------------------------------------------------",
     "insert into public.pages (slug, title, body, meta_description, is_published) values",
     pages
@@ -380,7 +430,7 @@ async function seedViaSupabase() {
     "categories (top level)",
     (
       await db.from("categories").upsert(
-        parents.map((c) => ({ name: c.name, slug: c.slug, description: c.description ?? null, sort_order: c.sortOrder })),
+        parents.map((c) => ({ name: c.name, slug: c.slug, description: c.description ?? null, sort_order: c.sortOrder, image_url: c.imageUrl ?? null })),
         { onConflict: "slug" },
       )
     ).error,
@@ -407,8 +457,14 @@ async function seedViaSupabase() {
     ).error,
   );
 
-  const { data: allCategories } = await db.from("categories").select("id, slug");
-  const { data: allBrands } = await db.from("brands").select("id, slug");
+  const { data: allCategories, error: categoryReadError } = await db
+    .from("categories")
+    .select("id, slug");
+  fail("categories (read back)", categoryReadError);
+  const { data: allBrands, error: brandReadError } = await db
+    .from("brands")
+    .select("id, slug");
+  fail("brands (read back)", brandReadError);
   const catId = new Map((allCategories ?? []).map((r) => [r.slug, r.id]));
   const brandId = new Map((allBrands ?? []).map((r) => [r.slug, r.id]));
 
@@ -430,13 +486,17 @@ async function seedViaSupabase() {
           is_featured: p.featured ?? false,
           meta_title: `${p.name} — ${brands.find((b) => b.slug === p.brand)?.name ?? ""}`.trim(),
           meta_description: p.description.split(". ")[0]!.replace(/\.$/, "") + ".",
+          search_keywords: SEARCH_KEYWORDS[p.footwearType] ?? [],
         })),
         { onConflict: "slug" },
       )
     ).error,
   );
 
-  const { data: productRows } = await db.from("products").select("id, slug");
+  const { data: productRows, error: productReadError } = await db
+    .from("products")
+    .select("id, slug");
+  fail("products (read back)", productReadError);
   const productId = new Map((productRows ?? []).map((r) => [r.slug, r.id]));
   const ids = products.map((p) => productId.get(p.slug)!).filter(Boolean);
 
@@ -454,6 +514,7 @@ async function seedViaSupabase() {
             alt_text: img.alt,
             sort_order: img.sortOrder,
             is_primary: img.isPrimary,
+            color: img.color,
           })),
         ),
       )
@@ -488,7 +549,30 @@ async function seedViaSupabase() {
       )
     ).error,
   );
-  const { data: collectionRows } = await db.from("collections").select("id, slug");
+  fail(
+    "banners (clear)",
+    (await db.from("banners").delete().eq("placement", heroBanner.placement)).error,
+  );
+  fail(
+    "banners",
+    (
+      await db.from("banners").insert({
+        placement: heroBanner.placement,
+        image_url: heroBanner.imageUrl,
+        mobile_image_url: heroBanner.mobileImageUrl,
+        headline: heroBanner.headline,
+        subtext: heroBanner.subtext,
+        cta_label: heroBanner.ctaLabel,
+        cta_href: heroBanner.ctaHref,
+        sort_order: 0,
+      })
+    ).error,
+  );
+
+  const { data: collectionRows, error: collectionReadError } = await db
+    .from("collections")
+    .select("id, slug");
+  fail("collections (read back)", collectionReadError);
   const collectionId = new Map((collectionRows ?? []).map((r) => [r.slug, r.id]));
   fail(
     "collection_products",
@@ -581,9 +665,10 @@ async function main() {
     const target = join(process.cwd(), "supabase", "seed.sql");
     writeFileSync(target, buildSql() + "\n");
     const variantCount = products.reduce((n, p) => n + variantsFor(p).length, 0);
+    const imageCount = products.reduce((n, p) => n + imagesFor(p).length, 0);
     console.log(
       `Wrote supabase/seed.sql — ${products.length} products, ${variantCount} variants, ` +
-        `${products.length * 2} images.`,
+        `${imageCount} images.`,
     );
     return;
   }

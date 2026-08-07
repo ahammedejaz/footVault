@@ -23,11 +23,11 @@ on conflict (slug) do update set name = excluded.name;
 -- --- categories -----------------------------------------------------------
 -- Parents first: a child's parent_id is resolved by slug, so the row it
 -- points at has to exist by the time the child is inserted.
-insert into public.categories (name, slug, description, sort_order) values
-  ('Men', 'men', 'Sneakers, formal shoes, boots and sandals for men.', 1),
-  ('Women', 'women', 'Sneakers, flats, sandals and sports shoes for women.', 2),
-  ('Kids', 'kids', 'School shoes, sneakers and sandals built for growing feet.', 3)
-on conflict (slug) do update set name = excluded.name, description = excluded.description, sort_order = excluded.sort_order;
+insert into public.categories (name, slug, description, sort_order, image_url) values
+  ('Men', 'men', 'Sneakers, formal shoes, boots and sandals for men.', 1, '/seed/category-men.svg'),
+  ('Women', 'women', 'Sneakers, flats, sandals and sports shoes for women.', 2, '/seed/category-women.svg'),
+  ('Kids', 'kids', 'School shoes, sneakers and sandals built for growing feet.', 3, '/seed/category-kids.svg')
+on conflict (slug) do update set name = excluded.name, description = excluded.description, sort_order = excluded.sort_order, image_url = excluded.image_url;
 
 insert into public.categories (name, slug, description, sort_order, parent_id) values
   ('Sneakers', 'mens-sneakers', NULL, 1, (select id from public.categories where slug = 'men')),
@@ -45,94 +45,141 @@ insert into public.categories (name, slug, description, sort_order, parent_id) v
 on conflict (slug) do update set name = excluded.name, sort_order = excluded.sort_order, parent_id = excluded.parent_id;
 
 -- --- products -------------------------------------------------------------
-insert into public.products (name, slug, description, category_id, brand_id, gender, footwear_type, material, base_price, sale_price, is_featured, meta_title, meta_description) values
-  ('Air Max 90', 'nike-air-max-90-mens', 'The 1990 silhouette, unchanged where it matters. Visible Air in the heel, waffle outsole, and the stitched overlays that let it take a monsoon without falling apart.', (select id from public.categories where slug = 'mens-sneakers'), (select id from public.brands where slug = 'nike'), 'men', 'sneaker', 'Leather and mesh upper, rubber outsole', 1299500, 974600, true, 'Air Max 90 — Nike', 'The 1990 silhouette, unchanged where it matters.'),
-  ('Samba OG', 'adidas-samba-og-mens', 'An indoor football shoe from 1950 that never needed redesigning. Low profile, gum sole, suede T-toe. Runs about half a size small — take the next size up if you are between.', (select id from public.categories where slug = 'mens-sneakers'), (select id from public.brands where slug = 'adidas'), 'unisex', 'sneaker', 'Full-grain leather upper, gum rubber outsole', 999900, NULL, true, 'Samba OG — adidas', 'An indoor football shoe from 1950 that never needed redesigning.'),
-  ('550', 'new-balance-550-mens', 'A 1989 basketball shoe brought back with the proportions intact. Stiff leather that creases in properly after a fortnight, and a cupsole that takes daily wear.', (select id from public.categories where slug = 'mens-sneakers'), (select id from public.brands where slug = 'new-balance'), 'unisex', 'sneaker', 'Leather upper, rubber cupsole', 1149900, NULL, true, '550 — New Balance', 'A 1989 basketball shoe brought back with the proportions intact.'),
-  ('Suede Classic XXI', 'puma-suede-classic-mens', 'Fifty years of the same shoe. Soft suede, formstrip, flat rubber sole. Brush it after the rain and it looks new.', (select id from public.categories where slug = 'mens-sneakers'), (select id from public.brands where slug = 'puma'), 'unisex', 'sneaker', 'Suede upper, rubber outsole', 649900, 454900, false, 'Suede Classic XXI — Puma', 'Fifty years of the same shoe.'),
-  ('North Plus', 'campus-north-plus-mens', 'The everyday trainer that does not pretend to be anything else. Light mesh, cushioned collar, and a price that survives being worn out in a year.', (select id from public.categories where slug = 'mens-sneakers'), (select id from public.brands where slug = 'campus'), 'men', 'sneaker', 'Mesh upper, EVA midsole, TPR outsole', 199900, 139900, false, 'North Plus — Campus', 'The everyday trainer that does not pretend to be anything else.'),
-  ('Go Walk 7', 'skechers-go-walk-7-mens', 'Slip-on, machine washable, and light enough that you forget you are wearing them. The one people buy a second pair of.', (select id from public.categories where slug = 'mens-sneakers'), (select id from public.brands where slug = 'skechers'), 'men', 'sneaker', 'Engineered knit upper, Air-Cooled Goga Mat insole', 699900, NULL, false, 'Go Walk 7 — Skechers', 'Slip-on, machine washable, and light enough that you forget you are wearing them.'),
-  ('Gel-Nimbus 27', 'asics-gel-nimbus-27-mens', 'A max-cushion daily trainer for long, slow kilometres. Broad base, soft heel, and enough foam to take the sting out of concrete.', (select id from public.categories where slug = 'mens-sports'), (select id from public.brands where slug = 'asics'), 'men', 'sports', 'Engineered knit upper, FF Blast Plus Eco midsole', 1699900, NULL, true, 'Gel-Nimbus 27 — ASICS', 'A max-cushion daily trainer for long, slow kilometres.'),
-  ('Pegasus 41', 'nike-pegasus-41-mens', 'The workhorse. Two Air Zoom units under forefoot and heel, responsive enough for tempo work and forgiving enough for the easy days between.', (select id from public.categories where slug = 'mens-sports'), (select id from public.brands where slug = 'nike'), 'men', 'sports', 'Mesh upper, ReactX foam midsole, Air Zoom units', 1189500, 951600, false, 'Pegasus 41 — Nike', 'The workhorse.'),
-  ('Adizero SL', 'adidas-adizero-sl-mens', 'Light, snappy, and cheap enough to actually race in. The training shoe from the Adizero line without the carbon plate or the price.', (select id from public.categories where slug = 'mens-sports'), (select id from public.brands where slug = 'adidas'), 'unisex', 'sports', 'Lightweight mesh upper, Lightstrike Pro midsole', 999900, NULL, false, 'Adizero SL — adidas', 'Light, snappy, and cheap enough to actually race in.'),
-  ('Velocity Nitro 3', 'puma-velocity-nitro-3-mens', 'Nitrogen-injected foam and a genuinely good rubber outsole. Grips a wet road, which most trainers in this range do not.', (select id from public.categories where slug = 'mens-sports'), (select id from public.brands where slug = 'puma'), 'men', 'sports', 'Mesh upper, Nitro foam midsole, PUMAGRIP outsole', 1199900, 839900, false, 'Velocity Nitro 3 — Puma', 'Nitrogen-injected foam and a genuinely good rubber outsole.'),
-  ('Leather Oxford', 'red-chief-oxford-mens', 'A closed-lacing Oxford in full-grain leather that takes polish properly. Cushioned footbed, so it survives a full day of standing at a wedding.', (select id from public.categories where slug = 'mens-formal'), (select id from public.brands where slug = 'red-chief'), 'men', 'formal', 'Full-grain buffalo leather, leather lining, TPR sole', 429500, NULL, true, 'Leather Oxford — Red Chief', 'A closed-lacing Oxford in full-grain leather that takes polish properly.'),
-  ('Remo Derby', 'bata-derby-mens', 'The office shoe that does not need thinking about. Open lacing, slim last, and a sole you can resole once before replacing.', (select id from public.categories where slug = 'mens-formal'), (select id from public.brands where slug = 'bata'), 'men', 'formal', 'Synthetic leather upper, PVC sole', 179900, 125900, false, 'Remo Derby — Bata', 'The office shoe that does not need thinking about.'),
-  ('Penny Loafer', 'metro-penny-loafer-mens', 'A slip-on with a proper leather sole and a saddle strap. Wears in around the instep after a week and then fits like nothing else.', (select id from public.categories where slug = 'mens-formal'), (select id from public.brands where slug = 'metro'), 'men', 'formal', 'Genuine leather upper, leather sole', 399900, NULL, false, 'Penny Loafer — Metro', 'A slip-on with a proper leather sole and a saddle strap.'),
-  ('Leather Brogue', 'woodland-brogue-mens', 'Broguing on a chunkier last with a real rubber outsole. A formal shoe that copes with a broken pavement.', (select id from public.categories where slug = 'mens-formal'), (select id from public.brands where slug = 'woodland'), 'men', 'formal', 'Nubuck leather, rubber outsole', 549500, 439600, false, 'Leather Brogue — Woodland', 'Broguing on a chunkier last with a real rubber outsole.'),
-  ('Camel Leather Boot', 'woodland-camel-boot-mens', 'The boot the brand is known for. Nubuck upper, hand-stitched welt, and a sole bonded rather than glued so it does not part company in the rain.', (select id from public.categories where slug = 'mens-boots'), (select id from public.brands where slug = 'woodland'), 'men', 'boot', 'Nubuck leather upper, PU direct-injected sole', 699500, NULL, true, 'Camel Leather Boot — Woodland', 'The boot the brand is known for.'),
-  ('Leather Chukka', 'red-chief-chukka-mens', 'Two eyelets, suede upper, crepe sole. Sits between a shoe and a boot, which makes it the one that gets worn most.', (select id from public.categories where slug = 'mens-boots'), (select id from public.brands where slug = 'red-chief'), 'men', 'boot', 'Suede leather upper, crepe rubber sole', 499500, NULL, false, 'Leather Chukka — Red Chief', 'Two eyelets, suede upper, crepe sole.'),
-  ('Classic Clog', 'crocs-classic-clog-unisex', 'Waterproof, washable, and the only thing worth owning in a monsoon. Pivoting heel strap for a closed fit, or back for a slide.', (select id from public.categories where slug = 'mens-sandals'), (select id from public.brands where slug = 'crocs'), 'unisex', 'slide', 'Croslite foam', 399500, 279600, true, 'Classic Clog — Crocs', 'Waterproof, washable, and the only thing worth owning in a monsoon.'),
-  ('Adilette Comfort Slide', 'adidas-adilette-slide-unisex', 'A pool slide with a contoured foam footbed. Dries in minutes and takes being left on a wet balcony.', (select id from public.categories where slug = 'mens-sandals'), (select id from public.brands where slug = 'adidas'), 'unisex', 'slide', 'Synthetic bandage upper, Cloudfoam Plus footbed', 299900, 194900, false, 'Adilette Comfort Slide — adidas', 'A pool slide with a contoured foam footbed.'),
-  ('Floater Sandal', 'bata-floater-sandal-mens', 'Three adjustable straps, a grippy outsole, and a footbed that does not flatten by the second month. Built for the walk to the market and back.', (select id from public.categories where slug = 'mens-sandals'), (select id from public.brands where slug = 'bata'), 'men', 'sandal', 'Synthetic webbing upper, EVA footbed, rubber outsole', 149900, NULL, false, 'Floater Sandal — Bata', 'Three adjustable straps, a grippy outsole, and a footbed that does not flatten by the second month.'),
-  ('Epic Flip', 'puma-flip-flop-unisex', 'A flip-flop with a moulded arch instead of a flat slab of foam. Costs a little more and lasts three times as long.', (select id from public.categories where slug = 'mens-sandals'), (select id from public.brands where slug = 'puma'), 'unisex', 'flipflop', 'Synthetic thong strap, EVA footbed', 99900, 69900, false, 'Epic Flip — Puma', 'A flip-flop with a moulded arch instead of a flat slab of foam.'),
-  ('Court Vision Low', 'nike-court-vision-womens', 'A clean court silhouette with a stitched leather upper. Goes with everything, which is the entire point of a white sneaker.', (select id from public.categories where slug = 'womens-sneakers'), (select id from public.brands where slug = 'nike'), 'women', 'sneaker', 'Leather upper, rubber cupsole', 599500, 419600, true, 'Court Vision Low — Nike', 'A clean court silhouette with a stitched leather upper.'),
-  ('Gazelle', 'adidas-gazelle-womens', 'Suede upper, slim last, gum sole. A training shoe from 1966 that has spent the last forty years being worn anywhere but the gym.', (select id from public.categories where slug = 'womens-sneakers'), (select id from public.brands where slug = 'adidas'), 'women', 'sneaker', 'Suede upper, gum rubber outsole', 899900, NULL, true, 'Gazelle — adidas', 'Suede upper, slim last, gum sole.'),
-  ('327', 'new-balance-327-womens', 'An oversized N and a flared 70s outsole. Sits lower than it looks in photographs and runs true to size.', (select id from public.categories where slug = 'womens-sneakers'), (select id from public.brands where slug = 'new-balance'), 'women', 'sneaker', 'Suede and nylon upper, EVA midsole', 999900, 699900, false, '327 — New Balance', 'An oversized N and a flared 70s outsole.'),
-  ('Summits', 'skechers-summits-womens', 'Wide-fit mesh with a memory foam insole. The pair people buy when they are on their feet for eight hours.', (select id from public.categories where slug = 'womens-sneakers'), (select id from public.brands where slug = 'skechers'), 'women', 'sneaker', 'Mesh upper, Air-Cooled Memory Foam insole', 449900, NULL, false, 'Summits — Skechers', 'Wide-fit mesh with a memory foam insole.'),
-  ('Leather Ballerina', 'metro-ballerina-womens', 'A soft leather flat with a padded insole and a sole that grips. Folds enough to live in a bag without creasing badly.', (select id from public.categories where slug = 'womens-flats'), (select id from public.brands where slug = 'metro'), 'women', 'formal', 'Genuine leather upper, cushioned insole, TPR sole', 279900, 195900, false, 'Leather Ballerina — Metro', 'A soft leather flat with a padded insole and a sole that grips.'),
-  ('Slip-On Loafer', 'bata-loafer-womens', 'A round-toe loafer with a low block heel. Formal enough for an office, forgiving enough for a commute.', (select id from public.categories where slug = 'womens-flats'), (select id from public.brands where slug = 'bata'), 'women', 'formal', 'Synthetic leather upper, memory foam insole', 199900, NULL, false, 'Slip-On Loafer — Bata', 'A round-toe loafer with a low block heel.'),
-  ('Gel-Cumulus 27', 'asics-gel-cumulus-27-womens', 'A neutral daily trainer that does not overreach. Softer than the Nimbus underfoot at the forefoot, and lighter by a good margin.', (select id from public.categories where slug = 'womens-sports'), (select id from public.brands where slug = 'asics'), 'women', 'sports', 'Jacquard mesh upper, FF Blast Plus midsole', 1399900, 1049900, false, 'Gel-Cumulus 27 — ASICS', 'A neutral daily trainer that does not overreach.'),
-  ('Softride Enzo', 'puma-softride-womens', 'A gym and walking shoe with a rocker sole. Slips on, holds the heel, and is quiet on a treadmill.', (select id from public.categories where slug = 'womens-sports'), (select id from public.brands where slug = 'puma'), 'women', 'sports', 'Knit upper, Softride foam midsole', 599900, 359900, false, 'Softride Enzo — Puma', 'A gym and walking shoe with a rocker sole.'),
-  ('Brooklyn Low Wedge', 'crocs-brooklyn-slide-womens', 'A low wedge that is still entirely foam — waterproof, weightless, and washable under a tap.', (select id from public.categories where slug = 'womens-sandals'), (select id from public.brands where slug = 'crocs'), 'women', 'slide', 'Croslite foam, textured footbed', 449500, 314600, false, 'Brooklyn Low Wedge — Crocs', 'A low wedge that is still entirely foam — waterproof, weightless, and washable under a tap.'),
-  ('Naughty Boy School Shoe', 'bata-school-shoe-kids', 'The black school shoe, with velcro instead of laces so it gets fastened properly. Scuffs wipe off with a damp cloth.', (select id from public.categories where slug = 'kids-school'), (select id from public.brands where slug = 'bata'), 'kids', 'formal', 'Synthetic leather upper, PVC sole, velcro strap', 129900, NULL, true, 'Naughty Boy School Shoe — Bata', 'The black school shoe, with velcro instead of laces so it gets fastened properly.'),
-  ('Junior Runner', 'campus-kids-sneaker', 'Light mesh, velcro, and a sole with real grip for a playground. Cheap enough to replace when the foot outgrows it in eight months.', (select id from public.categories where slug = 'kids-sneakers'), (select id from public.brands where slug = 'campus'), 'kids', 'sneaker', 'Mesh upper, EVA midsole, velcro closure', 109900, 76900, false, 'Junior Runner — Campus', 'Light mesh, velcro, and a sole with real grip for a playground.'),
-  ('Classic Clog Kids', 'crocs-kids-clog', 'The adult clog, scaled down, with the same heel strap. Survives a puddle, a beach and a wash cycle.', (select id from public.categories where slug = 'kids-sandals'), (select id from public.brands where slug = 'crocs'), 'kids', 'slide', 'Croslite foam', 249500, NULL, false, 'Classic Clog Kids — Crocs', 'The adult clog, scaled down, with the same heel strap.')
-on conflict (slug) do update set name = excluded.name, description = excluded.description, category_id = excluded.category_id, brand_id = excluded.brand_id, gender = excluded.gender, footwear_type = excluded.footwear_type, material = excluded.material, base_price = excluded.base_price, sale_price = excluded.sale_price, is_featured = excluded.is_featured, meta_title = excluded.meta_title, meta_description = excluded.meta_description;
+insert into public.products (name, slug, description, category_id, brand_id, gender, footwear_type, material, base_price, sale_price, is_featured, meta_title, meta_description, search_keywords) values
+  ('Air Max 90', 'nike-air-max-90-mens', 'The 1990 silhouette, unchanged where it matters. Visible Air in the heel, waffle outsole, and the stitched overlays that let it take a monsoon without falling apart.', (select id from public.categories where slug = 'mens-sneakers'), (select id from public.brands where slug = 'nike'), 'men', 'sneaker', 'Leather and mesh upper, rubber outsole', 1299500, 974600, true, 'Air Max 90 — Nike', 'The 1990 silhouette, unchanged where it matters.', array['casual', 'trainers', 'lifestyle', 'everyday', 'street']::text[]),
+  ('Samba OG', 'adidas-samba-og-mens', 'An indoor football shoe from 1950 that never needed redesigning. Low profile, gum sole, suede T-toe. Runs about half a size small — take the next size up if you are between.', (select id from public.categories where slug = 'mens-sneakers'), (select id from public.brands where slug = 'adidas'), 'unisex', 'sneaker', 'Full-grain leather upper, gum rubber outsole', 999900, NULL, true, 'Samba OG — adidas', 'An indoor football shoe from 1950 that never needed redesigning.', array['casual', 'trainers', 'lifestyle', 'everyday', 'street']::text[]),
+  ('550', 'new-balance-550-mens', 'A 1989 basketball shoe brought back with the proportions intact. Stiff leather that creases in properly after a fortnight, and a cupsole that takes daily wear.', (select id from public.categories where slug = 'mens-sneakers'), (select id from public.brands where slug = 'new-balance'), 'unisex', 'sneaker', 'Leather upper, rubber cupsole', 1149900, NULL, true, '550 — New Balance', 'A 1989 basketball shoe brought back with the proportions intact.', array['casual', 'trainers', 'lifestyle', 'everyday', 'street']::text[]),
+  ('Suede Classic XXI', 'puma-suede-classic-mens', 'Fifty years of the same shoe. Soft suede, formstrip, flat rubber sole. Brush it after the rain and it looks new.', (select id from public.categories where slug = 'mens-sneakers'), (select id from public.brands where slug = 'puma'), 'unisex', 'sneaker', 'Suede upper, rubber outsole', 649900, 454900, false, 'Suede Classic XXI — Puma', 'Fifty years of the same shoe.', array['casual', 'trainers', 'lifestyle', 'everyday', 'street']::text[]),
+  ('North Plus', 'campus-north-plus-mens', 'The everyday trainer that does not pretend to be anything else. Light mesh, cushioned collar, and a price that survives being worn out in a year.', (select id from public.categories where slug = 'mens-sneakers'), (select id from public.brands where slug = 'campus'), 'men', 'sneaker', 'Mesh upper, EVA midsole, TPR outsole', 199900, 139900, false, 'North Plus — Campus', 'The everyday trainer that does not pretend to be anything else.', array['casual', 'trainers', 'lifestyle', 'everyday', 'street']::text[]),
+  ('Go Walk 7', 'skechers-go-walk-7-mens', 'Slip-on, machine washable, and light enough that you forget you are wearing them. The one people buy a second pair of.', (select id from public.categories where slug = 'mens-sneakers'), (select id from public.brands where slug = 'skechers'), 'men', 'sneaker', 'Engineered knit upper, Air-Cooled Goga Mat insole', 699900, NULL, false, 'Go Walk 7 — Skechers', 'Slip-on, machine washable, and light enough that you forget you are wearing them.', array['casual', 'trainers', 'lifestyle', 'everyday', 'street']::text[]),
+  ('Gel-Nimbus 27', 'asics-gel-nimbus-27-mens', 'A max-cushion daily trainer for long, slow kilometres. Broad base, soft heel, and enough foam to take the sting out of concrete.', (select id from public.categories where slug = 'mens-sports'), (select id from public.brands where slug = 'asics'), 'men', 'sports', 'Engineered knit upper, FF Blast Plus Eco midsole', 1699900, NULL, true, 'Gel-Nimbus 27 — ASICS', 'A max-cushion daily trainer for long, slow kilometres.', array['running', 'runner', 'trainer', 'training', 'gym', 'jogging', 'workout', 'marathon']::text[]),
+  ('Pegasus 41', 'nike-pegasus-41-mens', 'The workhorse. Two Air Zoom units under forefoot and heel, responsive enough for tempo work and forgiving enough for the easy days between.', (select id from public.categories where slug = 'mens-sports'), (select id from public.brands where slug = 'nike'), 'men', 'sports', 'Mesh upper, ReactX foam midsole, Air Zoom units', 1189500, 951600, false, 'Pegasus 41 — Nike', 'The workhorse.', array['running', 'runner', 'trainer', 'training', 'gym', 'jogging', 'workout', 'marathon']::text[]),
+  ('Adizero SL', 'adidas-adizero-sl-mens', 'Light, snappy, and cheap enough to actually race in. The training shoe from the Adizero line without the carbon plate or the price.', (select id from public.categories where slug = 'mens-sports'), (select id from public.brands where slug = 'adidas'), 'unisex', 'sports', 'Lightweight mesh upper, Lightstrike Pro midsole', 999900, NULL, false, 'Adizero SL — adidas', 'Light, snappy, and cheap enough to actually race in.', array['running', 'runner', 'trainer', 'training', 'gym', 'jogging', 'workout', 'marathon']::text[]),
+  ('Velocity Nitro 3', 'puma-velocity-nitro-3-mens', 'Nitrogen-injected foam and a genuinely good rubber outsole. Grips a wet road, which most trainers in this range do not.', (select id from public.categories where slug = 'mens-sports'), (select id from public.brands where slug = 'puma'), 'men', 'sports', 'Mesh upper, Nitro foam midsole, PUMAGRIP outsole', 1199900, 839900, false, 'Velocity Nitro 3 — Puma', 'Nitrogen-injected foam and a genuinely good rubber outsole.', array['running', 'runner', 'trainer', 'training', 'gym', 'jogging', 'workout', 'marathon']::text[]),
+  ('Leather Oxford', 'red-chief-oxford-mens', 'A closed-lacing Oxford in full-grain leather that takes polish properly. Cushioned footbed, so it survives a full day of standing at a wedding.', (select id from public.categories where slug = 'mens-formal'), (select id from public.brands where slug = 'red-chief'), 'men', 'formal', 'Full-grain buffalo leather, leather lining, TPR sole', 429500, NULL, true, 'Leather Oxford — Red Chief', 'A closed-lacing Oxford in full-grain leather that takes polish properly.', array['office', 'dress', 'wedding', 'oxford', 'derby', 'business']::text[]),
+  ('Remo Derby', 'bata-derby-mens', 'The office shoe that does not need thinking about. Open lacing, slim last, and a sole you can resole once before replacing.', (select id from public.categories where slug = 'mens-formal'), (select id from public.brands where slug = 'bata'), 'men', 'formal', 'Synthetic leather upper, PVC sole', 179900, 125900, false, 'Remo Derby — Bata', 'The office shoe that does not need thinking about.', array['office', 'dress', 'wedding', 'oxford', 'derby', 'business']::text[]),
+  ('Penny Loafer', 'metro-penny-loafer-mens', 'A slip-on with a proper leather sole and a saddle strap. Wears in around the instep after a week and then fits like nothing else.', (select id from public.categories where slug = 'mens-formal'), (select id from public.brands where slug = 'metro'), 'men', 'formal', 'Genuine leather upper, leather sole', 399900, NULL, false, 'Penny Loafer — Metro', 'A slip-on with a proper leather sole and a saddle strap.', array['office', 'dress', 'wedding', 'oxford', 'derby', 'business']::text[]),
+  ('Leather Brogue', 'woodland-brogue-mens', 'Broguing on a chunkier last with a real rubber outsole. A formal shoe that copes with a broken pavement.', (select id from public.categories where slug = 'mens-formal'), (select id from public.brands where slug = 'woodland'), 'men', 'formal', 'Nubuck leather, rubber outsole', 549500, 439600, false, 'Leather Brogue — Woodland', 'Broguing on a chunkier last with a real rubber outsole.', array['office', 'dress', 'wedding', 'oxford', 'derby', 'business']::text[]),
+  ('Camel Leather Boot', 'woodland-camel-boot-mens', 'The boot the brand is known for. Nubuck upper, hand-stitched welt, and a sole bonded rather than glued so it does not part company in the rain.', (select id from public.categories where slug = 'mens-boots'), (select id from public.brands where slug = 'woodland'), 'men', 'boot', 'Nubuck leather upper, PU direct-injected sole', 699500, NULL, true, 'Camel Leather Boot — Woodland', 'The boot the brand is known for.', array['ankle', 'hiking', 'outdoor', 'trekking', 'winter']::text[]),
+  ('Leather Chukka', 'red-chief-chukka-mens', 'Two eyelets, suede upper, crepe sole. Sits between a shoe and a boot, which makes it the one that gets worn most.', (select id from public.categories where slug = 'mens-boots'), (select id from public.brands where slug = 'red-chief'), 'men', 'boot', 'Suede leather upper, crepe rubber sole', 499500, NULL, false, 'Leather Chukka — Red Chief', 'Two eyelets, suede upper, crepe sole.', array['ankle', 'hiking', 'outdoor', 'trekking', 'winter']::text[]),
+  ('Classic Clog', 'crocs-classic-clog-unisex', 'Waterproof, washable, and the only thing worth owning in a monsoon. Pivoting heel strap for a closed fit, or back for a slide.', (select id from public.categories where slug = 'mens-sandals'), (select id from public.brands where slug = 'crocs'), 'unisex', 'slide', 'Croslite foam', 399500, 279600, true, 'Classic Clog — Crocs', 'Waterproof, washable, and the only thing worth owning in a monsoon.', array['chappal', 'monsoon', 'pool', 'beach', 'slipper', 'sliders']::text[]),
+  ('Adilette Comfort Slide', 'adidas-adilette-slide-unisex', 'A pool slide with a contoured foam footbed. Dries in minutes and takes being left on a wet balcony.', (select id from public.categories where slug = 'mens-sandals'), (select id from public.brands where slug = 'adidas'), 'unisex', 'slide', 'Synthetic bandage upper, Cloudfoam Plus footbed', 299900, 194900, false, 'Adilette Comfort Slide — adidas', 'A pool slide with a contoured foam footbed.', array['chappal', 'monsoon', 'pool', 'beach', 'slipper', 'sliders']::text[]),
+  ('Floater Sandal', 'bata-floater-sandal-mens', 'Three adjustable straps, a grippy outsole, and a footbed that does not flatten by the second month. Built for the walk to the market and back.', (select id from public.categories where slug = 'mens-sandals'), (select id from public.brands where slug = 'bata'), 'men', 'sandal', 'Synthetic webbing upper, EVA footbed, rubber outsole', 149900, NULL, false, 'Floater Sandal — Bata', 'Three adjustable straps, a grippy outsole, and a footbed that does not flatten by the second month.', array['chappal', 'monsoon', 'summer', 'open', 'strappy']::text[]),
+  ('Epic Flip', 'puma-flip-flop-unisex', 'A flip-flop with a moulded arch instead of a flat slab of foam. Costs a little more and lasts three times as long.', (select id from public.categories where slug = 'mens-sandals'), (select id from public.brands where slug = 'puma'), 'unisex', 'flipflop', 'Synthetic thong strap, EVA footbed', 99900, 69900, false, 'Epic Flip — Puma', 'A flip-flop with a moulded arch instead of a flat slab of foam.', array['chappal', 'thong', 'beach', 'monsoon', 'slipper']::text[]),
+  ('Court Vision Low', 'nike-court-vision-womens', 'A clean court silhouette with a stitched leather upper. Goes with everything, which is the entire point of a white sneaker.', (select id from public.categories where slug = 'womens-sneakers'), (select id from public.brands where slug = 'nike'), 'women', 'sneaker', 'Leather upper, rubber cupsole', 599500, 419600, true, 'Court Vision Low — Nike', 'A clean court silhouette with a stitched leather upper.', array['casual', 'trainers', 'lifestyle', 'everyday', 'street']::text[]),
+  ('Gazelle', 'adidas-gazelle-womens', 'Suede upper, slim last, gum sole. A training shoe from 1966 that has spent the last forty years being worn anywhere but the gym.', (select id from public.categories where slug = 'womens-sneakers'), (select id from public.brands where slug = 'adidas'), 'women', 'sneaker', 'Suede upper, gum rubber outsole', 899900, NULL, true, 'Gazelle — adidas', 'Suede upper, slim last, gum sole.', array['casual', 'trainers', 'lifestyle', 'everyday', 'street']::text[]),
+  ('327', 'new-balance-327-womens', 'An oversized N and a flared 70s outsole. Sits lower than it looks in photographs and runs true to size.', (select id from public.categories where slug = 'womens-sneakers'), (select id from public.brands where slug = 'new-balance'), 'women', 'sneaker', 'Suede and nylon upper, EVA midsole', 999900, 699900, false, '327 — New Balance', 'An oversized N and a flared 70s outsole.', array['casual', 'trainers', 'lifestyle', 'everyday', 'street']::text[]),
+  ('Summits', 'skechers-summits-womens', 'Wide-fit mesh with a memory foam insole. The pair people buy when they are on their feet for eight hours.', (select id from public.categories where slug = 'womens-sneakers'), (select id from public.brands where slug = 'skechers'), 'women', 'sneaker', 'Mesh upper, Air-Cooled Memory Foam insole', 449900, NULL, false, 'Summits — Skechers', 'Wide-fit mesh with a memory foam insole.', array['casual', 'trainers', 'lifestyle', 'everyday', 'street']::text[]),
+  ('Leather Ballerina', 'metro-ballerina-womens', 'A soft leather flat with a padded insole and a sole that grips. Folds enough to live in a bag without creasing badly.', (select id from public.categories where slug = 'womens-flats'), (select id from public.brands where slug = 'metro'), 'women', 'formal', 'Genuine leather upper, cushioned insole, TPR sole', 279900, 195900, false, 'Leather Ballerina — Metro', 'A soft leather flat with a padded insole and a sole that grips.', array['office', 'dress', 'wedding', 'oxford', 'derby', 'business']::text[]),
+  ('Slip-On Loafer', 'bata-loafer-womens', 'A round-toe loafer with a low block heel. Formal enough for an office, forgiving enough for a commute.', (select id from public.categories where slug = 'womens-flats'), (select id from public.brands where slug = 'bata'), 'women', 'formal', 'Synthetic leather upper, memory foam insole', 199900, NULL, false, 'Slip-On Loafer — Bata', 'A round-toe loafer with a low block heel.', array['office', 'dress', 'wedding', 'oxford', 'derby', 'business']::text[]),
+  ('Gel-Cumulus 27', 'asics-gel-cumulus-27-womens', 'A neutral daily trainer that does not overreach. Softer than the Nimbus underfoot at the forefoot, and lighter by a good margin.', (select id from public.categories where slug = 'womens-sports'), (select id from public.brands where slug = 'asics'), 'women', 'sports', 'Jacquard mesh upper, FF Blast Plus midsole', 1399900, 1049900, false, 'Gel-Cumulus 27 — ASICS', 'A neutral daily trainer that does not overreach.', array['running', 'runner', 'trainer', 'training', 'gym', 'jogging', 'workout', 'marathon']::text[]),
+  ('Softride Enzo', 'puma-softride-womens', 'A gym and walking shoe with a rocker sole. Slips on, holds the heel, and is quiet on a treadmill.', (select id from public.categories where slug = 'womens-sports'), (select id from public.brands where slug = 'puma'), 'women', 'sports', 'Knit upper, Softride foam midsole', 599900, 359900, false, 'Softride Enzo — Puma', 'A gym and walking shoe with a rocker sole.', array['running', 'runner', 'trainer', 'training', 'gym', 'jogging', 'workout', 'marathon']::text[]),
+  ('Brooklyn Low Wedge', 'crocs-brooklyn-slide-womens', 'A low wedge that is still entirely foam — waterproof, weightless, and washable under a tap.', (select id from public.categories where slug = 'womens-sandals'), (select id from public.brands where slug = 'crocs'), 'women', 'slide', 'Croslite foam, textured footbed', 449500, 314600, false, 'Brooklyn Low Wedge — Crocs', 'A low wedge that is still entirely foam — waterproof, weightless, and washable under a tap.', array['chappal', 'monsoon', 'pool', 'beach', 'slipper', 'sliders']::text[]),
+  ('Naughty Boy School Shoe', 'bata-school-shoe-kids', 'The black school shoe, with velcro instead of laces so it gets fastened properly. Scuffs wipe off with a damp cloth.', (select id from public.categories where slug = 'kids-school'), (select id from public.brands where slug = 'bata'), 'kids', 'formal', 'Synthetic leather upper, PVC sole, velcro strap', 129900, NULL, true, 'Naughty Boy School Shoe — Bata', 'The black school shoe, with velcro instead of laces so it gets fastened properly.', array['office', 'dress', 'wedding', 'oxford', 'derby', 'business']::text[]),
+  ('Junior Runner', 'campus-kids-sneaker', 'Light mesh, velcro, and a sole with real grip for a playground. Cheap enough to replace when the foot outgrows it in eight months.', (select id from public.categories where slug = 'kids-sneakers'), (select id from public.brands where slug = 'campus'), 'kids', 'sneaker', 'Mesh upper, EVA midsole, velcro closure', 109900, 76900, false, 'Junior Runner — Campus', 'Light mesh, velcro, and a sole with real grip for a playground.', array['casual', 'trainers', 'lifestyle', 'everyday', 'street']::text[]),
+  ('Classic Clog Kids', 'crocs-kids-clog', 'The adult clog, scaled down, with the same heel strap. Survives a puddle, a beach and a wash cycle.', (select id from public.categories where slug = 'kids-sandals'), (select id from public.brands where slug = 'crocs'), 'kids', 'slide', 'Croslite foam', 249500, NULL, false, 'Classic Clog Kids — Crocs', 'The adult clog, scaled down, with the same heel strap.', array['chappal', 'monsoon', 'pool', 'beach', 'slipper', 'sliders']::text[]),
+  ('Gazelle Indoor', 'adidas-gazelle-indoor-womens', 'The indoor court shape, in suede, with the gum sole that marks nothing. This colourway sold through in a fortnight and is not coming back — the run below is the full run.', (select id from public.categories where slug = 'womens-sneakers'), (select id from public.brands where slug = 'adidas'), 'women', 'sneaker', 'Suede upper, gum rubber outsole', 1099900, NULL, false, 'Gazelle Indoor — adidas', 'The indoor court shape, in suede, with the gum sole that marks nothing.', array['casual', 'trainers', 'lifestyle', 'everyday', 'street']::text[]),
+  ('Nubuck Trek Boot', 'woodland-nubuck-trek-mens', 'End of the line. One pair left, in one size, at the price it always was.', (select id from public.categories where slug = 'mens-boots'), (select id from public.brands where slug = 'woodland'), 'men', 'boot', 'Nubuck leather upper, stitched-down rubber outsole', 649500, NULL, false, 'Nubuck Trek Boot — Woodland', 'End of the line.', array['ankle', 'hiking', 'outdoor', 'trekking', 'winter']::text[]),
+  ('Gel-Kayano 31 Wide Fit Stability Running Trainer for Overpronation', 'asics-gel-kayano-31-wide-womens', 'The stability trainer, in the wide fit, for a foot that rolls in. Guidance comes from the sole geometry rather than a hard post, so it does not fight a neutral stride on the days you have one.', (select id from public.categories where slug = 'womens-sports'), (select id from public.brands where slug = 'asics'), 'women', 'sports', 'Engineered knit upper, FF Blast Plus Eco midsole', 1599900, 1279900, false, 'Gel-Kayano 31 Wide Fit Stability Running Trainer for Overpronation — ASICS', 'The stability trainer, in the wide fit, for a foot that rolls in.', array['running', 'runner', 'trainer', 'training', 'gym', 'jogging', 'workout', 'marathon']::text[])
+on conflict (slug) do update set name = excluded.name, description = excluded.description, category_id = excluded.category_id, brand_id = excluded.brand_id, gender = excluded.gender, footwear_type = excluded.footwear_type, material = excluded.material, base_price = excluded.base_price, sale_price = excluded.sale_price, is_featured = excluded.is_featured, meta_title = excluded.meta_title, meta_description = excluded.meta_description, search_keywords = excluded.search_keywords;
 
 -- --- images ---------------------------------------------------------------
+-- One hero and one outsole per *colourway*, not per product: the swatches on
+-- the product page change the gallery, which they can only do if the gallery
+-- has something to change to.
+--
 -- Set-based rather than one row per image: the URL and the alt text are both
--- derived from the product, so listing 64 literals would only be 64 more
--- places for them to drift out of step with scripts/generate-seed-images.ts.
+-- derived from the product and the colour, so listing them as literals would
+-- only be more places for them to drift out of step with
+-- scripts/generate-seed-images.ts. The colour slug below is the SQL twin of
+-- colorSlug() in that file — a mismatch is a broken image, so they change
+-- together.
 --
 -- Cleared first because product_images has no natural key to upsert on, and
 -- the partial unique index on (product_id) where is_primary would reject a
 -- second primary before the first was gone.
 delete from public.product_images;
-with colorway (product_slug, color) as (values
-  ('nike-air-max-90-mens', 'White / Grey'),
-  ('adidas-samba-og-mens', 'Core Black'),
-  ('new-balance-550-mens', 'White / Green'),
-  ('puma-suede-classic-mens', 'Peacoat Navy'),
-  ('campus-north-plus-mens', 'Grey'),
-  ('skechers-go-walk-7-mens', 'Charcoal'),
-  ('asics-gel-nimbus-27-mens', 'Black / Gold'),
-  ('nike-pegasus-41-mens', 'Black / White'),
-  ('adidas-adizero-sl-mens', 'Core Black'),
-  ('puma-velocity-nitro-3-mens', 'Fire Orchid'),
-  ('red-chief-oxford-mens', 'Tan'),
-  ('bata-derby-mens', 'Black'),
-  ('metro-penny-loafer-mens', 'Coffee Brown'),
-  ('woodland-brogue-mens', 'Khaki'),
-  ('woodland-camel-boot-mens', 'Camel'),
-  ('red-chief-chukka-mens', 'Rust'),
-  ('crocs-classic-clog-unisex', 'Navy'),
-  ('adidas-adilette-slide-unisex', 'Black'),
-  ('bata-floater-sandal-mens', 'Brown'),
-  ('puma-flip-flop-unisex', 'Black / White'),
-  ('nike-court-vision-womens', 'White / Pink'),
-  ('adidas-gazelle-womens', 'Collegiate Green'),
-  ('new-balance-327-womens', 'Sea Salt'),
-  ('skechers-summits-womens', 'Grey / Lavender'),
-  ('metro-ballerina-womens', 'Black'),
-  ('bata-loafer-womens', 'Black'),
-  ('asics-gel-cumulus-27-womens', 'Digital Aqua'),
-  ('puma-softride-womens', 'Rose'),
-  ('crocs-brooklyn-slide-womens', 'Bone'),
-  ('bata-school-shoe-kids', 'Black'),
-  ('campus-kids-sneaker', 'Blue'),
-  ('crocs-kids-clog', 'Bright Blue')
+with colorway (product_slug, color, position) as (values
+  ('nike-air-max-90-mens', 'White / Grey', 0),
+  ('nike-air-max-90-mens', 'Black / Volt', 1),
+  ('adidas-samba-og-mens', 'Core Black', 0),
+  ('adidas-samba-og-mens', 'Cloud White', 1),
+  ('new-balance-550-mens', 'White / Green', 0),
+  ('new-balance-550-mens', 'White / Navy', 1),
+  ('puma-suede-classic-mens', 'Peacoat Navy', 0),
+  ('puma-suede-classic-mens', 'Team Red', 1),
+  ('campus-north-plus-mens', 'Grey', 0),
+  ('campus-north-plus-mens', 'Black', 1),
+  ('campus-north-plus-mens', 'Navy', 2),
+  ('skechers-go-walk-7-mens', 'Charcoal', 0),
+  ('skechers-go-walk-7-mens', 'Taupe', 1),
+  ('asics-gel-nimbus-27-mens', 'Black / Gold', 0),
+  ('asics-gel-nimbus-27-mens', 'Sky Blue', 1),
+  ('nike-pegasus-41-mens', 'Black / White', 0),
+  ('nike-pegasus-41-mens', 'Wolf Grey', 1),
+  ('adidas-adizero-sl-mens', 'Core Black', 0),
+  ('puma-velocity-nitro-3-mens', 'Fire Orchid', 0),
+  ('puma-velocity-nitro-3-mens', 'Black', 1),
+  ('red-chief-oxford-mens', 'Tan', 0),
+  ('red-chief-oxford-mens', 'Black', 1),
+  ('bata-derby-mens', 'Black', 0),
+  ('metro-penny-loafer-mens', 'Coffee Brown', 0),
+  ('metro-penny-loafer-mens', 'Black', 1),
+  ('woodland-brogue-mens', 'Khaki', 0),
+  ('woodland-camel-boot-mens', 'Camel', 0),
+  ('woodland-camel-boot-mens', 'Olive', 1),
+  ('red-chief-chukka-mens', 'Rust', 0),
+  ('crocs-classic-clog-unisex', 'Navy', 0),
+  ('crocs-classic-clog-unisex', 'Black', 1),
+  ('crocs-classic-clog-unisex', 'Bone', 2),
+  ('adidas-adilette-slide-unisex', 'Black', 0),
+  ('adidas-adilette-slide-unisex', 'Navy', 1),
+  ('bata-floater-sandal-mens', 'Brown', 0),
+  ('bata-floater-sandal-mens', 'Black', 1),
+  ('puma-flip-flop-unisex', 'Black / White', 0),
+  ('nike-court-vision-womens', 'White / Pink', 0),
+  ('nike-court-vision-womens', 'White / Black', 1),
+  ('adidas-gazelle-womens', 'Collegiate Green', 0),
+  ('adidas-gazelle-womens', 'Wonder Beige', 1),
+  ('new-balance-327-womens', 'Sea Salt', 0),
+  ('skechers-summits-womens', 'Grey / Lavender', 0),
+  ('skechers-summits-womens', 'All Black', 1),
+  ('metro-ballerina-womens', 'Black', 0),
+  ('metro-ballerina-womens', 'Tan', 1),
+  ('bata-loafer-womens', 'Black', 0),
+  ('asics-gel-cumulus-27-womens', 'Digital Aqua', 0),
+  ('puma-softride-womens', 'Rose', 0),
+  ('puma-softride-womens', 'Black', 1),
+  ('crocs-brooklyn-slide-womens', 'Bone', 0),
+  ('crocs-brooklyn-slide-womens', 'Black', 1),
+  ('bata-school-shoe-kids', 'Black', 0),
+  ('campus-kids-sneaker', 'Blue', 0),
+  ('campus-kids-sneaker', 'Pink', 1),
+  ('crocs-kids-clog', 'Bright Blue', 0),
+  ('crocs-kids-clog', 'Bubblegum', 1),
+  ('adidas-gazelle-indoor-womens', 'Collegiate Green', 0),
+  ('woodland-nubuck-trek-mens', 'Khaki', 0),
+  ('asics-gel-kayano-31-wide-womens', 'Sea Salt', 0),
+  ('asics-gel-kayano-31-wide-womens', 'Peacoat Navy', 1)
+),
+view (kind, offset_in_pair, suffix) as (values
+  ('hero', 0, ', side profile'),
+  ('sole', 1, ' outsole')
 )
-insert into public.product_images (product_id, url, alt_text, sort_order, is_primary)
-select p.id, '/seed/' || p.slug || '-hero.svg',
-       p.name || ' in ' || c.color || ', side profile', 0, true
-  from public.products p join colorway c on c.product_slug = p.slug
-union all
--- The second image is always the outsole: the tread shot every footwear
--- shoot produces and nobody puts on the card. The product card reveals it
--- on hover.
-select p.id, '/seed/' || p.slug || '-sole.svg', p.name || ' outsole', 1, false
-  from public.products p;
+insert into public.product_images (product_id, url, alt_text, sort_order, is_primary, color)
+select p.id,
+       '/seed/' || p.slug || '-'
+         || trim(both '-' from lower(regexp_replace(c.color, '[^a-zA-Z0-9]+', '-', 'g')))
+         || '-' || v.kind || '.svg',
+       p.name || ' in ' || c.color || v.suffix,
+       c.position * 2 + v.offset_in_pair,
+       -- Exactly one primary per product: the first colourway's hero. It is
+       -- what the card shows and what the gallery opens on.
+       c.position = 0 and v.kind = 'hero',
+       c.color
+  from public.products p
+  join colorway c on c.product_slug = p.slug
+  cross join view v;
 
 -- --- variants -------------------------------------------------------------
 -- One row per size per colourway, generated by joining each product to the
@@ -205,7 +252,11 @@ colorway (product_slug, color, hex) as (values
   ('campus-kids-sneaker', 'Blue', '#2f5aa8'),
   ('campus-kids-sneaker', 'Pink', '#d4718f'),
   ('crocs-kids-clog', 'Bright Blue', '#2a7fd4'),
-  ('crocs-kids-clog', 'Bubblegum', '#e08aa8')
+  ('crocs-kids-clog', 'Bubblegum', '#e08aa8'),
+  ('adidas-gazelle-indoor-womens', 'Collegiate Green', '#2f5340'),
+  ('woodland-nubuck-trek-mens', 'Khaki', '#6f6244'),
+  ('asics-gel-kayano-31-wide-womens', 'Sea Salt', '#e5ddd0'),
+  ('asics-gel-kayano-31-wide-womens', 'Peacoat Navy', '#232c3d')
 ),
 override (product_slug, size, qty) as (values
   ('nike-air-max-90-mens', '6', 0),
@@ -240,7 +291,16 @@ override (product_slug, size, qty) as (values
   ('crocs-brooklyn-slide-womens', '6', 3),
   ('bata-school-shoe-kids', '13C', 2),
   ('campus-kids-sneaker', '3', 0),
-  ('crocs-kids-clog', '12C', 1)
+  ('crocs-kids-clog', '12C', 1),
+  ('adidas-gazelle-indoor-womens', '3', 0),
+  ('adidas-gazelle-indoor-womens', '4', 0),
+  ('adidas-gazelle-indoor-womens', '5', 0),
+  ('adidas-gazelle-indoor-womens', '6', 0),
+  ('adidas-gazelle-indoor-womens', '7', 0),
+  ('adidas-gazelle-indoor-womens', '8', 0),
+  ('woodland-nubuck-trek-mens', '9', 1),
+  ('asics-gel-kayano-31-wide-womens', '7', 2),
+  ('asics-gel-kayano-31-wide-womens', '8', 0)
 )
 insert into public.product_variants (product_id, size, color, color_hex, sku, stock_quantity)
 select p.id, s.size, c.color, c.hex,
@@ -293,6 +353,14 @@ insert into public.collection_products (collection_id, product_id, sort_order) v
   ((select id from public.collections where slug = 'under-2000'), (select id from public.products where slug = 'puma-flip-flop-unisex'), 5),
   ((select id from public.collections where slug = 'under-2000'), (select id from public.products where slug = 'bata-loafer-womens'), 6)
 on conflict (collection_id, product_id) do update set sort_order = excluded.sort_order;
+
+-- --- the homepage hero ----------------------------------------------------
+-- Two crops of one scene. A 16:9 hero cropped to a 390px phone loses the
+-- shoe; a phone-shaped hero stretched across a desktop loses the point.
+-- placement is the natural key: one hero per placement, replaced on reseed.
+delete from public.banners where placement = 'home_hero';
+insert into public.banners (placement, image_url, mobile_image_url, headline, subtext, cta_label, cta_href, sort_order)
+values ('home_hero', '/seed/hero-desktop.svg', '/seed/hero-mobile.svg', 'Every size we hold, shown on every shoe', 'Sneakers, formal shoes, boots and sandals for men, women and kids.', 'Shop all footwear', '/shop', 0);
 
 -- --- CMS pages ------------------------------------------------------------
 insert into public.pages (slug, title, body, meta_description, is_published) values

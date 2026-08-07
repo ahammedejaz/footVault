@@ -26,14 +26,21 @@ import { cn } from "@/lib/utils";
 export function ProductCard({
   product,
   priority = false,
+  headingLevel = 3,
+  sizes = "(max-width: 640px) 46vw, (max-width: 1280px) 31vw, 288px",
   className,
 }: {
   product: ProductSummary;
   /** Set on the first row so the LCP image is not lazy. */
   priority?: boolean;
+  /** Cards sit under a section heading on the home page and under the page
+      heading on a listing; the level has to follow, or the outline breaks. */
+  headingLevel?: 2 | 3;
+  sizes?: string;
   className?: string;
 }) {
   const soldOut = !product.inStock;
+  const Heading = `h${headingLevel}` as "h2" | "h3";
 
   return (
     <article className={cn("product-card group relative", className)}>
@@ -44,7 +51,11 @@ export function ProductCard({
             alt={product.heroImage.alt}
             fill
             priority={priority}
-            sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
+            // Above the fold the browser must not wait for layout to decide
+            // this matters; below it, it must not fetch until it does.
+            loading={priority ? "eager" : "lazy"}
+            fetchPriority={priority ? "high" : "auto"}
+            sizes={sizes}
             className="card-hero object-cover"
           />
         ) : null}
@@ -56,7 +67,8 @@ export function ProductCard({
             alt=""
             aria-hidden
             fill
-            sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
+            loading="lazy"
+            sizes={sizes}
             className="card-sole object-cover"
           />
         ) : null}
@@ -78,21 +90,21 @@ export function ProductCard({
             {product.brandName}
           </p>
         ) : null}
-        <h3 className="mt-1 text-base leading-snug font-medium">
+        <Heading className="mt-1 text-base leading-snug font-medium">
           <Link
             href={`/product/${product.slug}`}
             className="rounded-sm after:absolute after:inset-0 after:content-['']"
           >
             {product.name}
           </Link>
-        </h3>
+        </Heading>
         <span className="card-rule mt-1 w-full" aria-hidden="true" />
         <Price
           basePrice={product.basePrice}
           salePrice={product.salePrice}
           className="mt-2"
         />
-        <SizeRun sizes={product.sizes} compact className="mt-3" />
+        <SizeRun sizes={product.sizes} className="mt-3" />
       </div>
     </article>
   );
@@ -100,21 +112,37 @@ export function ProductCard({
 
 export function ProductGrid({
   products,
+  headingLevel = 3,
   className,
 }: {
   products: ProductSummary[];
+  headingLevel?: 2 | 3;
   className?: string;
 }) {
   return (
     <ul
       className={cn(
-        "grid grid-cols-2 gap-x-4 gap-y-10 sm:gap-x-6 lg:grid-cols-4",
+        // Two across on a phone, three from `md` — at 768 a two-column grid
+        // gives each card 350px, which is a lot of shoe and very little list.
+        // Three again at `lg`, where the filter rail takes 240px back, and four
+        // at `xl` where there is room for it.
+        "grid grid-cols-2 gap-x-4 gap-y-10 sm:gap-x-6 md:grid-cols-3 xl:grid-cols-4",
         className,
       )}
     >
       {products.map((product, index) => (
-        <li key={product.id} className="reveal">
-          <ProductCard product={product} priority={index < 4} />
+        <li key={product.id}>
+          {/*
+            The first four are eager. On a 390px phone the grid is two across,
+            so two cards are above the fold and the third is a scroll away —
+            four covers the fold at every width the site supports without
+            racing the whole grid for bandwidth.
+          */}
+          <ProductCard
+            product={product}
+            priority={index < 4}
+            headingLevel={headingLevel}
+          />
         </li>
       ))}
     </ul>

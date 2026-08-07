@@ -11,7 +11,14 @@
     "format": "prettier --write .",
     "seed:sql": "tsx scripts/seed.ts --sql",
     "seed": "tsx scripts/seed.ts",
-    "seed:images": "tsx scripts/generate-seed-images.ts"
+    "seed:images": "tsx scripts/generate-seed-images.ts",
+    "audit:overflow": "tsx scripts/audit/overflow.ts",
+    "audit:a11y": "tsx scripts/audit/a11y.ts",
+    "audit:links": "tsx scripts/audit/links.ts",
+    "audit:keyboard": "tsx scripts/audit/keyboard.ts",
+    "audit:shots": "tsx scripts/audit/screenshots.ts",
+    "audit": "npm run audit:overflow && npm run audit:a11y && npm run audit:keyboard && npm run audit:interactions && npm run audit:links",
+    "audit:interactions": "tsx scripts/audit/interactions.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.7.1",
@@ -36,12 +43,14 @@
     "zustand": "^5.0.14"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.12.1",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.3.0",
+    "playwright": "^1.62.1",
     "tailwindcss": "^4",
     "tsx": "^4.23.10",
     "typescript": "^5"

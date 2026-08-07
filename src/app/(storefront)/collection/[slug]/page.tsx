@@ -1,11 +1,17 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
-import { EmptyState } from "@/components/storefront/empty-state";
-import { ProductGrid } from "@/components/storefront/product-card";
-import { getCollection } from "@/lib/queries/catalog";
+import { Breadcrumbs } from "@/components/storefront/breadcrumbs";
+import { ProductListing } from "@/components/storefront/product-listing";
+import { getCollection, listCollectionSlugs } from "@/lib/queries/catalog";
+import { staticParamsOr } from "@/lib/static-params";
+import type { RawSearchParams } from "@/lib/queries/search-params";
 
-export const revalidate = 600;
+export async function generateStaticParams() {
+  return staticParamsOr("collections", async () =>
+    (await listCollectionSlugs()).map((slug) => ({ slug })),
+  );
+}
 
 export async function generateMetadata({
   params,
@@ -19,51 +25,53 @@ export async function generateMetadata({
     title: collection.name,
     description: collection.description ?? undefined,
     alternates: { canonical: `/collection/${collection.slug}` },
+    openGraph: {
+      title: collection.name,
+      description: collection.description ?? undefined,
+    },
   };
 }
 
 /**
  * A curated rail, given its own page.
  *
- * Collections are ordered by the owner, so this page keeps `sort_order` rather
- * than offering a sort — the sequence is the curation.
+ * It carries the same filters as any other listing — a customer who lands on
+ * "Monsoon ready" from the homepage still needs to narrow it to their size,
+ * and having the panel here but not there would be an arbitrary difference.
+ * The default order is the owner's `sort_order`, because the sequence is the
+ * curation.
  */
 export default async function CollectionPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ slug: string }>;
+  searchParams: Promise<RawSearchParams>;
 }) {
-  const { slug } = await params;
+  const [{ slug }, search] = await Promise.all([params, searchParams]);
   const collection = await getCollection(slug);
   if (!collection) notFound();
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:py-14">
-      <header className="max-w-2xl">
-        <p className="text-muted-foreground font-mono text-xs tracking-[0.14em] uppercase">
-          Collection
-        </p>
-        <h1 className="font-display mt-2 text-4xl font-extrabold tracking-[-0.03em] uppercase">
-          {collection.name}
-        </h1>
-        {collection.description ? (
-          <p className="text-muted-foreground mt-3 text-base text-pretty">
-            {collection.description}
-          </p>
-        ) : null}
-      </header>
-
-      <div className="mt-10">
-        {collection.products.length === 0 ? (
-          <EmptyState
-            title="This rail is empty"
-            body="Nothing has been added to this collection yet. The rest of the shop is one tap away."
-            action={{ href: "/shop", label: "Shop all footwear" }}
-          />
-        ) : (
-          <ProductGrid products={collection.products} />
-        )}
+    <>
+      <div className="mx-auto max-w-7xl px-4 pt-6 sm:px-6">
+        <Breadcrumbs
+          crumbs={[
+            { label: "Home", href: "/" },
+            { label: "Shop", href: "/shop" },
+            { label: collection.name },
+          ]}
+        />
       </div>
-    </div>
+      <ProductListing
+        params={search}
+        pathname={`/collection/${collection.slug}`}
+        overrides={{ collectionSlug: collection.slug }}
+        eyebrow="Collection"
+        heading={collection.name}
+        description={collection.description}
+        escape={{ href: "/shop", label: "Browse all footwear" }}
+      />
+    </>
   );
 }

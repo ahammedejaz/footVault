@@ -1,4 +1,4 @@
-import type { ProductFilters, SortKey } from "@/lib/queries/catalog";
+import type { CatalogFacets, ProductFilters, SortKey } from "@/lib/queries/catalog";
 import type { Database } from "@/lib/database.types";
 
 type Gender = Database["public"]["Enums"]["gender_group"];
@@ -16,19 +16,24 @@ const TYPES: FootwearType[] = [
   "sports",
   "flipflop",
 ];
-const SORTS: SortKey[] = ["newest", "price-asc", "price-desc"];
+const SORTS: SortKey[] = ["newest", "price-asc", "price-desc", "relevance"];
 
 export const SORT_LABELS: Record<SortKey, string> = {
   newest: "Newest",
   "price-asc": "Price, low to high",
   "price-desc": "Price, high to low",
+  relevance: "Best match",
 };
 
+/** The sorts a listing offers. Relevance only means anything with a query. */
+export const LISTING_SORTS: SortKey[] = ["newest", "price-asc", "price-desc"];
+export const SEARCH_SORTS: SortKey[] = ["relevance", "price-asc", "price-desc"];
+
 /**
- * Filters live in the URL, so a filtered listing is shareable and the back
- * button behaves. This is the one place that reads them, and it is deliberately
- * forgiving: an unknown `?sort=cheapest` falls back to the default rather than
- * 500ing a page someone was linked to.
+ * Filters live in the URL, so a filtered listing is shareable, the back button
+ * behaves, and the whole panel works with JavaScript off. This is the one place
+ * that reads them, and it is deliberately forgiving: an unknown `?sort=cheapest`
+ * falls back to the default rather than 500ing a page someone was linked to.
  */
 export function toArray(value: string | string[] | undefined): string[] {
   if (value === undefined) return [];
@@ -38,15 +43,16 @@ export function toArray(value: string | string[] | undefined): string[] {
   return values.map((v) => v.trim()).filter(Boolean);
 }
 
-function toPaise(value: string | string[] | undefined): number | undefined {
-  const first = Array.isArray(value) ? value[0] : value;
-  if (!first) return undefined;
-  const rupees = Number.parseInt(first, 10);
-  return Number.isFinite(rupees) && rupees >= 0 ? rupees * 100 : undefined;
+export function first(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
 }
 
-function first(value: string | string[] | undefined): string | undefined {
-  return Array.isArray(value) ? value[0] : value;
+/** Rupees in the URL, paise in the database. `?min=2000` is ₹2,000. */
+function toPaise(value: string | string[] | undefined): number | undefined {
+  const raw = first(value);
+  if (!raw) return undefined;
+  const rupees = Number.parseInt(raw, 10);
+  return Number.isFinite(rupees) && rupees >= 0 ? rupees * 100 : undefined;
 }
 
 export function parseFilters(
@@ -57,6 +63,9 @@ export function parseFilters(
   const type = first(params.type);
   const sort = first(params.sort);
   const page = Number.parseInt(first(params.page) ?? "1", 10);
+  const search = first(params.q)?.trim() || undefined;
+  const minPrice = toPaise(params.min);
+  const maxPrice = toPaise(params.max);
 
   return {
     gender: GENDERS.includes(gender as Gender) ? (gender as Gender) : undefined,
@@ -66,28 +75,39 @@ export function parseFilters(
     brandSlugs: toArray(params.brand),
     sizes: toArray(params.size),
     colors: toArray(params.color),
-    minPrice: toPaise(params.min),
-    maxPrice: toPaise(params.max),
+    // A range typed backwards is a slip, not a request for nothing. Swap it.
+    minPrice:
+      minPrice !== undefined && maxPrice !== undefined && minPrice > maxPrice
+        ? maxPrice
+        : minPrice,
+    maxPrice:
+      minPrice !== undefined && maxPrice !== undefined && minPrice > maxPrice
+        ? minPrice
+        : maxPrice,
     inStockOnly: first(params.in_stock) === "true",
     onSale: first(params.on_sale) === "true",
-    search: first(params.q),
-    sort: SORTS.includes(sort as SortKey) ? (sort as SortKey) : "newest",
+    search,
+    sort: SORTS.includes(sort as SortKey)
+      ? (sort as SortKey)
+      : search
+        ? "relevance"
+        : "newest",
     page: Number.isFinite(page) && page > 0 ? page : 1,
     ...overrides,
   };
 }
 
 /**
- * Build the href for toggling one facet, preserving everything else.
+ * Rebuild the query string with one key changed, preserving everything else.
  *
- * Page is dropped on every change: a customer on page 4 who ticks "size 9"
+ * `page` is dropped on every change: a customer on page 4 who ticks "size 9"
  * should land on page 1 of the new result set, not on a page that may no longer
  * exist.
  */
-export function toggleParam(
+function rebuild(
   params: RawSearchParams,
   key: string,
-  value: string,
+  values: string[],
   pathname: string,
 ): string {
   const next = new URLSearchParams();
@@ -95,15 +115,26 @@ export function toggleParam(
     if (k === "page" || k === key) continue;
     for (const item of toArray(v)) next.append(k, item);
   }
-
-  const current = toArray(params[key]);
-  const updated = current.includes(value)
-    ? current.filter((v) => v !== value)
-    : [...current, value];
-  for (const item of updated) next.append(key, item);
-
+  for (const item of values) next.append(key, item);
   const query = next.toString();
   return query ? `${pathname}?${query}` : pathname;
+}
+
+export function toggleParam(
+  params: RawSearchParams,
+  key: string,
+  value: string,
+  pathname: string,
+): string {
+  const current = toArray(params[key]);
+  return rebuild(
+    params,
+    key,
+    current.includes(value)
+      ? current.filter((v) => v !== value)
+      : [...current, value],
+    pathname,
+  );
 }
 
 export function setParam(
@@ -112,12 +143,20 @@ export function setParam(
   value: string | null,
   pathname: string,
 ): string {
+  return rebuild(params, key, value === null ? [] : [value], pathname);
+}
+
+/** Remove several keys at once — the price range is two params, one chip. */
+export function dropParams(
+  params: RawSearchParams,
+  keys: string[],
+  pathname: string,
+): string {
   const next = new URLSearchParams();
   for (const [k, v] of Object.entries(params)) {
-    if (k === "page" || k === key) continue;
+    if (k === "page" || keys.includes(k)) continue;
     for (const item of toArray(v)) next.append(k, item);
   }
-  if (value !== null) next.append(key, value);
   const query = next.toString();
   return query ? `${pathname}?${query}` : pathname;
 }
@@ -137,29 +176,86 @@ export function pageHref(
   return query ? `${pathname}?${query}` : pathname;
 }
 
-/** Facets currently applied, for the "clear" row above the grid. */
+/** Everything except the search term, so "clear all" does not clear the query. */
+export function clearedHref(params: RawSearchParams, pathname: string): string {
+  const q = first(params.q);
+  return q ? `${pathname}?q=${encodeURIComponent(q)}` : pathname;
+}
+
+export type FilterChip = { key: string; label: string; href: string };
+
+/**
+ * The facets currently applied, as removable chips.
+ *
+ * Labels come from the facet list rather than the raw slug so the chip reads
+ * "New Balance" and not "new-balance" — and a `?brand=nonsense` someone pasted
+ * shows the slug rather than disappearing, which is the honest failure.
+ */
 export function activeFilterChips(
   params: RawSearchParams,
   pathname: string,
-): Array<{ label: string; href: string }> {
-  const chips: Array<{ label: string; href: string }> = [];
+  facets: CatalogFacets,
+  formatPrice: (paise: number) => string,
+): FilterChip[] {
+  const chips: FilterChip[] = [];
+  const labelOf = (list: { value: string; label: string }[], value: string) =>
+    list.find((f) => f.value === value)?.label ?? value;
+
   for (const size of toArray(params.size)) {
-    chips.push({ label: `UK ${size}`, href: toggleParam(params, "size", size, pathname) });
+    chips.push({
+      key: `size-${size}`,
+      label: `UK ${size}`,
+      href: toggleParam(params, "size", size, pathname),
+    });
   }
   for (const color of toArray(params.color)) {
-    chips.push({ label: color, href: toggleParam(params, "color", color, pathname) });
+    chips.push({
+      key: `color-${color}`,
+      label: labelOf(facets.colors, color),
+      href: toggleParam(params, "color", color, pathname),
+    });
   }
   for (const brand of toArray(params.brand)) {
-    chips.push({ label: brand, href: toggleParam(params, "brand", brand, pathname) });
+    chips.push({
+      key: `brand-${brand}`,
+      label: labelOf(facets.brands, brand),
+      href: toggleParam(params, "brand", brand, pathname),
+    });
   }
+  const gender = first(params.gender);
+  if (gender && GENDERS.includes(gender as Gender)) {
+    chips.push({
+      key: `gender-${gender}`,
+      label: labelOf(facets.genders, gender),
+      href: setParam(params, "gender", null, pathname),
+    });
+  }
+
+  const min = toPaise(params.min);
+  const max = toPaise(params.max);
+  if (min !== undefined || max !== undefined) {
+    const label =
+      min !== undefined && max !== undefined
+        ? `${formatPrice(min)} – ${formatPrice(max)}`
+        : min !== undefined
+          ? `Over ${formatPrice(min)}`
+          : `Under ${formatPrice(max!)}`;
+    chips.push({ key: "price", label, href: dropParams(params, ["min", "max"], pathname) });
+  }
+
   if (first(params.in_stock) === "true") {
     chips.push({
+      key: "in-stock",
       label: "In stock only",
       href: setParam(params, "in_stock", null, pathname),
     });
   }
   if (first(params.on_sale) === "true") {
-    chips.push({ label: "On sale", href: setParam(params, "on_sale", null, pathname) });
+    chips.push({
+      key: "on-sale",
+      label: "On sale",
+      href: setParam(params, "on_sale", null, pathname),
+    });
   }
   return chips;
 }

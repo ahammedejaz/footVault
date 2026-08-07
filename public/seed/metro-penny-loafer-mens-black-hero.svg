@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 1000" width="800" height="1000" role="img">
+  <defs>
+    <radialGradient id="bg" cx="0.5" cy="0.42" r="0.78">
+      <stop offset="0" stop-color="#fdfdfe"/>
+      <stop offset="1" stop-color="#e9edf3"/>
+    </radialGradient>
+    <radialGradient id="contact" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#0a1526" stop-opacity="0.20"/>
+      <stop offset="1" stop-color="#0a1526" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="800" height="1000" fill="url(#bg)"/>
+  <ellipse cx="400" cy="712" rx="322" ry="36" fill="url(#contact)"/>
+  <g transform="translate(12.4 380.0) scale(1.02)">
+    <defs><clipPath id="sole-metropennyloafermens"><path d="M26 250 L724 246 L722 278 C716 285 704 288 688 288 L64 288 C34 286 18 268 26 250 Z M572 276 L688 272 C698 292 694 308 680 313 C674 315 666 316 656 316 L598 316 C586 316 578 306 578 294 Z"/></clipPath></defs>
+    <path d="M26 250 L724 246 L722 278 C716 285 704 288 688 288 L64 288 C34 286 18 268 26 250 Z M572 276 L688 272 C698 292 694 308 680 313 C674 315 666 316 656 316 L598 316 C586 316 578 306 578 294 Z" fill="#5c5c5c"/>
+    <rect x="-40" y="272" width="840" height="80" fill="#373737" clip-path="url(#sole-metropennyloafermens)"/>
+    <path d="M26 250 L724 246 L722 278 C716 285 704 288 688 288 L64 288 C34 286 18 268 26 250 Z M572 276 L688 272 C698 292 694 308 680 313 C674 315 666 316 656 316 L598 316 C586 316 578 306 578 294 Z" fill="none" stroke="rgba(255,255,255,0.34)" stroke-width="2"/>
+    
+    <path d="M32 250 C28 214 66 190 130 178 C214 160 296 146 358 130 C400 119 428 98 464 84 C500 70 542 62 588 62 C650 62 692 84 708 128 C722 166 726 212 722 250 Z" fill="#161616" stroke="rgba(255,255,255,0.34)" stroke-width="2" stroke-linejoin="round"/>
+    <path d="M358 130 C408 142 478 148 566 146 M462 86 L494 136 M544 78 L512 136" fill="none" stroke="rgba(255,255,255,0.34)" stroke-width="4" stroke-linecap="round"/>
+  </g>
+  <g font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="19" letter-spacing="1.8" fill="#596475">
+    <text x="48" y="70">METRO</text>
+    <text x="752" y="70" text-anchor="end">3/4</text>
+    <text x="48" y="956">BLACK</text>
+  </g>
+  <line x1="48" y1="90" x2="752" y2="90" stroke="#d5dce5" stroke-width="1"/>
+  <line x1="48" y1="928" x2="752" y2="928" stroke="#d5dce5" stroke-width="1"/>
+</svg>

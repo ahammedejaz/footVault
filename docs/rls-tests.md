@@ -6,6 +6,8 @@ is the proof: each check below is a query that was run against the live project
 
 **Two findings came out of this pass, both fixed and re-verified.** They are
 written up in §6, because a checklist that has never failed has not been run.
+§6b re-runs the escalation check at the start of Phase 3; §7 covers the three
+functions Phase 3 added.
 
 ## How to run it
 
@@ -56,7 +58,7 @@ update public.profiles set role = 'admin'
 Then one order per customer, a coupon, a deactivated product, and two guest
 carts with the tokens `guest-token-alpha` and `guest-token-beta`.
 
-Tear down with the block in §7.
+Tear down with the block in §8.
 
 ---
 
@@ -332,7 +334,69 @@ ahead of the `coalesce`, so the `'{}'` default is actually reached.
 
 ---
 
-## 7 · Teardown
+## 6b · Phase 3 preflight — the escalation test, re-run
+
+Re-run at the start of Phase 3 against a user created the way GoTrue creates
+one, with a hostile `raw_user_meta_data`:
+
+```sql
+insert into auth.users (id, instance_id, aud, role, email, encrypted_password,
+                        email_confirmed_at, created_at, updated_at,
+                        raw_app_meta_data, raw_user_meta_data)
+values ('dddddddd-0000-4000-8000-00000000000e',
+        '00000000-0000-0000-0000-000000000000',
+        'authenticated', 'authenticated', 'preflight-escalation@example.test', '',
+        now(), now(), now(), '{"provider":"email"}',
+        '{"full_name":"Preflight Probe","role":"admin","is_admin":true,"user_role":"admin"}');
+
+select p.role, u.raw_user_meta_data ->> 'role' as claimed
+  from public.profiles p join auth.users u on u.id = p.id
+ where p.id = 'dddddddd-0000-4000-8000-00000000000e';
+```
+
+| what | expected | got |
+|---|---|---|
+| `claimed` | `admin` — the payload the client controls | **admin** ✅ |
+| `role` | `customer` — `handle_new_user()` never reads it | **customer** ✅ |
+
+Then, as that user:
+
+```sql
+begin;
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"dddddddd-0000-4000-8000-00000000000e","role":"authenticated"}';
+update public.profiles set role = 'admin' where id = auth.uid();
+rollback;
+```
+
+| what | expected | got |
+|---|---|---|
+| the update | `42501` from `guard_profile_role()` | **`ERROR: 42501: Only an admin can change a profile role`** ✅ |
+| editing own `full_name` | 1 row — the guard is targeted, not a blanket denial | **1** ✅ |
+| `public.is_admin()` | false | **false** ✅ |
+| `role` afterwards | `customer` | **customer** ✅ |
+
+**What could not be checked this way.** The brief asks for the signup to go
+through the real client. `supabase.auth.signUp()` returns
+`429 over_email_send_rate_limit` on this project — email confirmation is on and
+the built-in SMTP allowance is exhausted — so no user can be created over HTTP
+at all. What the HTTP path adds over the block above is GoTrue's own handling of
+`options.data`, which is a verbatim copy into `raw_user_meta_data`; the fixture
+above *is* that copy. It is a substitution, and it is recorded as one. Re-run the
+client-side version once SMTP is configured, or once "Confirm email" is off.
+
+## 7 · New functions in Phase 3
+
+| function | security | why it is safe |
+|---|---|---|
+| `catalog_query()` | INVOKER | RLS runs inside, so it can never return a row the caller could not have read through PostgREST directly. |
+| `color_family()` | INVOKER, IMMUTABLE | Pure arithmetic on a hex string. No table access. |
+| `discontinued_product_hint()` | **DEFINER** | Deliberately narrow: one slug in, three fields out (name, category slug, category name). No price, no stock, no id, and no way to enumerate — it answers only for a slug the caller already typed. It exists so a 404 on a discontinued product can offer the category it belonged to. |
+
+`discontinued_product_hint` is revoked from `public` and granted explicitly to
+`anon` and `authenticated`.
+
+## 8 · Teardown
 
 ```sql
 delete from public.order_items where sku in ('RLS-TEST-A', 'RLS-TEST-B');
@@ -342,6 +406,7 @@ delete from public.carts   where guest_token in ('guest-token-alpha', 'guest-tok
 delete from public.coupons where code = 'RLSTEST10';
 delete from public.products where slug = 'rls-hidden-product';
 delete from auth.users where email like 'rls-%@example.test';
+delete from auth.users where email = 'preflight-escalation@example.test';
 ```
 
 Verified after teardown: 32 products, 384 variants, and zero rows in `orders`,
