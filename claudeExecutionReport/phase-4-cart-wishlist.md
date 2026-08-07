@@ -304,6 +304,7 @@ latency to Supabase. See §8.
 | `audit:auth` | 9 pass, 4 skip (see §8) |
 | `audit:cart` | 10 pass |
 | `audit:bag` | 16 pass |
+| `audit:signedin` | 10 pass — the signed-in storefront in a browser |
 
 ### Merge on sign-in — the phase's headline behaviour
 
@@ -398,12 +399,16 @@ Honestly, the things I am least confident about.
    round trip lands directly in TTFB in a way localhost cannot show. The cached
    reads should absorb it, but "should" is doing work in that sentence.
 
-2. **Google sign-in has never actually been run.** Every surface is built and
-   the callback is exercised for its error paths, but no real Google round trip
-   has happened, because the provider is not enabled. The PKCE exchange, the
-   real merge-on-callback, and the pending-intent completion are tested at the
-   unit and data layer, not through Google. **This is the largest untested
-   surface in the phase.**
+2. **The Google round trip itself has never been run.** The provider is not
+   enabled, so no real consent-screen redirect has happened. What *is* covered:
+   `npm run audit:signedin` drives the whole signed-in storefront in a browser
+   with a real session — the saved list, move-to-bag, the account menu, and that
+   adding to the bag while signed in uses the account cart rather than minting a
+   guest token. The merge is covered by `audit:cart` against the live database.
+   What remains untested is specifically the PKCE exchange in
+   `/auth/callback` and the pending-intent completion that hangs off it, because
+   both need a real code from Google. **This is the largest untested surface in
+   the phase**, and it shrinks to nothing the moment §8.1 is done.
 
 3. **The cart merge is not transactional.** It writes line by line; a failure
    halfway leaves some lines merged and the guest cart intact, and the next

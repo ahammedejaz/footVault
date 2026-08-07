@@ -51,6 +51,7 @@ Open http://localhost:3000. The design system renders at `/style-guide`.
 | `npm run audit:auth` | Role escalation over real HTTP; `/admin` 404s for everyone but an admin |
 | `npm run audit:cart` | Merge on sign-in against the live database, RLS in force |
 | `npm run audit:bag` | The whole purchase path in Chromium at 390px |
+| `npm run audit:signedin` | The signed-in storefront: saved list, account menu, account cart |
 | `npm run audit:shots` | Full-page screenshots at all six widths |
 
 The audits drive a real browser against a running build, so they need
