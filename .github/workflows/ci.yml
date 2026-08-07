@@ -57,10 +57,16 @@ jobs:
             exit 1
           fi
 
+      # .github is excluded because this very file contains the pattern and
+      # would otherwise match itself. Workflow files are never bundled, so
+      # nothing real is missed.
       - name: Assert no NEXT_PUBLIC_ service key
         run: |
-          if grep -rn "NEXT_PUBLIC_SUPABASE_SERVICE" . \
-            --exclude-dir=node_modules --exclude-dir=.git 2>/dev/null; then
-            echo "A service key must never carry the NEXT_PUBLIC_ prefix."
+          hits=$(grep -rn "NEXT_PUBLIC_SUPABASE_SERVICE" . \
+            --exclude-dir=node_modules --exclude-dir=.git \
+            --exclude-dir=.github --exclude-dir=.next || true)
+          if [ -n "$hits" ]; then
+            echo "A service key must never carry the NEXT_PUBLIC_ prefix:"
+            echo "$hits"
             exit 1
           fi
