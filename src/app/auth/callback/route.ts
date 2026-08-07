@@ -1,5 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 
+import { mergeGuestCartIntoAccount } from "@/lib/cart/merge";
+import { clearGuestToken, readGuestToken } from "@/lib/cart/token";
 import { safeNext } from "@/lib/safe-redirect";
 import { createClient } from "@/lib/supabase/server";
 
@@ -42,17 +44,45 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     return NextResponse.redirect(new URL(`${next}${joiner(next)}signin=failed`, url.origin));
   }
 
+  // Built before the exchange, and deliberately so: it captures the guest token
+  // cookie into the `x-guest-token` header it sends to PostgREST, and picks up
+  // the new session in memory once the exchange completes. That is what lets
+  // one client see the anonymous bag and the account bag at the same time,
+  // which is what the merge below needs.
   const supabase = await createClient();
-  const { error } = await supabase.auth.exchangeCodeForSession(code);
+  const { data, error } = await supabase.auth.exchangeCodeForSession(code);
 
-  if (error) {
+  if (error || !data.session) {
     // A code is single-use and short-lived, so the usual cause is a reload of
     // this URL rather than an attack.
-    console.error("[auth] exchangeCodeForSession failed:", error.message);
+    console.error("[auth] exchangeCodeForSession failed:", error?.message ?? "no session");
     return NextResponse.redirect(new URL(`${next}${joiner(next)}signin=failed`, url.origin));
   }
 
-  return NextResponse.redirect(new URL(next, url.origin));
+  // The bag comes with them. A failure here must not cost them the sign-in they
+  // just completed — the guest token is left in place so the bag stays
+  // reachable and the next sign-in picks it up again.
+  let merged = 0;
+  try {
+    const guestToken = await readGuestToken();
+    const outcome = await mergeGuestCartIntoAccount(supabase, data.session.user.id, guestToken);
+    merged = outcome.merged;
+    if (outcome.dropped > 0) {
+      console.warn(`[cart] merge dropped ${outcome.dropped} line(s) that were no longer sellable`);
+    }
+    // Only once the guest bag is actually gone. Dropping the cookie while the
+    // bag still exists would strand it: nothing else can ever address it.
+    if (outcome.guestCartConsumed) await clearGuestToken();
+  } catch (mergeError) {
+    console.error("[cart] merge on sign-in failed:", mergeError);
+  }
+
+  const destination = new URL(next, url.origin);
+  // Told, not silently done: something arrived in their bag during a redirect
+  // they did not ask for, and the cart page says so on arrival.
+  if (merged > 0) destination.searchParams.set("merged", String(merged));
+
+  return NextResponse.redirect(destination);
 }
 
 /** `?` or `&`, depending on whether the destination already carries a query. */
