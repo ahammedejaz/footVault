@@ -6,7 +6,8 @@ is the proof: each check below is a query that was run against the live project
 
 **Two findings came out of this pass, both fixed and re-verified.** They are
 written up in §6, because a checklist that has never failed has not been run.
-§6b re-runs the escalation check at the start of Phase 3; §7 covers the three
+§6b re-runs the escalation check at the start of Phase 3 and is **resolved in
+§6b.1** by Phase 4, which runs it over real HTTP; §7 covers the three
 functions Phase 3 added.
 
 ## How to run it
@@ -377,13 +378,95 @@ rollback;
 | `role` afterwards | `customer` | **customer** ✅ |
 
 **What could not be checked this way.** The brief asks for the signup to go
-through the real client. `supabase.auth.signUp()` returns
-`429 over_email_send_rate_limit` on this project — email confirmation is on and
-the built-in SMTP allowance is exhausted — so no user can be created over HTTP
-at all. What the HTTP path adds over the block above is GoTrue's own handling of
-`options.data`, which is a verbatim copy into `raw_user_meta_data`; the fixture
-above *is* that copy. It is a substitution, and it is recorded as one. Re-run the
-client-side version once SMTP is configured, or once "Confirm email" is off.
+through the real client. `supabase.auth.signUp()` returned
+`429 over_email_send_rate_limit` on this project — email confirmation was on and
+the built-in SMTP allowance was exhausted — so no user could be created over
+HTTP at all. What the HTTP path adds over the block above is GoTrue's own
+handling of `options.data`, which is a verbatim copy into `raw_user_meta_data`;
+the fixture above *is* that copy. It was a substitution, and it was recorded as
+one.
+
+---
+
+### 6b.1 · Resolved in Phase 4 — the real HTTP path
+
+**Status: resolved.** Email confirmation is now off (`mailer_autoconfirm: true`),
+so `signUp()` succeeds and returns a session immediately. The substitution above
+is retired; the escalation check now runs against the real attack surface — a
+signed-in customer holding a JWT, talking to PostgREST — and it is a script
+rather than a paste-in, so it can be re-run on demand:
+
+```
+npm run audit:auth        # scripts/audit/auth-rls.ts
+```
+
+Result, against the live database:
+
+```
+PASS  handle_new_user ignores a role in the provider payload   role = customer
+PASS  handle_new_user still takes the display name              full_name = Escalation Test
+PASS  customer cannot set their own role over PostgREST         42501: Only an admin can change a profile role
+PASS  their role is still customer afterwards                   customer
+PASS  is_admin() returns false for a customer                   false
+PASS  customer reads zero rows of another customer's profile    0 rows
+PASS  /admin is 404 for an anonymous visitor                    HTTP 404
+PASS  /admin is 404 for a signed-in customer                    HTTP 404
+PASS  /admin does not redirect, which would reveal it exists    HTTP 404
+```
+
+The account is created through the public signup endpoint with the anon key —
+the same path a customer takes — and its `user_metadata` carries
+`role: "admin"`, `user_role: "admin"` and `is_admin: true`. The session cookies
+for the `/admin` checks are produced by `@supabase/ssr` itself rather than
+hand-assembled, so the cookie format is the real one and not a guess.
+
+**One honest caveat.** Google OAuth is not yet enabled on the project, so these
+sessions are minted with a password grant. That does not weaken the test:
+PostgREST sees the same JWT shape whichever provider issued it — `role:
+authenticated`, `sub: <uid>` — and no policy can tell them apart. The one thing
+that genuinely *is* provider-specific is what lands in `raw_user_meta_data`,
+which is the first check in the list. Re-run once Google is enabled to close
+even that gap.
+
+**Three checks still skipped**, and reported as SKIP rather than quietly not run:
+promoting to admin, `is_admin()` returning true, and `/admin` returning 200 all
+need elevated access, and `SUPABASE_SERVICE_ROLE_KEY` is empty in `.env.local`.
+They were verified separately against the live database through the real
+bootstrap function:
+
+```sql
+select private.promote_to_admin('fv-test-other.msj6sfa7@example.com');
+-- "fv-test-other.msj6sfa7@example.com is now an admin."
+```
+
+```
+PASS  is_admin() returns true for the promoted account   returned true
+PASS  /admin is 200 for an admin                         HTTP 200
+PASS  the admin page actually rendered
+```
+
+Fill in the service-role key and the skips become checks.
+
+### 6b.2 · The admin route now exists, so the 404 means something
+
+Until Phase 4 there was no `/admin` route at all, which made the guard
+untestable: a missing route 404s on its own, so a working guard and a broken one
+were indistinguishable. `src/app/admin/page.tsx` is a placeholder that exists
+for exactly this reason. The three-way check above — anonymous 404, signed-in
+customer 404, admin 200 — is only meaningful because of it.
+
+### 6b.3 · The bootstrap function is not reachable over HTTP
+
+```
+POST /rest/v1/rpc/promote_to_admin          -> PGRST202, function not found
+POST /rest/v1/rpc/private.promote_to_admin  -> PGRST202, function not found
+```
+
+It lives in the `private` schema, which the Data API does not expose, and
+`EXECUTE` is revoked from `public`, `anon` and `authenticated`. Its ACL is
+`postgres=X/postgres` and nothing else. It is also absent from Supabase's
+security advisor output, where a `SECURITY DEFINER` function in `public` would
+have appeared.
 
 ## 7 · New functions in Phase 3
 
@@ -407,6 +490,13 @@ delete from public.coupons where code = 'RLSTEST10';
 delete from public.products where slug = 'rls-hidden-product';
 delete from auth.users where email like 'rls-%@example.test';
 delete from auth.users where email = 'preflight-escalation@example.test';
+
+-- Phase 4: the scripted checks create and clean up their own accounts, but the
+-- three that need elevated access cannot delete theirs. This sweeps anything
+-- left behind by a run without a service-role key.
+delete from auth.users where email like 'fv-test-%@example.com'
+                          or email like 'fv-merge%@example.com';
+delete from public.carts where user_id is null and guest_token is not null;
 ```
 
 Verified after teardown: 32 products, 384 variants, and zero rows in `orders`,
