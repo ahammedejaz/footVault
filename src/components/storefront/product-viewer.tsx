@@ -2,11 +2,12 @@
 
 import * as React from "react";
 
+import { AddToBag } from "@/components/storefront/add-to-bag";
 import { Price } from "@/components/storefront/price";
 import { ProductGallery } from "@/components/storefront/product-gallery";
+import { SaveForLater } from "@/components/storefront/save-for-later";
 import { SizeGuide } from "@/components/storefront/size-guide";
 import { SizeSelector } from "@/components/storefront/size-selector";
-import { Button } from "@/components/ui/button";
 import { useUrlParam } from "@/hooks/use-url-param";
 import { COLOR_FAMILY_SWATCH, type ProductDetail } from "@/lib/catalog-types";
 import { cn } from "@/lib/utils";
@@ -35,9 +36,17 @@ import { cn } from "@/lib/utils";
  */
 export function ProductViewer({
   product,
+  saved,
   children,
 }: {
   product: ProductDetail;
+  /**
+   * A separate prop rather than a field on ProductDetail, and that is
+   * load-bearing: the product itself is read through a cross-request cache
+   * (src/lib/queries/cached.ts), and folding a per-customer fact into a shared
+   * cache entry would show one person's saved items to the next.
+   */
+  saved: boolean;
   /** Delivery, returns, description — server-rendered, slotted under the panel. */
   children: React.ReactNode;
 }) {
@@ -59,7 +68,12 @@ export function ProductViewer({
       : (colourways[0]?.name ?? null));
   const size = pickedSize ?? linkedSize;
   const ctaRef = React.useRef<HTMLDivElement | null>(null);
+  const sizeRunRef = React.useRef<HTMLDivElement | null>(null);
   const [showSticky, setShowSticky] = React.useState(false);
+  // Set when somebody presses add-to-bag without having chosen. Cleared the
+  // moment they choose, so the marking never outlives the thing it is asking
+  // for.
+  const [needsSize, setNeedsSize] = React.useState(false);
 
   const active = colourways.find((c) => c.name === colourway) ?? colourways[0] ?? null;
 
@@ -99,7 +113,23 @@ export function ProductViewer({
 
   const chooseSize = (value: string) => {
     setSize(value);
+    setNeedsSize(false);
     syncUrl({ size: value });
+  };
+
+  /**
+   * Answer "add to bag" with no size by pointing at the size run.
+   *
+   * Scrolled into view first, because on a phone the button that was pressed
+   * can be a screen below the strip that needs attention, and focus alone moves
+   * the caret somewhere the customer cannot see.
+   */
+  const askForSize = () => {
+    setNeedsSize(true);
+    const strip = sizeRunRef.current;
+    if (!strip) return;
+    strip.scrollIntoView({ block: "center", behavior: "smooth" });
+    strip.querySelector<HTMLButtonElement>("button:not([disabled])")?.focus();
   };
 
   /*
@@ -205,7 +235,16 @@ export function ProductViewer({
               </h2>
               <SizeGuide gender={product.gender} highlight={selected} />
             </div>
-            <div className="mt-3">
+            <div
+              ref={sizeRunRef}
+              className={cn(
+                "mt-3 rounded-lg transition-shadow",
+                // A ring rather than a colour change: the chips carry meaning
+                // in their own colour already (available, sold out, chosen),
+                // and recolouring them to say "look here" would overwrite it.
+                needsSize && "ring-state-low/60 ring-2 ring-offset-4 ring-offset-background",
+              )}
+            >
               <SizeSelector
                 sizes={sizes}
                 selected={selected}
@@ -251,21 +290,30 @@ export function ProductViewer({
           </div>
 
           <div ref={ctaRef} className="mt-6 flex flex-col gap-3 sm:flex-row">
-            {/*
-              The bag arrives in Phase 4. The buttons are disabled and say so
-              rather than being hidden: a product page with no add-to-bag reads
-              as broken, and they have to measure exactly as they will when they
-              work so nothing shifts when they do.
-            */}
-            <Button size="lg" className="sm:flex-1" disabled>
-              Add to bag
-            </Button>
-            <Button size="lg" variant="outline" className="sm:flex-1" disabled>
-              Save for later
-            </Button>
+            <AddToBag
+              variantId={selectedEntry?.available ? (selectedEntry.variantId ?? null) : null}
+              className="sm:flex-1"
+              soldOut={!inStock}
+              onNeedSize={askForSize}
+            />
+            <SaveForLater
+              productId={product.id}
+              productName={product.name}
+              saved={saved}
+              className="sm:flex-1"
+            />
           </div>
-          <p className="text-muted-foreground mt-2 font-mono text-xs tracking-[0.06em]">
-            The bag opens in the next build stage
+          {/* Referenced by the button's aria-describedby while no size is
+              chosen, so a screen reader hears the requirement as part of the
+              button rather than having to go looking for it. */}
+          <p
+            id="size-required-hint"
+            className={cn(
+              "mt-2 font-mono text-xs tracking-[0.06em]",
+              needsSize ? "text-state-low" : "text-muted-foreground",
+            )}
+          >
+            {inStock ? "Choose a size to add it to your bag" : "Sold out in every size"}
           </p>
 
           {children}
@@ -287,9 +335,12 @@ export function ProductViewer({
               {selected ? `UK ${selected}` : "Pick a size"}
             </p>
           </div>
-          <Button size="lg" disabled tabIndex={showSticky ? 0 : -1} className="shrink-0">
-            Add to bag
-          </Button>
+          <AddToBag
+            variantId={selectedEntry?.available ? (selectedEntry.variantId ?? null) : null}
+            soldOut={!inStock}
+            onNeedSize={askForSize}
+            className="shrink-0"
+          />
         </div>
       </div>
     </>

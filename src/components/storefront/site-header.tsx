@@ -3,6 +3,7 @@ import { Heart, ShoppingBag } from "lucide-react";
 
 import { Logo } from "@/components/brand/logo";
 import { AccountMenu } from "@/components/storefront/account-menu";
+import { BagAnnouncer } from "@/components/storefront/bag-announcer";
 import { BagLink, SavedLink } from "@/components/storefront/header-links";
 import { MegaNav } from "@/components/storefront/mega-nav";
 import { MobileNav } from "@/components/storefront/mobile-nav";
@@ -11,6 +12,8 @@ import type { NavItem } from "@/components/storefront/nav-types";
 import { deferIfPrerendering } from "@/lib/prerender";
 import { cachedCategoryTree, cachedPopularBrands } from "@/lib/queries/cached";
 import { getCurrentUser } from "@/lib/auth";
+import { getCartCount } from "@/lib/queries/cart";
+import { getWishlistCount } from "@/lib/queries/wishlist";
 import { primaryNav } from "@/lib/site-config";
 
 /**
@@ -75,10 +78,12 @@ async function getPopularSearches(): Promise<Array<{ label: string; href: string
  * 390px without either wrapping or shrinking below the tap floor.
  */
 export async function SiteHeader() {
-  const [nav, popular, user] = await Promise.all([
+  const [nav, popular, user, bagCount, savedCount] = await Promise.all([
     getNav(),
     getPopularSearches(),
     getCurrentUser(),
+    getCartCount(),
+    getWishlistCount(),
   ]);
 
   return (
@@ -104,12 +109,13 @@ export async function SiteHeader() {
 
         <SearchButton popular={popular} />
         <AccountMenu user={user ? { name: user.name, email: user.email } : null} />
-        <SavedLink>
+        <SavedLink count={savedCount}>
           <Heart />
         </SavedLink>
-        <BagLink>
+        <BagLink count={bagCount}>
           <ShoppingBag />
         </BagLink>
+        <BagAnnouncer count={bagCount} />
       </div>
     </header>
   );

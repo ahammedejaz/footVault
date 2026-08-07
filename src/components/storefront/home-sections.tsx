@@ -13,6 +13,7 @@ import {
   cachedCollection,
   cachedCollectionProducts,
 } from "@/lib/queries/cached";
+import { getSavedProductIds } from "@/lib/queries/wishlist";
 import type { HomepageSection } from "@/lib/queries/content";
 
 /**
@@ -228,9 +229,11 @@ async function ProductRail({ section }: { section: HomepageSection }) {
   const slug = payloadString(section.payload, "collection_slug");
   if (!slug) return null;
 
-  const [collection, page] = await Promise.all([
+  const [collection, page, savedIds] = await Promise.all([
     cachedCollection(slug),
     cachedCollectionProducts(slug, 8),
+    // Outside the cached pair on purpose — this one is per-customer.
+    getSavedProductIds(),
   ]);
   if (!collection || page.products.length === 0) return null;
 
@@ -251,6 +254,7 @@ async function ProductRail({ section }: { section: HomepageSection }) {
           >
             <ProductCard
               product={product}
+              saved={savedIds.has(product.id)}
               sizes="(max-width: 640px) 62vw, (max-width: 1024px) 38vw, 288px"
             />
           </li>

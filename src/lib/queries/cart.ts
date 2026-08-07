@@ -6,6 +6,12 @@ import { maybeRow, rows } from "@/lib/queries/run";
 import { cachedSiteSettings } from "@/lib/queries/cached";
 import { setting, type ShippingSettings } from "@/lib/queries/content";
 import { createClient } from "@/lib/supabase/server";
+import type {
+  Cart,
+  CartAdjustment,
+  CartLine,
+  FreeShipping,
+} from "@/lib/cart-types";
 
 /**
  * Reading the bag.
@@ -29,47 +35,7 @@ import { createClient } from "@/lib/supabase/server";
  * quietly.
  */
 
-export type CartLine = {
-  id: string;
-  variantId: string;
-  productSlug: string;
-  productName: string;
-  brand: string | null;
-  size: string;
-  color: string;
-  sku: string;
-  imageUrl: string | null;
-  imageAlt: string;
-  /** Live effective price, in paise. */
-  unitPrice: number;
-  quantity: number;
-  lineTotal: number;
-  /** Live stock, so the stepper knows where to stop. */
-  stock: number;
-};
-
-/** Something changed under the customer since they put this in the bag. */
-export type CartAdjustment =
-  | { kind: "price"; name: string; size: string; from: number; to: number }
-  | { kind: "stock"; name: string; size: string; from: number; to: number }
-  | { kind: "gone"; name: string; size: string };
-
-export type FreeShipping = {
-  thresholdPaise: number;
-  feePaise: number;
-  remainingPaise: number;
-  qualified: boolean;
-};
-
-export type Cart = {
-  id: string | null;
-  lines: CartLine[];
-  /** Total units, which is what the header badge counts. */
-  count: number;
-  subtotal: number;
-  adjustments: CartAdjustment[];
-  freeShipping: FreeShipping;
-};
+export type { Cart, CartAdjustment, CartLine, FreeShipping } from "@/lib/cart-types";
 
 type RawLine = {
   id: string;

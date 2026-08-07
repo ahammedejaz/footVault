@@ -4,6 +4,7 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { SITE_URL } from "@/lib/env";
+import { pendingIntentSchema, writePendingIntent } from "@/lib/pending-intent";
 import { safeNext } from "@/lib/safe-redirect";
 import { createClient } from "@/lib/supabase/server";
 
@@ -51,8 +52,10 @@ async function currentOrigin(): Promise<string> {
  * succeeded.
  */
 export type SignInState = { error: string | null };
-
-export const SIGN_IN_IDLE: SignInState = { error: null };
+// The idle value deliberately lives with the form, not here: a "use server"
+// module may only export async functions, and exporting a plain object from one
+// is a runtime failure at the moment the action is first invoked — the build
+// passes. See src/components/storefront/sign-in.tsx.
 
 /**
  * Start the Google round trip.
@@ -70,6 +73,19 @@ export async function signInWithGoogle(
   formData: FormData,
 ): Promise<SignInState> {
   const next = safeNext(String(formData.get("next") ?? "/"));
+
+  // What they were doing when we interrupted them. Written before the redirect
+  // so it survives Google and is waiting in /auth/callback on the way back.
+  const rawIntent = formData.get("intent");
+  if (typeof rawIntent === "string" && rawIntent.length > 0) {
+    try {
+      const intent = pendingIntentSchema.safeParse(JSON.parse(rawIntent));
+      if (intent.success) await writePendingIntent(intent.data);
+    } catch {
+      // Not an intent. Signing in still works, which is the important half.
+    }
+  }
+
   const supabase = await createClient();
   const origin = await currentOrigin();
 

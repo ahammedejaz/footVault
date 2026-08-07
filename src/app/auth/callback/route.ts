@@ -2,6 +2,8 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { mergeGuestCartIntoAccount } from "@/lib/cart/merge";
 import { clearGuestToken, readGuestToken } from "@/lib/cart/token";
+import { takePendingIntent } from "@/lib/pending-intent";
+import { saveProduct } from "@/lib/actions/wishlist";
 import { safeNext } from "@/lib/safe-redirect";
 import { createClient } from "@/lib/supabase/server";
 
@@ -75,6 +77,19 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     if (outcome.guestCartConsumed) await clearGuestToken();
   } catch (mergeError) {
     console.error("[cart] merge on sign-in failed:", mergeError);
+  }
+
+  // Finish what they were doing when they were interrupted. Read-and-forget, so
+  // a failure here leaves somebody signed in who can press the heart again
+  // rather than a cookie that retries forever.
+  try {
+    const intent = await takePendingIntent();
+    if (intent?.kind === "save") {
+      const saved = await saveProduct(intent.productId);
+      if (!saved) console.warn("[auth] pending save did not complete");
+    }
+  } catch (intentError) {
+    console.error("[auth] pending intent failed:", intentError);
   }
 
   const destination = new URL(next, url.origin);

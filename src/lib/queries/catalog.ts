@@ -55,7 +55,7 @@ const db = () => createStaticClient();
  * into a lie. Filtering by size narrows *which products* come back, never which
  * sizes are shown on them.
  */
-const PRODUCT_FIELDS = `
+export const PRODUCT_FIELDS = `
   id, slug, name, description, material, gender, footwear_type,
   base_price, sale_price, effective_price, meta_title, meta_description, created_at,
   brand:brands ( name, slug ),
@@ -64,7 +64,7 @@ const PRODUCT_FIELDS = `
   variants:product_variants ( id, size, color, color_hex, color_family, sku, stock_quantity, is_active )
 ` as const;
 
-type RawProduct = {
+export type RawProduct = {
   id: string;
   slug: string;
   name: string;
@@ -111,6 +111,11 @@ function toSizes(
   colourway?: string,
 ): SizeAvailability[] {
   const stockBySize = new Map<string, number>();
+  // Only populated when scoped to a colourway: (product, size, colour) is
+  // unique, so there is exactly one variant per size. Across colourways a size
+  // is several variants and naming one of them would be a guess.
+  const variantBySize = new Map<string, string>();
+
   for (const variant of variants) {
     if (!variant.is_active) continue;
     if (colourway && variant.color !== colourway) continue;
@@ -118,13 +123,20 @@ function toSizes(
       variant.size,
       (stockBySize.get(variant.size) ?? 0) + variant.stock_quantity,
     );
+    if (colourway) variantBySize.set(variant.size, variant.id);
   }
+
   return [...stockBySize.entries()]
     .sort((a, b) => compareSizes(a[0], b[0]))
-    .map(([size, stock]) => ({ size, stock, available: stock > 0 }));
+    .map(([size, stock]) => ({
+      size,
+      stock,
+      available: stock > 0,
+      variantId: variantBySize.get(size) ?? null,
+    }));
 }
 
-function toSummary(row: RawProduct): ProductSummary {
+export function toSummary(row: RawProduct): ProductSummary {
   const images = orderImages(row.images);
   const toImage = (image: (typeof images)[number]): ProductImage => ({
     url: image.url,

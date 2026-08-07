@@ -2,36 +2,47 @@
 
 import Link from "next/link";
 
-import { CountBadge, useCount } from "@/components/storefront/count-badge";
+import { CountBadge, countLabel } from "@/components/storefront/count-badge";
 import { Button } from "@/components/ui/button";
+import { useBagUi } from "@/lib/stores/bag";
 
 /**
  * The two utility icons.
  *
- * Client components only because the count is client state; the icon itself is
- * passed in from the server, so the SVG is in the first HTML and the badge is
- * the only thing waiting on JavaScript.
+ * The counts are server facts, passed straight through — see count-badge.tsx
+ * for why they are no longer client state.
  *
- * The count goes into the accessible name rather than being left as a loose
- * "3" beside an icon — "Bag, 3 items" is the whole message in one utterance.
+ * The bag opens the drawer rather than navigating. A customer who has just
+ * added something wants to see it and carry on browsing, and a full page
+ * navigation to /cart costs them their place in a grid they were halfway down.
+ * The link is still a real `<a href="/cart">`, so middle-click, ⌘-click and
+ * JavaScript-off all reach the page.
  */
-export function BagLink({ children }: { children: React.ReactNode }) {
-  const count = useCount("bag");
+export function BagLink({ count, children }: { count: number; children: React.ReactNode }) {
+  const openDrawer = useBagUi((state) => state.openDrawer);
+
   return (
     <Button variant="ghost" size="icon" className="relative" asChild>
       <Link
         href="/cart"
-        aria-label={count === 1 ? "Bag, 1 item" : `Bag, ${count} items`}
+        aria-label={countLabel("Bag", count)}
+        onClick={(event) => {
+          // Let the browser do its thing for anything that is not a plain
+          // left-click: a modified click means "open this somewhere else".
+          if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+          if (event.button !== 0) return;
+          event.preventDefault();
+          openDrawer();
+        }}
       >
         {children}
-        <CountBadge of="bag" />
+        <CountBadge count={count} />
       </Link>
     </Button>
   );
 }
 
-export function SavedLink({ children }: { children: React.ReactNode }) {
-  const count = useCount("saved");
+export function SavedLink({ count, children }: { count: number; children: React.ReactNode }) {
   return (
     <Button
       variant="ghost"
@@ -42,12 +53,9 @@ export function SavedLink({ children }: { children: React.ReactNode }) {
       className="relative hidden sm:inline-flex"
       asChild
     >
-      <Link
-        href="/wishlist"
-        aria-label={count === 1 ? "Saved items, 1 item" : `Saved items, ${count} items`}
-      >
+      <Link href="/wishlist" aria-label={countLabel("Saved items", count)}>
         {children}
-        <CountBadge of="saved" />
+        <CountBadge count={count} />
       </Link>
     </Button>
   );

@@ -45,28 +45,44 @@ import {
  */
 export const CHROME_CACHE_TAG = "chrome";
 
+/**
+ * Bump this whenever the *shape* of anything cached below changes.
+ *
+ * `unstable_cache` keys on the key parts and nothing else — not on the code
+ * that produced the value. So adding a field to a cached return type does not
+ * invalidate the entries already on disk, and the new code reads old objects
+ * that are missing it. That is not hypothetical: adding `variantId` to
+ * SizeAvailability left every cached product without one, and add-to-bag
+ * silently believed no size had been chosen because the id it needed was
+ * undefined. The build passed and the page looked right.
+ *
+ * A version in the key makes a shape change a cache miss, which is what it
+ * always should have been.
+ */
+const SHAPE_VERSION = "v2";
+
 const ONE_HOUR = 3600;
 const options = { revalidate: ONE_HOUR, tags: [CHROME_CACHE_TAG] };
 
 export const cachedCategoryTree = unstable_cache(
   getCategoryTree,
-  ["chrome:category-tree"],
+  [SHAPE_VERSION, "chrome:category-tree"],
   options,
 );
 
 export const cachedPopularBrands = unstable_cache(
   (limit: number) => getPopularBrands(limit),
-  ["chrome:popular-brands"],
+  [SHAPE_VERSION, "chrome:popular-brands"],
   options,
 );
 
 export const cachedSiteSettings = unstable_cache(
   getSiteSettings,
-  ["chrome:site-settings"],
+  [SHAPE_VERSION, "chrome:site-settings"],
   options,
 );
 
-export const cachedPages = unstable_cache(listPages, ["chrome:pages"], options);
+export const cachedPages = unstable_cache(listPages, [SHAPE_VERSION, "chrome:pages"], options);
 
 /* -------------------------------------------------------------------------- */
 /* the LCP path                                                               */
@@ -97,51 +113,51 @@ const catalog = { revalidate: ONE_HOUR, tags: [CATALOG_CACHE_TAG] };
 
 export const cachedHomepageSections = unstable_cache(
   getHomepageSections,
-  ["catalog:homepage-sections"],
+  [SHAPE_VERSION, "catalog:homepage-sections"],
   catalog,
 );
 
 export const cachedBanner = unstable_cache(
   (placement: string) => getBanner(placement),
-  ["catalog:banner"],
+  [SHAPE_VERSION, "catalog:banner"],
   catalog,
 );
 
 export const cachedCategoryTiles = unstable_cache(
   (slugs: string[]) => getCategoryTiles(slugs),
-  ["catalog:category-tiles"],
+  [SHAPE_VERSION, "catalog:category-tiles"],
   catalog,
 );
 
 export const cachedCollection = unstable_cache(
   (slug: string) => getCollection(slug),
-  ["catalog:collection"],
+  [SHAPE_VERSION, "catalog:collection"],
   catalog,
 );
 
 export const cachedProduct = unstable_cache(
   (slug: string) => getProduct(slug),
-  ["catalog:product"],
+  [SHAPE_VERSION, "catalog:product"],
   catalog,
 );
 
 export const cachedPage = unstable_cache(
   (slug: string) => getPage(slug),
-  ["catalog:page"],
+  [SHAPE_VERSION, "catalog:page"],
   catalog,
 );
 
 /** One collection's rail. Bounded: one key per collection. */
 export const cachedCollectionProducts = unstable_cache(
   (collectionSlug: string, perPage: number) => listProducts({ collectionSlug, perPage }),
-  ["catalog:collection-products"],
+  [SHAPE_VERSION, "catalog:collection-products"],
   catalog,
 );
 
 /** One category's first page. Bounded: one key per category. */
 const cachedCategoryProducts = unstable_cache(
   (categorySlug: string, perPage: number) => listProducts({ categorySlug, perPage }),
-  ["catalog:category-products"],
+  [SHAPE_VERSION, "catalog:category-products"],
   catalog,
 );
 

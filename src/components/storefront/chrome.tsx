@@ -1,4 +1,5 @@
 import { AnnouncementBar } from "@/components/storefront/announcement-bar";
+import { BagDrawer } from "@/components/storefront/bag-drawer";
 import { SiteFooter } from "@/components/storefront/site-footer";
 import { SiteHeader } from "@/components/storefront/site-header";
 
@@ -25,6 +26,10 @@ export function StorefrontChrome({ children }: { children: React.ReactNode }) {
         {children}
       </main>
       <SiteFooter />
+      {/* Mounted once, at the shell, because three different places open it and
+          none of them is an ancestor of the others. It fetches on open, so
+          being here costs nothing until somebody uses it. */}
+      <BagDrawer />
     </>
   );
 }

@@ -160,9 +160,20 @@ function refreshBag(): void {
 
 /* -------------------------------------------------------------------- add -- */
 
+/** Everything the toast needs to describe what happened and to take it back. */
+export type AddedToBag = {
+  itemId: string;
+  name: string;
+  size: string;
+  /** How many this call actually added, after capping. */
+  added: number;
+  /** What the line held before, so undo restores rather than removes. */
+  previousQuantity: number;
+};
+
 export async function addToBag(
   input: { variantId: string; quantity?: number },
-): Promise<ActionResult<{ name: string; size: string; quantity: number }>> {
+): Promise<ActionResult<AddedToBag>> {
   const parsed = addToBagSchema.safeParse(input);
   if (!parsed.success) {
     return { ok: false, message: parsed.error.issues[0]?.message ?? "That size is not available." };
@@ -207,31 +218,48 @@ export async function addToBag(
     // `(await …).error` rather than a destructured binding: a write has no data
     // to unwrap, and this is the shape footvault/no-unchecked-supabase-error
     // recognises as "the error is the only thing read", which is the point.
-    const error = existing
-      ? (
-          await supabase
-            .from("cart_items")
-            .update({ quantity, unit_price_seen: sellable.unitPrice })
-            .eq("id", existing.id)
-        ).error
-      : (
-          await supabase.from("cart_items").insert({
-            cart_id: cartId,
-            variant_id: sellable.variantId,
-            quantity,
-            unit_price_seen: sellable.unitPrice,
-          })
-        ).error;
+    let itemId = existing?.id ?? null;
+    let error = null;
 
-    if (error) {
-      console.error("[cart] addToBag failed:", error.message, error.code);
+    if (existing) {
+      error = (
+        await supabase
+          .from("cart_items")
+          .update({ quantity, unit_price_seen: sellable.unitPrice })
+          .eq("id", existing.id)
+      ).error;
+    } else {
+      // `select("id")` on the insert so undo has something to address without a
+      // second round trip.
+      const { data: inserted, error: insertError } = await supabase
+        .from("cart_items")
+        .insert({
+          cart_id: cartId,
+          variant_id: sellable.variantId,
+          quantity,
+          unit_price_seen: sellable.unitPrice,
+        })
+        .select("id")
+        .maybeSingle();
+      error = insertError;
+      itemId = inserted?.id ?? null;
+    }
+
+    if (error || !itemId) {
+      console.error("[cart] addToBag failed:", error?.message ?? "no row id", error?.code);
       return { ok: false, message: GENERIC };
     }
 
     refreshBag();
     return {
       ok: true,
-      data: { name: sellable.name, size: sellable.size, quantity: quantity - (existing?.quantity ?? 0) },
+      data: {
+        itemId,
+        name: sellable.name,
+        size: sellable.size,
+        added: quantity - (existing?.quantity ?? 0),
+        previousQuantity: existing?.quantity ?? 0,
+      },
     };
   } catch (error) {
     console.error("[cart] addToBag threw:", error);

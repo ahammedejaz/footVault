@@ -11,6 +11,7 @@ import {
   type ProductDetail,
 } from "@/lib/queries/catalog";
 import { cachedProduct, cachedRelatedProducts, cachedSiteSettings } from "@/lib/queries/cached";
+import { getSavedProductIds } from "@/lib/queries/wishlist";
 import { setting, type ShippingSettings } from "@/lib/queries/content";
 import { formatPaise } from "@/lib/format";
 import { SITE_URL } from "@/lib/env";
@@ -69,7 +70,9 @@ export default async function ProductPage({
   const product = await cachedProduct(slug);
   if (!product) notFound();
 
-  const settings = await cachedSiteSettings();
+  // Read alongside the cached product, never into it: this one is per-customer.
+  const [settings, savedIds] = await Promise.all([cachedSiteSettings(), getSavedProductIds()]);
+  const saved = savedIds.has(product.id);
   const shipping = setting<ShippingSettings>(settings, "shipping", {
     flat_fee_paise: 9900,
     free_above_paise: 199900,
@@ -138,7 +141,7 @@ export default async function ProductPage({
           ]}
         />
 
-        <ProductViewer product={product}>
+        <ProductViewer product={product} saved={saved}>
           <dl className="border-border mt-8 grid gap-4 border-t pt-6 text-sm">
             {/*
               A `<dl>` may contain `<dt>`, `<dd>`, `<div>`, `<script>` and
@@ -200,7 +203,11 @@ export default async function ProductPage({
 }
 
 async function RelatedRail({ product }: { product: ProductDetail }) {
-  const related = await cachedRelatedProducts(product);
+  // The rail is cached; who saved what is not. Read side by side, never merged.
+  const [related, savedIds] = await Promise.all([
+    cachedRelatedProducts(product),
+    getSavedProductIds(),
+  ]);
   if (related.length === 0) return null;
 
   const label = product.categoryName
@@ -229,6 +236,7 @@ async function RelatedRail({ product }: { product: ProductDetail }) {
             >
               <ProductCard
                 product={item}
+                saved={savedIds.has(item.id)}
                 sizes="(max-width: 640px) 62vw, (max-width: 1024px) 38vw, 288px"
               />
             </li>

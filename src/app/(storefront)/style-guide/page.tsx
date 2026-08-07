@@ -42,15 +42,18 @@ const SCALE = [
   { cls: "text-xs font-mono tracking-[0.06em]", label: "12 / 16 · Geist Mono 400 +0.06em", sample: "SIZE RUN · SKU · ORDER NO." },
 ];
 
-/** Shaped like the real thing: SizeRun now takes stock counts, not a boolean. */
+/**
+ * Shaped like the real thing: stock counts rather than a boolean, and a null
+ * variantId — the style guide shows the strip, not a buyable product.
+ */
 const SAMPLE_RUN: SizeAvailability[] = [
-  { size: "6", stock: 6, available: true },
-  { size: "7", stock: 4, available: true },
-  { size: "8", stock: 9, available: true },
-  { size: "9", stock: 2, available: true },
-  { size: "10", stock: 0, available: false },
-  { size: "11", stock: 5, available: true },
-  { size: "12", stock: 0, available: false },
+  { size: "6", stock: 6, available: true, variantId: null },
+  { size: "7", stock: 4, available: true, variantId: null },
+  { size: "8", stock: 9, available: true, variantId: null },
+  { size: "9", stock: 2, available: true, variantId: null },
+  { size: "10", stock: 0, available: false, variantId: null },
+  { size: "11", stock: 5, available: true, variantId: null },
+  { size: "12", stock: 0, available: false, variantId: null },
 ];
 
 function Section({

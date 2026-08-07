@@ -19,6 +19,16 @@ export type SizeAvailability = {
   available: boolean;
   /** Units left across every colourway. Drives "Only 2 left in size 9". */
   stock: number;
+  /**
+   * The variant this chip actually is — the thing add-to-bag needs.
+   *
+   * Only meaningful inside a colourway, where (product, size, colour) is unique
+   * by constraint and so names exactly one row. On a product card the run is
+   * the union across colourways, where one chip can stand for three different
+   * variants, and there is nothing honest to put here; it is null there, and a
+   * quick-add has to resolve a colour before it can act.
+   */
+  variantId: string | null;
 };
 
 export type ProductColor = {

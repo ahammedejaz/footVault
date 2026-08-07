@@ -12,7 +12,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useCurrentPath } from "@/hooks/use-current-path";
-import { signInWithGoogle, SIGN_IN_IDLE } from "@/lib/actions/auth";
+import { signInWithGoogle, type SignInState } from "@/lib/actions/auth";
 
 /**
  * The only way in.
@@ -25,22 +25,32 @@ import { signInWithGoogle, SIGN_IN_IDLE } from "@/lib/actions/auth";
  * `next` is filled from the live location rather than baked at render, so the
  * customer comes back to the page they were reading and not to the homepage.
  */
+/** No attempt made yet. Lives here because a "use server" module cannot export it. */
+const IDLE: SignInState = { error: null };
+
 export function GoogleSignInForm({
   label = "Continue with Google",
   className,
   next,
+  intent,
 }: {
   label?: string;
   className?: string;
   /** Overrides the current location — used when the destination is not here. */
   next?: string;
+  /**
+   * What to finish once they are back, as JSON. See src/lib/pending-intent.ts.
+   * Validated server-side; this is only the carrier.
+   */
+  intent?: string;
 }) {
-  const [state, formAction, pending] = useActionState(signInWithGoogle, SIGN_IN_IDLE);
+  const [state, formAction, pending] = useActionState(signInWithGoogle, IDLE);
   const here = useCurrentPath();
 
   return (
     <form action={formAction} className={className}>
       <input type="hidden" name="next" value={next ?? here} readOnly />
+      {intent ? <input type="hidden" name="intent" value={intent} readOnly /> : null}
       <Button type="submit" size="lg" variant="outline" className="w-full" disabled={pending}>
         <GoogleMark className="size-4" />
         {pending ? "Opening Google…" : label}
@@ -71,12 +81,14 @@ export function SignInDialog({
   title = "Sign in to save it",
   reason,
   next,
+  intent,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   title?: string;
   reason: string;
   next?: string;
+  intent?: string;
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -87,7 +99,7 @@ export function SignInDialog({
           </DialogTitle>
           <DialogDescription className="text-base text-pretty">{reason}</DialogDescription>
         </DialogHeader>
-        <GoogleSignInForm next={next} />
+        <GoogleSignInForm next={next} intent={intent} />
         <p className="text-muted-foreground font-mono text-xs tracking-[0.06em]">
           You never need an account to buy.
         </p>

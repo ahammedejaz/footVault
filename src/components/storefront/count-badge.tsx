@@ -1,23 +1,24 @@
-"use client";
-
-import { useBagStore } from "@/lib/stores/bag";
 import { cn } from "@/lib/utils";
 
 /**
  * The number on the bag and saved-items icons.
  *
- * Absolutely positioned so it can never change the header's height — a badge
+ * A Server Component now. The count comes from the `carts` table on the same
+ * render as the rest of the header, so there is nothing to hydrate, no frame
+ * where it reads zero, and no way for it to disagree with the bag itself — a
+ * badge that survives a merge, a stock cap or another device only by being
+ * asked fresh each time.
+ *
+ * Absolutely positioned so it can never change the header's height. A badge
  * that appears on the first add and pushes the icons down is a layout shift on
  * the most-looked-at element on the site.
  *
- * The count is also folded into the link's accessible name by the caller, so a
- * screen reader hears "Bag, 3 items" rather than "Bag" and then a stray "3".
+ * `aria-hidden` because the count is folded into the link's accessible name by
+ * the caller: a screen reader hears "Bag, 3 items" rather than "Bag" and then a
+ * stray "3".
  */
-export function CountBadge({ of }: { of: "bag" | "saved" }) {
-  const count = useBagStore((state) => (of === "bag" ? state.bagCount : state.savedCount));
-  const hydrated = useBagStore((state) => state.hydrated);
-
-  if (!hydrated || count === 0) return null;
+export function CountBadge({ count }: { count: number }) {
+  if (count === 0) return null;
 
   return (
     <span
@@ -31,9 +32,8 @@ export function CountBadge({ of }: { of: "bag" | "saved" }) {
   );
 }
 
-/** The same number, for the accessible name. */
-export function useCount(of: "bag" | "saved") {
-  const count = useBagStore((state) => (of === "bag" ? state.bagCount : state.savedCount));
-  const hydrated = useBagStore((state) => state.hydrated);
-  return hydrated ? count : 0;
+/** "Bag, 3 items" — the whole message in one utterance. */
+export function countLabel(noun: string, count: number): string {
+  if (count === 0) return noun;
+  return count === 1 ? `${noun}, 1 item` : `${noun}, ${count} items`;
 }
