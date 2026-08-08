@@ -578,3 +578,109 @@ customer sends you one, that code appears on the matching line in the site's log
 and it is the fastest way for a developer to find exactly what broke.
 
 Send them the code, the order number, and what the customer was doing.
+
+---
+
+## 12 · Backups, and the snapshot taken before every change
+
+**The shop's order records exist in exactly one place.** Razorpay knows what it
+charged and Shiprocket knows what it shipped, but only this database knows that
+those two facts belong to the same customer. If it is lost, it cannot be
+rebuilt from the other two.
+
+### What is running today
+
+Two things are confirmed switched on, read directly from the database rather
+than taken on trust:
+
+| | |
+|---|---|
+| Write-ahead log archiving | `archive_mode = on`, shipping to Supabase's `wal-g` |
+| Log detail level | `wal_level = logical` |
+
+That is the machinery continuous backup is built from, and it is running.
+
+**What it does not tell you.** Supabase runs that archiving on every project on
+every plan, so seeing it on does **not** mean point-in-time recovery is
+available to you, and it does not reveal how many days of history you can reach.
+Those two numbers live only in the dashboard, under **Database → Backups**.
+Worth reading once and writing down.
+
+**Point-in-time recovery is deliberately not being bought this phase.** It is
+the right purchase once real orders are flowing daily; today the shop has taken
+one live order. The snapshot below is what covers the gap in the meantime, and
+it covers the specific risk that actually exists right now — a migration going
+wrong — rather than the general one.
+
+### The rule
+
+**A snapshot is taken immediately before any change that alters the database's
+structure, and it is not started until the snapshot file exists and has a
+sensible size.** Not the same day. Immediately before.
+
+This is a developer's job, and it is four lines.
+
+### Taking one
+
+```bash
+# Session mode, port 5432 — the transaction pooler on 6543 cannot do this.
+export FV_DB_URL='postgresql://postgres.ahumjhwqgmskjsitctcj:PASSWORD@aws-0-ap-south-1.pooler.supabase.com:5432/postgres'
+
+npx supabase db dump --db-url "$FV_DB_URL" -f "backup-$(date +%Y%m%d-%H%M)-schema.sql"
+npx supabase db dump --db-url "$FV_DB_URL" -f "backup-$(date +%Y%m%d-%H%M)-data.sql" --data-only
+
+ls -lh backup-*.sql   # both files non-empty before going any further
+```
+
+The password is the database password from **Project Settings → Database**. It
+is not the service-role key and not the anon key; those three are different
+things and only this one opens a direct connection.
+
+**Copy the connection string from the dashboard's Connect button rather than
+typing the one above.** The host shown here is the right *shape*, but Supabase
+spreads projects across several regional pooler endpoints and only the dashboard
+knows which one is yours. The old direct host, `db.<ref>.supabase.co`, no longer
+resolves for this project at all — the pooler is not a preference, it is the
+only way in.
+
+**One trap, and it will bite quietly.** The server runs PostgreSQL 17.6. A
+`pg_dump` older than that refuses to dump it — the machine this was written on
+had version 14 installed, which fails. `npx supabase db dump` is used above
+precisely because it runs the correct version itself. If you prefer plain
+`pg_dump`, check `pg_dump --version` reads 17 or higher first, and install
+`postgresql@17` if it does not. A version mismatch fails loudly, which is the
+good case; the bad case is reaching for a dump months later and discovering it
+was never taken.
+
+### Putting one back
+
+Restoring is not a thing to improvise at the moment you need it, so the order is
+written down here.
+
+1. **Stop writes first.** Pause the site in Vercel, or the restore races live
+   traffic and you end up with a database that is neither the old one nor the
+   new one.
+2. **Decide what you are undoing.** A failed migration usually needs the schema
+   only; the rows are typically intact and re-importing them would throw away
+   every order taken since the snapshot.
+3. **Restore into a new Supabase project first, never straight over production.**
+   Confirm it looks right there.
+
+   ```bash
+   npx supabase db reset --db-url "$RESTORE_TARGET_URL"
+   psql "$RESTORE_TARGET_URL" -f backup-YYYYMMDD-HHMM-schema.sql
+   psql "$RESTORE_TARGET_URL" -f backup-YYYYMMDD-HHMM-data.sql   # only if rows are needed
+   ```
+
+4. **Check three things before switching anything over**: the order count matches
+   what you expect, `select count(*) from payment_events` is not zero, and stock
+   reconciles — `docs/rls-tests.md` has the query.
+5. **Then** repoint `NEXT_PUBLIC_SUPABASE_URL` and the keys, and redeploy.
+
+### Where the files go
+
+**Not in the repository.** A data dump holds real customers' names, addresses
+and phone numbers, and the repository is the one place guaranteed to be copied
+onto other machines. Keep them somewhere private with the date in the filename,
+and delete ones older than a couple of months — an old dump of real addresses is
+a liability, not a safety net.
