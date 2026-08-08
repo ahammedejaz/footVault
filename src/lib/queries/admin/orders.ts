@@ -7,6 +7,7 @@ import {
   type ListParams,
 } from "@/lib/admin/list-params";
 import { maybeRow, pagedRows, rows } from "@/lib/queries/run";
+import { getShipment, type ShipmentRow } from "@/lib/shipping/fulfilment";
 import { createClient } from "@/lib/supabase/server";
 
 /** Columns the orders table may be ordered by. Allow-listed; see list-params. */
@@ -413,4 +414,19 @@ function addressField(address: unknown, key: string): string | null {
     if (typeof value === "string" && value.trim()) return value;
   }
   return null;
+}
+
+/**
+ * The shipment for an order, or null before one has been created.
+ *
+ * Read through the caller's own RLS client rather than the service role: an
+ * admin reading is still a read, and the shipments policies already say who may
+ * see one. `getShipment` in `src/lib/shipping/fulfilment.ts` is the single
+ * definition of that query, so the fulfilment steps and this page can never
+ * disagree about what a shipment is.
+ */
+export async function getOrderShipment(
+  orderId: string,
+): Promise<ShipmentRow | null> {
+  return getShipment(await createClient(), orderId);
 }
