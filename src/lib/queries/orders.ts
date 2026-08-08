@@ -218,6 +218,7 @@ export async function getOrderForViewer(
       balanceDueOnDelivery: row.balance_due_on_delivery,
     },
     deliveredAt: row.delivered_at,
+    tracking: await trackingFor(row.id),
     lines: toLines(row.items ?? []),
     shippingAddress: toShippingAddress(row.shipping_address),
     contactEmail: row.contact_email,
@@ -288,4 +289,37 @@ export async function listOrdersForCustomer(): Promise<OrderSummary[]> {
       .slice(0, 3)
       .map((item) => ({ url: item.image_url, alt: item.product_name })),
   }));
+}
+
+/**
+ * The parcel, as much of it as the customer owns.
+ *
+ * Read through the caller's own RLS client, so the `customers read their own
+ * shipment` policy is what decides visibility — a guest with the right token
+ * sees theirs, and nobody sees anybody else's. A second small query rather than
+ * a join, because most orders have no shipment and the join would widen every
+ * order read to pay for the few that do.
+ */
+async function trackingFor(orderId: string): Promise<OrderView["tracking"]> {
+  const supabase = await createClient();
+  const row = await maybeRow<{
+    awb_code: string | null;
+    courier_name: string | null;
+    status: string;
+    tracked_at: string | null;
+  }>(
+    "orders.tracking",
+    supabase
+      .from("shipments")
+      .select("awb_code, courier_name, status, tracked_at")
+      .eq("order_id", orderId)
+      .maybeSingle(),
+  );
+  if (!row) return null;
+  return {
+    awb: row.awb_code,
+    courier: row.courier_name,
+    status: row.status,
+    checkedAt: row.tracked_at,
+  };
 }

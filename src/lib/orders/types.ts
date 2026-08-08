@@ -279,6 +279,21 @@ export type OrderView = {
    * reporting shipment damage runs from this instant.
    */
   deliveredAt: string | null;
+  /**
+   * Where the parcel is, once there is one. Null before a shipment exists.
+   *
+   * Deliberately the small subset a customer can act on — the tracking number
+   * they will paste into the courier's own site, who is carrying it, and what
+   * it last said. Not the raw Shiprocket payload, which carries pickup
+   * addresses and internal ids that are the shop's business.
+   */
+  tracking: {
+    awb: string | null;
+    courier: string | null;
+    status: string;
+    /** When the courier last told us anything. */
+    checkedAt: string | null;
+  } | null;
   lines: OrderLine[];
   shippingAddress: ShippingAddress;
   contactEmail: string | null;

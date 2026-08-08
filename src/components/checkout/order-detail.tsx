@@ -45,6 +45,40 @@ export function OrderDetail({
           <OrderTimeline timeline={order.timeline} />
 
           {/*
+            Where the parcel is, once there is one. Refreshed when the page is
+            opened rather than by a poller — the brief excluded one, and a cron
+            job asking Shiprocket about every live parcel is a quota bill for
+            information nobody is looking at.
+          */}
+          {order.tracking ? (
+            <div className="border-border mt-4 rounded-lg border p-4">
+              <p className="text-sm font-medium">
+                {order.tracking.courier
+                  ? `On its way with ${order.tracking.courier}`
+                  : "Being prepared for the courier"}
+              </p>
+              <dl className="mt-2 space-y-1 text-sm">
+                {order.tracking.awb ? (
+                  <div className="flex flex-wrap items-baseline justify-between gap-2">
+                    <dt className="text-muted-foreground">Tracking number</dt>
+                    <dd className="font-mono break-all">{order.tracking.awb}</dd>
+                  </div>
+                ) : null}
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <dt className="text-muted-foreground">Latest status</dt>
+                  <dd className="font-medium">{order.tracking.status}</dd>
+                </div>
+              </dl>
+              {order.tracking.checkedAt ? (
+                <p className="text-muted-foreground mt-2 text-xs">
+                  Last checked{" "}
+                  {new Date(order.tracking.checkedAt).toLocaleString()}.
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+
+          {/*
             Only once the parcel has actually arrived. Before then the window
             has not started and showing a countdown would be noise; after it
             lapses the component swaps itself for the shop's contact details.
