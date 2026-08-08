@@ -330,6 +330,121 @@ function outcomeFromPayment(payment: RazorpayPayment): PaymentOutcome | null {
   };
 }
 
+/** Razorpay's collection envelope for `GET /orders/{id}/payments`. */
+const razorpayPaymentListSchema = z.object({
+  count: z.number().int().nonnegative(),
+  items: z.array(razorpayPaymentSchema),
+});
+
+/**
+ * A payment found by asking Razorpay, shaped exactly like one that arrived by
+ * webhook.
+ *
+ * The fields are the four `recordAndApply` takes, and `eventId` is derived by
+ * the *same* `webhookEventId` the webhook path uses. That is the whole design:
+ * a payment reconciled here and the webhook for that same payment produce an
+ * identical event id, so `payment_events_unique_per_provider` collapses them to
+ * one application no matter which arrives first. There is no second
+ * idempotency mechanism because there must not be one.
+ */
+export type ReconciledPayment = {
+  eventId: string;
+  eventType: string;
+  providerOrderId: string;
+  outcome: PaymentOutcome;
+  /** Razorpay's own word, for logging a case we deliberately do not act on. */
+  rawStatus: string;
+};
+
+export type FetchOrderPaymentsResult =
+  | { ok: true; payments: ReconciledPayment[] }
+  | { ok: false; retryable: boolean; description: string };
+
+/**
+ * Every payment attempt Razorpay has against one of our orders.
+ *
+ * This is the question the abandoned-order sweep could never ask. The sweep
+ * runs inside Postgres and cannot make an HTTP call, so it decided whether a
+ * customer had paid by looking only at rows we had written — and a
+ * Razorpay-backed order sits at `'created'` until its webhook lands. With no
+ * live webhook, that meant "charged" was indistinguishable from "abandoned",
+ * and the sweep cancelled both.
+ *
+ * **The error contract is the important part.** A failure here must never be
+ * read as "no payment", because the two have opposite consequences: one leads
+ * to cancelling an order the customer has paid for. So the result is a
+ * three-way — payments, or a retryable failure, or a permanent one — and there
+ * is no shape in which an unreachable Razorpay comes back as an empty list.
+ */
+export async function fetchOrderPayments(
+  providerOrderId: string,
+): Promise<FetchOrderPaymentsResult> {
+  const result = await razorpayRequest(
+    "fetchOrderPayments",
+    `/orders/${encodeURIComponent(providerOrderId)}/payments`,
+    razorpayPaymentListSchema,
+  );
+
+  if (!result.ok) {
+    return {
+      ok: false,
+      // An order id Razorpay has never heard of will not start existing on a
+      // retry; anything else (timeout, 5xx, rate limit) might. Only the
+      // permanent case is worth acting on, and even then the caller leaves the
+      // order alone — see the route.
+      retryable: !result.unknownId,
+      description: result.description,
+    };
+  }
+
+  const payments: ReconciledPayment[] = [];
+  for (const payment of result.body.items) {
+    const eventType = reconciliationEventType(payment.status);
+    if (!eventType) continue;
+
+    const outcome = outcomeFromPayment(payment);
+    // Null means the currency guard refused it. Dropping it here is correct and
+    // deliberate: the same guard would have refused the webhook, and a
+    // reconciler that was more permissive than the webhook would be a way in.
+    if (!outcome) continue;
+
+    payments.push({
+      eventId: webhookEventId(eventType, payment.id),
+      eventType,
+      providerOrderId,
+      outcome,
+      rawStatus: payment.status,
+    });
+  }
+
+  return { ok: true, payments };
+}
+
+/**
+ * Razorpay's payment status, as the webhook event it corresponds to.
+ *
+ * Returning the *webhook's* name rather than inventing a `reconciler.*` one is
+ * what makes the derived event id collide with the webhook's. A separate name
+ * here would produce a different id, both would apply, and the order would be
+ * confirmed twice.
+ *
+ * `created` and anything unrecognised return null — a payment attempt that was
+ * begun and never completed is not an event, and the webhook never sends one
+ * for it either.
+ */
+function reconciliationEventType(rawStatus: string): string | null {
+  switch (rawStatus) {
+    case "captured":
+      return "payment.captured";
+    case "authorized":
+      return "payment.authorized";
+    case "failed":
+      return "payment.failed";
+    default:
+      return null;
+  }
+}
+
 /**
  * `order.paid` describes the order, not one payment.
  *

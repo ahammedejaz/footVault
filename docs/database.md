@@ -133,12 +133,44 @@ in `docs/architecture.md`; what belongs here is where to look.
 | Job table | `cron.job` — `select * from cron.job` |
 | History | `cron.job_run_details` |
 | Job | id **1**, `release-abandoned-orders`, `*/10 * * * *`, `select public.release_abandoned_orders()`, active |
+| Job | id **2**, `prune-rate-limits`, `17 * * * *` |
+| Job | id **3**, `prune-shipping-quotes`, `23 * * * *` — deletes at 6 hours, which caps any "recent quote" reuse window |
+| Job | `reconcile-abandoned-orders`, `*/10 * * * *`, `select private.trigger_order_reconciler()` — **added in Phase 8, not yet applied** |
 
 **The cost, stated plainly:** the schedule is invisible from the repo. The
 migration that created it (`20260808100100_schedule_abandoned_order_sweep.sql`)
 is versioned, but the live state is not, and `cron.schedule` upserts on the job
 name so re-running the migration re-points the job rather than duplicating it.
 This paragraph is the pointer that makes that survivable.
+
+### `pg_net`, and the one job that leaves the database
+
+`release_abandoned_orders` was narrowed in Phase 8 to orders with **no
+`payments` row at all**. It previously skipped rows whose payment status was
+`pending`, `captured` or `refunded` — a list that omitted **`created`**, which
+is the status a Razorpay order actually sits at while it waits for its webhook.
+Every paid Razorpay order was therefore eligible for cancellation. The full
+account is in `docs/architecture.md`.
+
+Deciding the orders it no longer covers means asking Razorpay, and Postgres
+cannot make an HTTP call — so `pg_net` does it:
+
+| | |
+|---|---|
+| Extension | `pg_net` 0.20.4, into `extensions`. **Not enabled until the migration is applied** |
+| Caller | `private.trigger_order_reconciler()`, `security definer`, no arguments |
+| Target | `POST <cron_target_origin>/api/cron/release-abandoned-orders` |
+| Credentials | `vault.decrypted_secrets` — `cron_secret` and `cron_target_origin` |
+
+The two Vault entries are **created by hand, once per environment**, because a
+migration is committed to git and a bearer token must not be. The function
+raises if either is missing, so an unconfigured reconciler appears as a failed
+row in `cron.job_run_details` rather than as silence.
+
+`net.http_post` is asynchronous: the function returns once the request is
+*queued*, and the response lands in `net._http_response`. A clean return is
+therefore not evidence that the route ran — the webhook-liveness tile on the
+admin dashboard is what answers that.
 
 ---
 

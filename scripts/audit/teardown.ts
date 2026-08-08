@@ -37,7 +37,12 @@
  */
 import { products } from "../seed-data";
 import { variantsFor } from "../seed";
-import { adminClient } from "./fixtures";
+// From `clients`, not `fixtures`. Importing `fixtures` would trip its
+// module-scope production guard, and teardown is the one harness that is
+// legitimately useful pointed at the live shop: it only ever deletes, and only
+// rows carrying `QA_EMAIL_PREFIX`. It is how you clean up if that guard arrived
+// a day too late.
+import { adminClient, isProductionUrl, supabaseUrl } from "./clients";
 
 /**
  * Every prefix Phase 4 and Phase 5 minted accounts under.
@@ -228,6 +233,15 @@ async function main() {
     : "LIVE — rows will be deleted";
 
   console.log(`\nAudit teardown · ${mode}`);
+  // Allowed, and never quiet about it. Teardown deletes by QA prefix so it
+  // cannot reach a real customer, but somebody running a deletion tool against
+  // the live shop should have to see that they are doing it.
+  if (isProductionUrl(supabaseUrl())) {
+    console.log(
+      `  ⚠  TARGET IS THE PRODUCTION DATABASE (${supabaseUrl()})\n` +
+        `     Only rows matching the QA prefixes below can be deleted.`,
+    );
+  }
   console.log(`  prefixes: ${args.prefixes.join(", ")}`);
   if (args.orders.length > 0)
     console.log(`  extra orders: ${args.orders.join(", ")}`);
