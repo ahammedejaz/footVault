@@ -138,6 +138,55 @@ async function tabTo(
   return null;
 }
 
+/**
+ * Wait for the drawer to have finished reading the bag.
+ *
+ * `[role="dialog"]` is visible the instant the store flips `drawerOpen` — see
+ * `openDrawer()` in `src/lib/stores/bag.ts`, which sets the flag and *then*
+ * fires the fetch. Until that answers, the panel is the "Reading your bag"
+ * placeholder whose only focusable control is Close, and Radix loops a
+ * one-control ring straight back onto it. Tabbing then reports "never reached
+ * the target (1 distinct controls in the ring)" about a drawer that is working
+ * perfectly and simply has not been filled in yet.
+ *
+ * So wait for the contents, the way every navigation here waits for its <h1>.
+ * It bites on a cold dev server, where the first /api/cart pays the on-demand
+ * compile, and passes on a warm one — which is exactly the kind of flake that
+ * gets blamed on the last commit rather than on the harness.
+ *
+ * A drawer that never fills in is a real defect, so it is recorded rather than
+ * thrown: the run keeps its remaining checks either way.
+ */
+async function drawerFilled(page: Page) {
+  await page
+    .getByRole("dialog")
+    .getByRole("link", { name: "Go to your bag" })
+    .waitFor({ state: "visible", timeout: 15_000 })
+    .catch(() => {
+      problems.push("the bag drawer never finished reading the bag");
+    });
+}
+
+/**
+ * Wait for checkout to know what delivery costs.
+ *
+ * Same class of problem, one step later. The Place Order button is
+ * `aria-disabled` until a Shiprocket quote lands, because nothing may be placed
+ * at a price the customer has not been shown, and its label is the amount about
+ * to be charged — neither of which exists yet while the quote is in flight.
+ * Tabbing to it before then finds a control whose label does not match and
+ * whose state refuses the press.
+ */
+async function deliveryPriced(page: Page) {
+  await page
+    .locator('button[type="submit"]:not([aria-disabled="true"])')
+    .last()
+    .waitFor({ state: "visible", timeout: 25_000 })
+    .catch(() => {
+      problems.push("checkout never settled on a delivery price");
+    });
+}
+
 /** Type into whatever holds focus. Asserts it landed where it was aimed. */
 async function typeInto(page: Page, id: string, value: string, label: string) {
   const stop = await tabTo(
@@ -225,6 +274,7 @@ async function main() {
   const drawer = page.getByRole("dialog");
   await drawer.waitFor({ state: "visible", timeout: 15_000 });
   check("the bag drawer opens from the keyboard", await drawer.isVisible());
+  await drawerFilled(page);
 
   // A modal is *supposed* to hold focus. What must not happen is focus escaping
   // to the page behind it while it is open.
@@ -259,6 +309,7 @@ async function main() {
   await page.locator('a[href="/cart"]').first().focus();
   await page.keyboard.press("Enter");
   await drawer.waitFor({ state: "visible", timeout: 15_000 });
+  await drawerFilled(page);
   await tabTo(
     page,
     (s) => /go to your bag/i.test(s.name),
@@ -327,6 +378,19 @@ async function main() {
   check("cash on delivery is the reachable default", codChecked);
 
   /* 8 ── place it ─────────────────────────────────────────────────────────── */
+  // Nothing may be placed at a price the customer has not been shown, so the
+  // button is aria-disabled and unlabelled until the courier quote lands.
+  await deliveryPriced(page);
+  const payLabel = await page
+    .locator('button[type="submit"]')
+    .last()
+    .textContent();
+  check(
+    "the button names the amount about to be charged",
+    /^Pay ₹/.test((payLabel ?? "").trim()),
+    (payLabel ?? "").trim(),
+  );
+
   await tabTo(
     page,
     (s) => /place order|^pay /i.test(s.name),

@@ -88,6 +88,38 @@ export type CheckoutFlowProps = {
 const NEW_ADDRESS = "new";
 
 /**
+ * Quotes, keyed by `${pin}:${method}` and held outside the component.
+ *
+ * They are cached here rather than only in state because losing one is not a
+ * cosmetic problem any more: nothing can be placed at a price the customer has
+ * not been shown, so a quote that vanishes leaves the Place Order button
+ * disabled with no way forward. `npm run audit:keyboard-checkout` reproduces
+ * exactly that — a quote lands, and by the payment step it is gone, leaving a
+ * signed-in customer with a saved address stuck on "Checking delivery…"
+ * indefinitely.
+ *
+ * A module-level map makes that class of failure impossible by construction:
+ * whatever unmounts, the answer for a given destination and method survives it.
+ * It is not a source of truth — `shipping_quotes` is, and `placeOrder` charges
+ * from that row — so a stale entry costs a re-quote at worst, and the entry is
+ * keyed by the exact pair it was fetched for, so it can never be shown against
+ * a different address.
+ */
+const QUOTE_CACHE = new Map<string, StoredQuoteView>();
+
+type StoredQuoteView = {
+  key: string;
+  feePaise: number;
+  codHandlingPaise: number;
+  advancePaise: number;
+  balanceDuePaise: number;
+  grandTotalPaise: number;
+  deliverable: boolean;
+  codAvailable: boolean;
+  estimatedDays: number | null;
+};
+
+/**
  * What the form hands the schema — the schema's own input type, with the two
  * fields a half-filled form is allowed to disagree with it about.
  */
@@ -166,18 +198,7 @@ export function CheckoutFlow({
    * `src/lib/shipping/quote-store.ts`. That is the whole reason the fee is
    * fetched here rather than estimated here.
    */
-  const [quoted, setQuoted] = useState<{
-    /** The (pin code, method) this answer belongs to. See `quote` below. */
-    key: string;
-    feePaise: number;
-    codHandlingPaise: number;
-    advancePaise: number;
-    balanceDuePaise: number;
-    grandTotalPaise: number;
-    deliverable: boolean;
-    codAvailable: boolean;
-    estimatedDays: number | null;
-  } | null>(null);
+  const [quoted, setQuoted] = useState<StoredQuoteView | null>(null);
   const [quoting, setQuoting] = useState(false);
   /** Set when the lookup itself failed, so "still checking" and "could not check" read differently. */
   const [quoteFailed, setQuoteFailed] = useState(false);
@@ -197,7 +218,10 @@ export function CheckoutFlow({
    * to the *previous* address before correcting itself. Comparing keys during
    * render means a stale answer is simply never shown.
    */
-  const quote = quoted && quoted.key === quoteKey ? quoted : null;
+  const quote =
+    (quoted && quoted.key === quoteKey ? quoted : null) ??
+    QUOTE_CACHE.get(quoteKey) ??
+    null;
 
   useEffect(() => {
     if (!/^\d{6}$/.test(pin) || !method) return;
@@ -220,7 +244,7 @@ export function CheckoutFlow({
       // the order regardless, and a shipping row that empties itself mid
       // checkout reads as broken.
       if (result.ok) {
-        setQuoted({
+        const answer = {
           key: `${pin}:${method}`,
           feePaise: result.feePaise,
           codHandlingPaise: result.codHandlingPaise,
@@ -230,7 +254,9 @@ export function CheckoutFlow({
           deliverable: result.deliverable,
           codAvailable: result.codAvailable,
           estimatedDays: result.estimatedDays,
-        });
+        };
+        QUOTE_CACHE.set(answer.key, answer);
+        setQuoted(answer);
       }
     }, 400);
 
@@ -301,7 +327,6 @@ export function CheckoutFlow({
    */
   const awaitingQuote = !quote;
 
-  /** COD is hidden where no courier will collect cash. */
   const offeredMethods = methods.filter(
     (entry) => entry.method !== "cod" || quote?.codAvailable !== false,
   );
@@ -311,6 +336,28 @@ export function CheckoutFlow({
    * server. The server refuses it too — this is the courtesy, not the control.
    */
   const undeliverable = quote?.deliverable === false;
+
+  /**
+   * Why the order cannot be placed yet, or null when it can.
+   *
+   * A reason rather than a boolean, so the button, the screen reader and the
+   * sentence under it all say the same thing — and so the customer never has to
+   * press a dead control to find out what is wrong.
+   */
+  const blockedReason =
+    offeredMethods.length === 0
+      ? "No payment method is available right now."
+      : undeliverable
+        ? `No courier will carry to ${pin} from our store.`
+        : awaitingQuote
+          ? !pinComplete
+            ? "Add a delivery address so we can price delivery."
+            : // A lookup that has come back empty reads differently from one
+              // still in flight, and only the first is worth acting on.
+              quoteFailed && !quoting
+              ? `We could not price delivery to ${pin}. Change the pin code or try again in a moment — nothing has been placed.`
+              : `Checking what delivery costs to ${pin}…`
+          : null;
 
   // Focus the failure so a keyboard or screen-reader customer is not left at
   // the bottom of a form wondering what the button did. Focus rather than a
@@ -422,6 +469,14 @@ export function CheckoutFlow({
 
     setAttempted(true);
     setProblem(null);
+
+    /**
+     * The button is `aria-disabled` rather than `disabled` in these states, so
+     * it can still be pressed. The reason is already on screen and wired to the
+     * button through `aria-describedby`, so this refuses quietly rather than
+     * raising a second copy of a message the customer is already being shown.
+     */
+    if (blockedReason) return;
 
     const parsed = checkoutSchema({ requireContactEmail: !signedIn }).safeParse(
       buildInput(),
@@ -984,24 +1039,33 @@ export function CheckoutFlow({
               />
             </div>
 
+            {/*
+              `aria-disabled`, not `disabled`, for everything except work that
+              is genuinely in flight.
+              
+              A `disabled` button is removed from the tab order entirely, so a
+              keyboard or screen-reader customer tabs past the one control they
+              are looking for and is told nothing about why they cannot finish.
+              `aria-disabled` keeps it reachable and announces it as
+              unavailable, and pressing it explains the reason rather than
+              doing nothing. `busy` keeps the real attribute: that state lasts
+              a moment and re-entry into it is meaningless.
+            */}
             <Button
               type="submit"
               size="lg"
-              className="mt-5 w-full"
-              disabled={
-                busy ||
-                offeredMethods.length === 0 ||
-                undeliverable ||
-                awaitingQuote
+              className="mt-5 w-full aria-disabled:opacity-60"
+              disabled={busy}
+              aria-disabled={blockedReason !== null || undefined}
+              aria-describedby={
+                blockedReason ? "checkout-submit-status" : undefined
               }
             >
               {placing
                 ? "Placing your order…"
                 : paying
                   ? "Waiting for payment…"
-                  : awaitingQuote && quoteFailed
-                    ? "Delivery price unavailable"
-                    : payLabel}
+                  : payLabel}
             </Button>
 
             {undeliverable ? (
@@ -1021,17 +1085,13 @@ export function CheckoutFlow({
                 </span>{" "}
                 after dispatch.
               </p>
-            ) : quoting ? (
-              <p className="text-muted-foreground mt-3 text-center text-sm">
-                Checking delivery to {pin}…
-              </p>
-            ) : awaitingQuote && quoteFailed ? (
+            ) : blockedReason ? (
               <p
-                className="mt-3 text-center text-sm text-pretty"
+                id="checkout-submit-status"
                 role="status"
+                className="text-muted-foreground mt-3 text-center text-sm text-pretty"
               >
-                We could not price delivery to {pin} just now. Change the pin
-                code or try again in a moment — nothing has been placed.
+                {blockedReason}
               </p>
             ) : null}
 
