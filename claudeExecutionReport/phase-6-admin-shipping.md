@@ -677,6 +677,11 @@ trade, but it was a trade, and the brief's "Done when" is not met.
    called, and that UI is not built.
 9. **The admin panel has been type-checked and built but never rendered in a
    browser.** No screenshot, no axe run, no interaction test.
+10. **`/admin` returns 200 to an anonymous visitor** — with the not-found page,
+    not the panel, so nothing leaks — while a genuinely missing path returns 404.
+    The status difference discloses that the route exists, which is the one thing
+    the guard was written to hide. Same Next.js behaviour as the API soft-404
+    fixed in this branch. See F-2 in the security review.
 
 ---
 

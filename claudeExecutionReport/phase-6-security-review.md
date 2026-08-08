@@ -258,6 +258,49 @@ free to turn on.
 
 ---
 
+## F-2 · `/admin` answers 200 where a missing page answers 404
+
+**Severity: low. Found in production after the merge. Not fixed — recorded.**
+
+```
+GET /admin   -> 200,  x-matched-path: /_not-found,  body = the not-found page
+GET /nope    -> 404
+```
+
+**Nothing leaks.** The panel is not rendered; an anonymous visitor gets the
+storefront's not-found page, and `src/app/admin/layout.tsx` would refuse them
+again if it were reached. No admin data is exposed by this.
+
+What is exposed is the *existence* of `/admin`, which is the one thing the guard
+was written to hide. `src/lib/supabase/proxy.ts` says so in as many words — "a
+redirect to /login tells an attacker that /admin exists and is worth coming back
+to. A 404 tells them nothing the rest of the internet does not already know."
+A 200 where every other missing path returns 404 says exactly as much as the
+redirect would have.
+
+**Root cause: the same one as the API soft-404 fixed in this branch.**
+`NextResponse.rewrite()` renders the target page and keeps the original status,
+so rewriting to `/_not-found` produces not-found *markup* with a 200. The two
+findings are one Next.js behaviour showing up in two places; the API case was
+fatal (Razorpay stops retrying on 2xx) and this one is cosmetic, which is why
+only the first was fixed under time pressure.
+
+**Why it was not fixed here.** It is pre-existing Phase 4 code on the request
+path for every route in the site, the fix needs testing against the real
+middleware rather than reasoning (`NextResponse.rewrite` does not document a
+settable status), and this was found *after* the merge. Pushing an unverified
+change to the request pipeline straight onto `main` is a worse trade than a
+recorded low-severity disclosure.
+
+**The fix, for whoever picks it up.** The admin layout's `notFound()` already
+produces a genuine 404 — so either let the request reach it and drop the
+middleware rewrite, or find a rewrite form that carries the status. Prefer the
+second: the middleware guard is defence in depth and worth keeping. Whichever is
+chosen, assert the *status code* rather than the body, because the body has been
+right all along.
+
+---
+
 ## Verdict
 
 The one hole found was real, was in code written this phase, and was found by
