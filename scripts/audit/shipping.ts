@@ -818,16 +818,18 @@ async function main() {
           sent !== Math.round(order.subtotal / 100),
           `subtotal is ${Math.round(order.subtotal / 100)}`,
         );
+        const stored = await maybeRow<{ cod_collectable_amount: number }>(
+          "audit.shipment.collectable",
+          admin
+            .from("shipments")
+            .select("cod_collectable_amount")
+            .eq("order_id", order.id)
+            .maybeSingle(),
+        );
         check(
           "the shipment records what the courier was asked to collect",
-          true === (await (async () => {
-            const { data } = await admin
-              .from("shipments")
-              .select("cod_collectable_amount")
-              .eq("order_id", order.id)
-              .maybeSingle();
-            return data?.cod_collectable_amount === order.balanceDueOnDelivery;
-          })()),
+          stored?.cod_collectable_amount === order.balanceDueOnDelivery,
+          `stored ${String(stored?.cod_collectable_amount)}, expected ${order.balanceDueOnDelivery}`,
         );
       }
       const againCreated = await createShipment(admin, order);
