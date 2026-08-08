@@ -1,5 +1,7 @@
 import "server-only";
 
+import type { MovementRow } from "@/lib/inventory-types";
+
 import {
   likePattern,
   rangeFor,
@@ -13,6 +15,7 @@ export type InventorySort = (typeof INVENTORY_SORTS)[number];
 
 /** Matches the dashboard's definition, imported rather than repeated. */
 export { LOW_STOCK_THRESHOLD } from "@/lib/queries/admin/dashboard";
+export type { MovementRow } from "@/lib/inventory-types";
 
 export type InventoryRow = {
   variantId: string;
@@ -94,16 +97,6 @@ export async function listInventory(
     })),
   };
 }
-
-export type MovementRow = {
-  id: string;
-  delta: number;
-  balanceAfter: number;
-  reason: string;
-  note: string | null;
-  createdAt: string;
-  actorName: string | null;
-};
 
 /**
  * One variant's ledger, newest first.

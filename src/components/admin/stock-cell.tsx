@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { adjustStock, loadMovements } from "@/lib/actions/admin/inventory";
-import type { MovementRow } from "@/lib/queries/admin/inventory";
+import type { MovementRow } from "@/lib/inventory-types";
 import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
 
