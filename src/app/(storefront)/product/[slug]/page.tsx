@@ -175,10 +175,6 @@ export default async function ProductPage({
                 checkout.
               </dd>
             </div>
-            <div className="col-span-2">
-              {/* Availability and timing, before the customer commits to anything. */}
-              <DeliveryCheck />
-            </div>
             <div className="grid grid-cols-[1rem_1fr] gap-x-3">
               <RotateCcw
                 className="text-muted-foreground row-span-2 mt-1 size-4 shrink-0"
@@ -204,6 +200,16 @@ export default async function ProductPage({
               </div>
             ) : null}
           </dl>
+
+          {/*
+            Outside the <dl>, deliberately. A definition list may contain only
+            dt/dd groups (optionally wrapped in a div), and axe is right to
+            reject a <form> smuggled in as one — I put it there first and the
+            audit caught it. Availability is not a term-and-definition anyway.
+          */}
+          <div className="mt-6">
+            <DeliveryCheck />
+          </div>
 
           {product.description ? (
             <div className="border-border mt-8 border-t pt-6">

@@ -347,5 +347,5 @@ while sign-in is Google-only, and free to turn on.
 | 5 | Checkout, orders and payments | Done — see [`claudeExecutionReport/phase-5-checkout-payments.md`](claudeExecutionReport/phase-5-checkout-payments.md) |
 | 6 | Admin CRUD | |
 | 7 | Admin appearance and CMS | |
-| 8 | Reviews, coupons, refunds, dashboard, polish | |
+| 8 | Reviews, coupons, dashboard, polish | Refunds were listed here and are not planned: the shop does not offer them. Cancelling a paid order still needs an answer — see `docs/admin-guide.md` |
 | 9 | Production deploy and owner documentation | |
