@@ -614,5 +614,18 @@ npm run audit:literals    135 files, 7 CMS pages, the announcement — clean
 npm run audit:shipping    57 passed, 0 failed   (against the mock)
 ```
 
+Supabase's security advisors were run after the migrations. **Nothing new is
+flagged.** `refunds` does not appear — its RLS and its grants are correct — and
+`reorder_product_images` does not appear because it is `SECURITY INVOKER`, so
+RLS still decides and a signed-in customer calling it over PostgREST updates
+nothing. Everything the advisors do report is the pre-existing, documented
+posture: `integration_tokens` / `rate_limits` / `shipping_quotes` have RLS on
+and no policy *on purpose* (refused by the absence of a policy rather than by
+the wording of one), and the `SECURITY DEFINER` helpers are the policy functions
+that have to be callable to be called from a policy.
+
 The browser suites — `overflow`, `a11y`, `keyboard`, `lighthouse`, the six-width
-sweep and the real tablet — were **not run**. §7.
+sweep and the real tablet — were **not run**. An attempt at `audit:overflow`
+during this session failed with `ERR_CONNECTION_REFUSED`, because the adversarial
+pass was rebuilding `.next` at the same time; two agents cannot share one build
+directory. §7.
