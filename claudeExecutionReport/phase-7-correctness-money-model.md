@@ -149,12 +149,14 @@ lies is the bug, and being rescued at the last step is not a fix.
   chips now that they are `aria-disabled` — so "choose a size first" could land
   the focus on the one chip that cannot be chosen. Fixed in the same pass.
 
-### What was **not** done, and it is the brief's explicit ask
+### The regression test
 
-**The regression test that attempts to order a zero-stock variant through the
-real checkout path is not written by me.** It was handed to the adversarial pass
-along with the rest of the attack surface. If that pass did not deliver it, this
-gate is unmet and should not be recorded as met.
+`npm run audit:zero-stock`, written by the adversarial pass — **10/10**. It
+orders a sold-out variant through the real `placeOrder` action over HTTP and
+asserts the refusal names the item; backs that with the RPC raising `OSTCK` and
+the `CHECK (stock >= 0)` raising `23514`; and carries a **positive control** —
+the same variant, restocked, does place — so the refusal is stock-specific
+rather than the harness failing to reach the code.
 
 ### Residual, stated plainly
 
@@ -289,9 +291,38 @@ path                     doc  rsc  ?_rsc  prefetch
 A browser navigation still gets the styled page (78,620 bytes, `<title>Foot
 Vault…`) with a 404.
 
-**I got this wrong the first time and caught it by measuring rather than by
-reading.** It is the single most useful thing in this report: two security
-reviews described the symptom correctly and the obvious fix for it is wrong.
+**I got this wrong twice.** The second attempt — `Accept: text/html` — is the
+one to learn from, because it passed every test I could think of. Next's own
+client never sends `RSC: 1` *and* `Accept: text/html`, so it measured clean
+against every real navigation. The adversarial pass broke it in one line:
+
+```
+curl /admin -H 'RSC: 1' -H 'Accept: text/html'   -> 200
+curl /definitely-not-a-route  (same headers)     -> 404
+```
+
+An attacker sets headers for free. **Any classification of a request built from
+client-supplied headers is forgeable**, so the guard must not classify the
+request at all.
+
+The third attempt does not. It rewrites to a path that has **no route** rather
+than to `/_not-found` — and that distinction is the whole thing. `/_not-found`
+is a route Next *knows about*, so a rewrite to it is answered with that route's
+own status handling, and on the flight path that is 200. An unmatched path falls
+through to the same code a genuinely missing URL takes. No branch, so nothing to
+forge. Measured on the final build:
+
+```
+shape                        /admin  /definitely-not-a-route
+default                      404     404
+Accept: text/html            404     404
+RSC: 1                       404     404
+RSC: 1 + Accept: text/html   404     404
++ Next-Router-Prefetch: 1    404     404
+```
+
+and the bodies are **byte-identical** once the requested path — which the
+requester supplied — is normalised out.
 
 ---
 
@@ -364,6 +395,36 @@ The brief asked for drag-and-drop with optimistic feedback. The existing buttons
 are keyboard-operable and announce themselves, which a drag list is not without
 a second hidden interface; I did not build the drag layer, and that is a gap
 against the brief rather than a considered substitution.
+
+## 5c · What the adversarial pass found, and what happened to it
+
+One subagent, coming in cold after the feature work, per the brief. It wrote
+`scripts/audit/server-actions.ts` (A8, the test named the most valuable missing
+one in two consecutive reviews) and `scripts/audit/zero-stock.ts` (the A1
+regression the brief demands), and `claudeExecutionReport/phase-7-security-review.md`.
+
+| | Finding | State |
+|---|---|---|
+| **G-1** | medium — A7 still bypassable with `RSC: 1` + `Accept: text/html` | **fixed**, §5, re-measured |
+| **G-2** | medium — the repeat-RTO block does nothing *and* unblocks itself | **fixed**, both halves, refusal reproduced |
+| **G-3** | low — COD collectable rupee-rounded, ≤₹1 over-collection | **fixed** — the advance absorbs the paise so the balance is whole rupees by construction |
+| **G-4** | low — a bag holding one sold-out pair reads as "empty" | **fixed** — it names the shoe and the size |
+| **G-5/G-6** | informational — refund mechanics unbuilt, quote-freeze columns null on all 8 orders | **accepted**, §7. No Phase-7 order has been placed yet, so #9 is code-correct and unproven |
+| **G-7** | low, pre-existing — JSON-LD `</script>` breakout via admin-authored names | **not fixed**, out of scope, carried forward |
+
+**G-2 is the one worth reading twice.** `profiles.cod_blocked_at` shipped as a
+column that nothing read and that the customer it constrained could clear
+themselves — `computeOrderTotals` declared a `codBlocked` parameter and no
+caller passed it, and `guard_profile_role()` froze only `role`. Both halves had
+to close together: a control nothing reads is a column, and a control the person
+it constrains can switch off is not a control. The trigger was widened rather
+than a second one added, because "which columns may a customer change" is one
+question and answering it in two places is how the two come to disagree.
+Reproduced refused (`42501`) after the change.
+
+Nothing the pass tried moved money, read another customer's data, or placed a
+bad order. The money split (grant + RLS + check constraint), the frozen-quote
+clamps, the refunds RLS and the credential latch all held.
 
 ## 6 · Part B — the money model
 
@@ -470,7 +531,7 @@ reached.
 | Brief | State | Why it matters |
 |---|---|---|
 | **A5** — checkout address book | **Not done.** `src/components/checkout/address-book.tsx` and `address.ts` exist from Phase 6; the edit/delete/set-default operations and the re-quote on address change were not built or verified |
-| **A8** — forged Server Action harness | Handed to the adversarial pass. **See `phase-7-security-review.md`; if it is not there, this gate is unmet** |
+
 | **B3** — refunds | **Schema and policy, no mechanics.** The `refunds` table, enums, indexes and RLS are live and in migrations, and `src/lib/orders/refund-policy.ts` is the brief's matrix as an explicit table — every row, the shop-error short-circuit, and the clamp to the captured amount, all measured in `audit:totals` §8. **What is missing is the mechanics:** no Razorpay Refunds API call, no `refund.processed`/`refund.failed` webhook, no admin UI, no idempotency test. So the *rule* is built and provable and nothing can yet issue a refund |
 | **B4** — RTO handling | **Schema and state machine only.** `returning` exists in `order_status` with correct transitions and `RESTOCKS_ON_ENTRY: false`; `rto_*` columns and `rto_return`/`rto_writeoff` movement reasons exist; `profiles.cod_blocked_at` exists. No admin flow to mark a parcel received, no restock action, no RTO ledger, no dashboard figures, no repeat-RTO flagging |
 | **C** — image pipeline | **Not started.** No `sharp`, no normalisation, no upload guidance, no preview |
@@ -580,6 +641,11 @@ new   src/lib/content-tokens.ts              policy numbers resolved into prose
 new   src/components/storefront/flash-toast.tsx
 new   scripts/audit/literals.ts              npm run audit:literals
 new   src/lib/orders/refund-policy.ts        the refund matrix, as a table
+new   src/lib/orders/cod-block.ts            the block, actually read
+new   src/lib/actions/admin/customers.ts     the block, actually settable
+new   src/components/admin/customers/cod-block-control.tsx
+new   scripts/audit/server-actions.ts        A8 — forged posts, 34 actions
+new   scripts/audit/zero-stock.ts            the A1 regression
 
       src/lib/payments/advance.ts            round-trip advance, guard rails, prepaid discount
       src/lib/orders/totals.ts               the one place a total is computed
@@ -602,16 +668,23 @@ sql   20260808140000_quote_freeze_columns.sql
       20260808140400_refunds_rls.sql
       20260808140500_create_order_records_quote_and_discount.sql
       20260808140600_reorder_product_images.sql
+      20260808140700_guard_cod_block_columns.sql
 ```
 
 `npm run typecheck`, `npm run lint`, `npm run build` and `npm run shapes` are
 green. Measured on this branch:
 
 ```
+npm run typecheck         pass
+npm run lint              pass, 0 errors 0 warnings
 npm run shapes            16 cached shapes unchanged at v3
-npm run audit:totals      42 passed, 0 failed
+npm run audit:totals      43 passed, 0 failed
 npm run audit:literals    135 files, 7 CMS pages, the announcement — clean
 npm run audit:shipping    57 passed, 0 failed   (against the mock)
+npm run audit:admin       23 held, 0 holes
+npm run audit:actions     77 passed, 0 failed   (34 admin actions, forged over HTTP)
+npm run audit:zero-stock  10 passed, 0 failed
+reconcile_inventory()     0 drifting variants
 ```
 
 Supabase's security advisors were run after the migrations. **Nothing new is
