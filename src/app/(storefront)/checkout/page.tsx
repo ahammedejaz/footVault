@@ -42,24 +42,34 @@ export default async function CheckoutPage() {
   const addresses = user ? await listAddresses() : [];
   const methods = availablePaymentMethods();
 
-  const shippingFee = cart.freeShipping.qualified
-    ? 0
-    : cart.freeShipping.feePaise;
-
   /**
-   * Tax is zero on the line, not absent from the price.
+   * The opening totals, before a destination is known.
    *
-   * Every price in this shop is tax-inclusive — see `docs/design-system.md` §8
-   * — so a GST row would double-count. The note under the total says so, and
-   * the field stays in the shape because `OrderTotals` is the same type the
-   * placed order uses and the two must be comparable.
+   * **Delivery is deliberately zero here, and the UI says so rather than
+   * showing ₹0.** This page cannot price delivery: Shiprocket quotes it from the
+   * customer's PIN code, and nothing on this render knows one yet. The old code
+   * filled the gap with a flat fee from `site_settings`, which is how checkout
+   * came to display one number and charge another — the drift the owner
+   * reported. `CheckoutFlow` replaces every figure below the moment a real
+   * quote lands, and holds the Place Order button until it does.
+   *
+   * Tax is zero on the line, not absent from the price. Every price in this
+   * shop is tax-inclusive — see `docs/design-system.md` §8 — so a GST row would
+   * double-count. The field stays in the shape because `OrderTotals` is the
+   * same type the placed order uses and the two must be comparable.
    */
   const totals: OrderTotals = {
     subtotal: cart.subtotal,
     discountTotal: 0,
-    shippingFee,
+    shippingFee: 0,
+    codHandlingFee: 0,
     taxTotal: 0,
-    grandTotal: cart.subtotal + shippingFee,
+    grandTotal: cart.subtotal,
+    // Prepaid is the shape of an unquoted order: everything settles online and
+    // the courier collects nothing. A Pay-on-Delivery split needs a delivery
+    // charge to compute an advance from, so it cannot exist before the quote.
+    advanceAmount: cart.subtotal,
+    balanceDueOnDelivery: 0,
   };
 
   return (

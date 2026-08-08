@@ -43,10 +43,19 @@ export type CartAdjustment =
 
 export type FreeShipping = {
   thresholdPaise: number;
-  feePaise: number;
   remainingPaise: number;
   qualified: boolean;
 };
+
+/**
+ * Note what is **not** here: the fee.
+ *
+ * Delivery is priced by Shiprocket from the destination PIN code, and a bag
+ * page has no destination. The old shape carried a flat `feePaise` read from
+ * `site_settings`, which is how the cart came to promise ₹199 while checkout
+ * charged a live courier rate — the drift the owner reported. A number the cart
+ * cannot actually know is not a number the cart should show.
+ */
 
 export type Cart = {
   id: string | null;

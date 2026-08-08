@@ -92,7 +92,6 @@ async function activeCartId(): Promise<string | null> {
 export async function getCart(): Promise<Cart> {
   const settings = await cachedSiteSettings();
   const shipping = setting<ShippingSettings>(settings, "shipping", {
-    flat_fee_paise: 19900,
     free_above_paise: 249900,
     currency: "INR",
     regions: ["IN"],
@@ -262,7 +261,6 @@ function freeShippingFrom(
   const remainingPaise = Math.max(0, thresholdPaise - subtotal);
   return {
     thresholdPaise,
-    feePaise: shipping.flat_fee_paise,
     remainingPaise,
     // An empty bag has not qualified for anything, whatever the arithmetic says.
     qualified: subtotal > 0 && remainingPaise === 0,

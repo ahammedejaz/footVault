@@ -69,6 +69,9 @@ type RawOrder = {
   shipping_fee: number;
   tax_total: number;
   grand_total: number;
+  cod_handling_fee: number;
+  advance_amount: number;
+  balance_due_on_delivery: number;
   shipping_address: unknown;
   contact_email: string | null;
   contact_phone: string | null;
@@ -177,6 +180,7 @@ export async function getOrderForViewer(
   const query = supabase.from("orders").select(
     `id, order_number, status, payment_status, payment_method, placed_at,
        subtotal, discount_total, shipping_fee, tax_total, grand_total,
+       cod_handling_fee, advance_amount, balance_due_on_delivery,
        shipping_address, contact_email, contact_phone, customer_note, user_id,
        items:order_items (
          id, product_name, product_slug, size, color, sku,
@@ -206,8 +210,11 @@ export async function getOrderForViewer(
       subtotal: row.subtotal,
       discountTotal: row.discount_total,
       shippingFee: row.shipping_fee,
+      codHandlingFee: row.cod_handling_fee,
       taxTotal: row.tax_total,
       grandTotal: row.grand_total,
+      advanceAmount: row.advance_amount,
+      balanceDueOnDelivery: row.balance_due_on_delivery,
     },
     lines: toLines(row.items ?? []),
     shippingAddress: toShippingAddress(row.shipping_address),

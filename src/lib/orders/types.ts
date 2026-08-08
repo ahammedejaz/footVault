@@ -239,9 +239,23 @@ export type OrderLine = {
 export type OrderTotals = {
   subtotal: number;
   discountTotal: number;
+  /** The **total** charged for delivery, including any COD handling. */
   shippingFee: number;
+  /**
+   * How much of `shippingFee` is the Pay-on-Delivery extra — the return leg the
+   * shop pays when a parcel is refused at the door. Always 0 for prepaid.
+   *
+   * Carried separately because the owner's condition for keeping the surcharge
+   * was that a customer can see it as its own line rather than as an
+   * unexplained gap between a prepaid total and a COD one.
+   */
+  codHandlingFee: number;
   taxTotal: number;
   grandTotal: number;
+  /** Charged online through Razorpay. Equals `grandTotal` for a prepaid order. */
+  advanceAmount: number;
+  /** Collected in cash by the courier. This is what Shiprocket is told to collect. */
+  balanceDueOnDelivery: number;
 };
 
 export type OrderTimelineEntry = {

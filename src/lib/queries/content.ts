@@ -194,7 +194,11 @@ export type ContactSettings = {
 export type SocialSettings = Record<string, string>;
 
 export type ShippingSettings = {
-  flat_fee_paise: number;
+  /**
+   * The prepaid free-delivery threshold. There is deliberately no flat fee
+   * alongside it — rates come from Shiprocket, per destination. See
+   * `src/lib/shipping/settings.ts` for the full, server-side shape.
+   */
   free_above_paise: number;
   currency: string;
   regions: string[];

@@ -1459,7 +1459,9 @@ export type Database = {
       };
       create_order_with_stock: {
         Args: {
+          p_advance_amount?: number | null;
           p_cart_id: string;
+          p_cod_handling_fee?: number;
           p_contact_email?: string;
           p_contact_phone?: string;
           p_customer_note?: string;
@@ -1476,6 +1478,8 @@ export type Database = {
           p_user_id?: string;
         };
         Returns: {
+          advance_amount: number;
+          balance_due: number;
           grand_total: number;
           item_count: number;
           order_id: string;

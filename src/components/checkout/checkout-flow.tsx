@@ -170,11 +170,17 @@ export function CheckoutFlow({
     /** The (pin code, method) this answer belongs to. See `quote` below. */
     key: string;
     feePaise: number;
+    codHandlingPaise: number;
+    advancePaise: number;
+    balanceDuePaise: number;
+    grandTotalPaise: number;
     deliverable: boolean;
     codAvailable: boolean;
     estimatedDays: number | null;
   } | null>(null);
   const [quoting, setQuoting] = useState(false);
+  /** Set when the lookup itself failed, so "still checking" and "could not check" read differently. */
+  const [quoteFailed, setQuoteFailed] = useState(false);
 
   const postalCode = usingNewAddress
     ? draft.postalCode
@@ -209,6 +215,7 @@ export function CheckoutFlow({
       });
       if (cancelled) return;
       setQuoting(false);
+      setQuoteFailed(!result.ok);
       // A failed quote leaves whatever is on screen alone. `placeOrder` prices
       // the order regardless, and a shipping row that empties itself mid
       // checkout reads as broken.
@@ -216,6 +223,10 @@ export function CheckoutFlow({
         setQuoted({
           key: `${pin}:${method}`,
           feePaise: result.feePaise,
+          codHandlingPaise: result.codHandlingPaise,
+          advancePaise: result.advancePaise,
+          balanceDuePaise: result.balanceDuePaise,
+          grandTotalPaise: result.grandTotalPaise,
           deliverable: result.deliverable,
           codAvailable: result.codAvailable,
           estimatedDays: result.estimatedDays,
@@ -244,13 +255,42 @@ export function CheckoutFlow({
     setMethod("razorpay");
   }
 
+  /**
+   * The totals as shown, taken from the quote wholesale.
+   *
+   * Every figure here was computed by `computeOrderTotals` on the server — the
+   * same function `placeOrder` calls — rather than reassembled from parts in
+   * the browser. The old code added the fee to the subtotal here, which made
+   * this a fourth place that money was calculated and a fourth chance to
+   * disagree with the other three.
+   */
   const shownTotals = quote
     ? {
         ...totals,
         shippingFee: quote.feePaise,
-        grandTotal: totals.subtotal - totals.discountTotal + quote.feePaise,
+        codHandlingFee: quote.codHandlingPaise,
+        grandTotal: quote.grandTotalPaise,
+        advanceAmount: quote.advancePaise,
+        balanceDueOnDelivery: quote.balanceDuePaise,
       }
     : totals;
+
+  /**
+   * **Nothing may be placed at a price the customer has not been shown.**
+   *
+   * Owner-reported: the Place Order button was always enabled, so an order
+   * could be submitted while the courier lookup was still in flight — the
+   * customer pressing pay without ever seeing what delivery costs. `placeOrder`
+   * would have priced it correctly and charged a number that had never been on
+   * screen, which is the one failure the stored-quote design exists to prevent.
+   *
+   * Note what this does *not* gate on. A Shiprocket outage still returns a
+   * quote — the fallback amount from settings — so the button stays live and
+   * the sale goes through. Disabled here means "we do not know yet", never "we
+   * could not reach the courier".
+   */
+  const pinComplete = /^\d{6}$/.test(pin);
+  const awaitingQuote = pinComplete && !quote;
 
   /** COD is hidden where no courier will collect cash. */
   const offeredMethods = methods.filter(
@@ -883,20 +923,33 @@ export function CheckoutFlow({
             </ul>
 
             <div className="border-border mt-4 border-t pt-4">
-              <Totals totals={shownTotals} itemCount={itemCount} />
+              <Totals
+                totals={shownTotals}
+                itemCount={itemCount}
+                pendingDelivery={!quote}
+              />
             </div>
 
             <Button
               type="submit"
               size="lg"
               className="mt-5 w-full"
-              disabled={busy || offeredMethods.length === 0 || undeliverable}
+              disabled={
+                busy ||
+                offeredMethods.length === 0 ||
+                undeliverable ||
+                awaitingQuote
+              }
             >
               {placing
                 ? "Placing your order…"
                 : paying
                   ? "Waiting for payment…"
-                  : payLabel}
+                  : awaitingQuote
+                    ? quoteFailed
+                      ? "Delivery price unavailable"
+                      : "Checking delivery…"
+                    : payLabel}
             </Button>
 
             {undeliverable ? (
@@ -919,6 +972,14 @@ export function CheckoutFlow({
             ) : quoting ? (
               <p className="text-muted-foreground mt-3 text-center text-sm">
                 Checking delivery to {pin}…
+              </p>
+            ) : awaitingQuote && quoteFailed ? (
+              <p
+                className="mt-3 text-center text-sm text-pretty"
+                role="status"
+              >
+                We could not price delivery to {pin} just now. Change the pin
+                code or try again in a moment — nothing has been placed.
               </p>
             ) : null}
 
