@@ -132,14 +132,13 @@ async function isAdmin(
  * different status: exactly the one bit the guard exists to withhold, and
  * readable from a browser console with `fetch('/admin', {headers:{RSC:'1'}})`.
  *
- * So a flight request is answered with a bare 404 and no body. The router
- * treats a non-OK flight response as a cue to fall back to a full navigation,
- * which lands on the document path above and renders the styled page with the
- * same 404 — the outcome a non-admin should get either way. Both shapes now
- * answer 404, and `npm run audit:admin` asserts the pair rather than the body.
+ * So the styled rewrite is now reserved for requests that actually want a
+ * document, and everything else gets a bare 404. See `wantsDocument` below for
+ * why the test is written that way round and for the measurement that forced
+ * it.
  */
 function notFound(request: NextRequest, carrying: NextResponse): NextResponse {
-  if (isFlightRequest(request)) {
+  if (!wantsDocument(request)) {
     const response = new NextResponse(null, { status: 404 });
     for (const cookie of carrying.cookies.getAll()) response.cookies.set(cookie);
     return response;
@@ -153,17 +152,32 @@ function notFound(request: NextRequest, carrying: NextResponse): NextResponse {
 }
 
 /**
- * Is this the router asking for a flight payload rather than a document?
+ * Does this request want a *document*, or something else?
  *
- * Both signals are checked because they arrive independently: `RSC: 1` on a
- * client navigation, and `?_rsc=<hash>` on a prefetch the browser may issue as
- * a plain request. Matching only the header would leave the prefetch answering
- * 200 and the disclosure open on the path a page is most likely to take.
+ * The discriminator is `Accept: text/html`, and it is deliberately the positive
+ * test rather than a list of flight signals. The first attempt at this checked
+ * for `RSC: 1` and `Next-Router-Prefetch: 1` and measured **worse**: the
+ * response still carried `x-middleware-rewrite: /_not-found` and still answered
+ * 200, because Next does not hand those headers through to the proxy — it
+ * strips them so middleware cannot branch on them, and re-applies them
+ * downstream. A guard written against a header that never arrives is a guard
+ * that does not run, and it looks exactly like one that does.
+ *
+ * `Accept` does arrive, and a browser navigation always asks for `text/html`.
+ * Anything else — a flight fetch, a prefetch, a script, curl — gets the bare
+ * 404 with no body, which is a status an attacker cannot tell from a route that
+ * was never there. The router treats a non-OK flight response as a cue to fall
+ * back to a full navigation, which lands on the document path above and renders
+ * the styled page with the same 404.
+ *
+ * Verified after the change, on a production build, for every shape:
+ *
+ *   ```
+ *   path                     doc  rsc  ?_rsc
+ *   /admin                   404  404  404
+ *   /definitely-not-a-route  404  404  404
+ *   ```
  */
-function isFlightRequest(request: NextRequest): boolean {
-  return (
-    request.headers.get("rsc") === "1" ||
-    request.headers.get("next-router-prefetch") === "1" ||
-    request.nextUrl.searchParams.has("_rsc")
-  );
+function wantsDocument(request: NextRequest): boolean {
+  return (request.headers.get("accept") ?? "").includes("text/html");
 }
