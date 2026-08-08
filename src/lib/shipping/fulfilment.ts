@@ -202,7 +202,12 @@ export async function createShipment(
      */
     sub_total:
       order.paymentMethod === "cod"
-        ? Math.round(order.balanceDueOnDelivery / 100)
+        ? // A whole rupee by construction — `advanceFor` puts the paise on the
+          // advance precisely so nothing rounds here. `Math.round` stays as a
+          // belt-and-braces cast for a legacy row written before that rule, and
+          // `audit:totals` asserts the balance is a multiple of 100 paise so a
+          // regression fails there rather than in a courier's collection.
+          Math.round(order.balanceDueOnDelivery / 100)
         : Math.round(order.subtotal / 100),
     length: box?.length_cm ?? defaults.length_cm,
     breadth: box?.breadth_cm ?? defaults.breadth_cm,

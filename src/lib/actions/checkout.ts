@@ -26,6 +26,7 @@ import {
   type PaymentMethod,
 } from "@/lib/payments/types";
 import { callerIdentity, consumeRateLimit } from "@/lib/rate-limit";
+import { codBlockedForCaller } from "@/lib/orders/cod-block";
 import { computeOrderTotals } from "@/lib/orders/totals";
 import { getCart } from "@/lib/queries/cart";
 import { maybeRow } from "@/lib/queries/run";
@@ -138,6 +139,43 @@ export async function placeOrder(
 
     const cart = await getCart();
     if (!cart.id || cart.lines.length === 0) {
+      /**
+       * "Empty" and "everything in it has sold out" are different sentences.
+       *
+       * `getCart()` drops a dead line rather than showing a zero, so a bag
+       * holding one sold-out pair arrives here with `lines.length === 0` and
+       * used to be answered "your bag is empty" — which is baffling to somebody
+       * looking at a bag they filled ten minutes ago, and tells them nothing
+       * about what to do. A *mixed* bag already named the item, because the
+       * out-of-stock branch further down handles it; the single-line case fell
+       * through the wrong door. G-4 in the Phase 7 adversarial review.
+       *
+       * The `gone` adjustments carry the name and the size, which is exactly
+       * what the customer needs to hear.
+       */
+      const gone = cart.adjustments.filter(
+        (adjustment) => adjustment.kind === "gone",
+      );
+      if (gone.length > 0) {
+        return {
+          ok: false,
+          reason: "out_of_stock",
+          message:
+            gone.length === 1
+              ? `${gone[0]!.name} in UK ${gone[0]!.size} sold out while it was in your bag. ` +
+                "There is nothing left to check out."
+              : `${gone.length} items sold out while they were in your bag: ` +
+                gone.map((item) => `${item.name} UK ${item.size}`).join(", ") +
+                ". There is nothing left to check out.",
+          items: gone.map((item) => ({
+            productName: item.name,
+            size: item.size,
+            requested: 1,
+            available: 0,
+          })),
+        };
+      }
+
       return {
         ok: false,
         reason: "empty_cart",
@@ -189,6 +227,10 @@ export async function placeOrder(
      */
     const units = cart.lines.reduce((total, line) => total + line.quantity, 0);
     const totals = await computeOrderTotals({
+      // Withdrawn from this customer by the owner, for refusing parcels. Read
+      // here rather than assumed false: the parameter existed and nothing
+      // passed it, so the control was a column.
+      codBlocked: await codBlockedForCaller(),
       cartId: cart.id,
       postalCode: address.postalCode,
       method,
@@ -218,19 +260,33 @@ export async function placeOrder(
     }
 
     /**
-     * Cash on delivery, only where cash can actually be collected.
+     * Pay on Delivery, only where and when it is actually on offer.
      *
-     * The hook Phase 5 §8.8 left for exactly this. Fails soft in the same
-     * direction as everything else: only an explicit "couriers serve this pin
-     * code and none of them will collect cash" declines.
+     * **Four reasons, and they need four different sentences.** Until Phase 7
+     * every refusal said "no courier will collect cash at your pin code", which
+     * is true of exactly one of them — and is a baffling thing to read when the
+     * real reason is that the basket is under the minimum, which the customer
+     * can fix by adding another pair. `codWithheldReason` carries which it is
+     * so the message can be the one that helps.
+     *
+     * Fails soft in the same direction as everything else: only an explicit
+     * "couriers serve this pin code and none of them will collect cash"
+     * declines on the courier's behalf.
      */
     if (method === "cod" && !totals.codAvailable) {
       return {
         ok: false,
         reason: "payment_unavailable",
         message:
-          `No courier will collect cash at ${address.postalCode}. ` +
-          "Pay online instead and we will send it to the same address.",
+          totals.codWithheldReason === "below_minimum"
+            ? "Pay on Delivery is not available on an order this size — the " +
+              "delivery charge would be most of it. Paying online works, and " +
+              "it comes to the same address."
+            : totals.codWithheldReason === "courier"
+              ? `No courier will collect cash at ${address.postalCode}. ` +
+                "Pay online instead and we will send it to the same address."
+              : "Pay on Delivery is not available on this order. Paying online " +
+                "works, and it comes to the same address.",
       };
     }
 

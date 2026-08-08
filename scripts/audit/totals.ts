@@ -83,9 +83,21 @@ section("1 · the brief's worked example, against live rates");
   });
 
   check(
-    "advance is forward freight + RTO freight",
-    split.advancePaise === SURFACE.freight + SURFACE.rto,
+    "advance is forward freight + RTO freight, to the next whole rupee",
+    split.advancePaise >= SURFACE.freight + SURFACE.rto &&
+      split.advancePaise < SURFACE.freight + SURFACE.rto + 100,
     `${rupees(split.advancePaise)} vs ${rupees(SURFACE.freight + SURFACE.rto)}`,
+  );
+  /**
+   * G-3. Shiprocket's API takes the COD collectable in **rupees**, so a balance
+   * carrying paise is over- or under-collected by up to a rupee on every
+   * parcel. The advance absorbs the remainder instead, and the courier is told
+   * a figure it can actually collect.
+   */
+  check(
+    "the balance lands on a whole rupee, so nothing rounds at the boundary",
+    split.balanceDuePaise % 100 === 0,
+    `${rupees(split.balanceDuePaise)}`,
   );
   check(
     "balance is goods + delivery − advance",
@@ -107,8 +119,8 @@ section("1 · the brief's worked example, against live rates");
   const shopKeeps = split.advancePaise;
   const shopPays = SURFACE.freight + SURFACE.rto;
   check(
-    "a refused parcel leaves the shop at net zero",
-    shopKeeps - shopPays === 0,
+    "a refused parcel leaves the shop at net zero, or a few paise ahead",
+    shopKeeps - shopPays >= 0 && shopKeeps - shopPays < 100,
     `keeps ${rupees(shopKeeps)}, pays ${rupees(shopPays)}`,
   );
 
@@ -231,11 +243,17 @@ section("4 · the deposit cap");
     rtoFreightPaise: 24_600,
     grandTotalPaise: 500_000,
   });
-  check("a heavy round trip is capped", split.advancePaise === 20_000);
+  check(
+    "a heavy round trip is capped",
+    split.advancePaise >= 20_000 && split.advancePaise < 20_100,
+    rupees(split.advancePaise),
+  );
   check("the cap is named", split.cappedBy === "maximum");
   check(
-    "the balance absorbs the difference",
-    split.balanceDuePaise === 500_000 - 20_000,
+    "the balance absorbs the difference, on a whole rupee",
+    split.balanceDuePaise === 500_000 - split.advancePaise &&
+      split.balanceDuePaise % 100 === 0,
+    rupees(split.balanceDuePaise),
   );
 }
 
@@ -265,7 +283,9 @@ section("4 · the deposit cap");
   });
   check(
     "a cap of zero means no cap, not a zero advance",
-    split.advancePaise === 24_465 + 24_600,
+    split.advancePaise >= 24_465 + 24_600 &&
+      split.advancePaise < 24_465 + 24_600 + 100,
+    rupees(split.advancePaise),
   );
 }
 
@@ -287,11 +307,16 @@ section("5 · GST on the advance");
     rtoFreightPaise: SURFACE.rto,
     grandTotalPaise: 500_000,
   });
-  check("off: the advance is the bare round trip", off.advancePaise === roundTrip);
   check(
-    "on: the advance is the round trip plus 18%",
-    on.advancePaise === Math.round(roundTrip * 1.18),
-    `${rupees(on.advancePaise)} vs ${rupees(Math.round(roundTrip * 1.18))}`,
+    "off: the advance is the round trip, to the next whole rupee",
+    off.advancePaise >= roundTrip && off.advancePaise < roundTrip + 100,
+    `${rupees(off.advancePaise)} vs ${rupees(roundTrip)}`,
+  );
+  const withGst = Math.round(roundTrip * 1.18);
+  check(
+    "on: the advance is the round trip plus 18%, to the next whole rupee",
+    on.advancePaise >= withGst && on.advancePaise < withGst + 100,
+    `${rupees(on.advancePaise)} vs ${rupees(withGst)}`,
   );
   check(
     "and it is an integer number of paise",

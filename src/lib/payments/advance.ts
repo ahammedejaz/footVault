@@ -115,12 +115,40 @@ export function advanceFor(input: {
    * bound.
    */
   const capped = rule.maximumPaise > 0 ? Math.min(floored, rule.maximumPaise) : floored;
-  const advancePaise = Math.min(capped, grandTotalPaise);
+  const bounded = Math.min(capped, grandTotalPaise);
+
+  /**
+   * **The advance absorbs the paise, so the courier collects whole rupees.**
+   *
+   * Shiprocket's API takes the COD collectable in **rupees**, not paise, so a
+   * balance of ₹918.64 has to become 919 or 918 on the way out — over-collecting
+   * or under-collecting by up to a rupee on every Pay-on-Delivery parcel. That
+   * was G-3 in the Phase 7 adversarial review, and rounding at the boundary
+   * fixes the symptom in the wrong place: whichever way it rounds, our own
+   * `advance + balance = grand_total` stops describing what the courier was
+   * actually told to collect.
+   *
+   * So the split is chosen such that the balance lands on a whole rupee by
+   * construction. The advance takes the remainder — it goes through Razorpay,
+   * which speaks paise natively and does not care — and it is rounded *up*, so
+   * the shop is covered rather than a paisa short. The customer's total is
+   * untouched; only the boundary between the two numbers moves, by at most 99
+   * paise.
+   *
+   * Skipped when the advance is already the whole order (prepaid, or an order
+   * clamped to its own value): there is no balance to land anywhere.
+   */
+  const advancePaise =
+    bounded >= grandTotalPaise
+      ? grandTotalPaise
+      : grandTotalPaise - Math.floor((grandTotalPaise - bounded) / 100) * 100;
 
   const cappedBy =
     advancePaise === grandTotalPaise && floored > grandTotalPaise
       ? "order_total"
-      : rule.maximumPaise > 0 && capped === rule.maximumPaise && floored > rule.maximumPaise
+      : rule.maximumPaise > 0 &&
+          capped === rule.maximumPaise &&
+          floored > rule.maximumPaise
         ? "maximum"
         : floored === MIN_CHARGEABLE_PAISE && withTax < MIN_CHARGEABLE_PAISE
           ? "razorpay_floor"

@@ -1,3 +1,4 @@
+import { CodBlockControl } from "@/components/admin/customers/cod-block-control";
 import type { Metadata } from "next";
 import Link from "next/link";
 
@@ -65,7 +66,7 @@ export default async function AdminCustomersPage({
     <>
       <PageHeader
         title="Customers"
-        description="Everyone with an account, and what they have spent. Read-only — customers change their own details."
+        description="Everyone with an account, and what they have spent. Come here to see who is worth keeping and to stop Pay on Delivery for anyone who keeps refusing parcels. Names and addresses are theirs to change, not yours."
       />
 
       <AdminPage className="space-y-4">
@@ -112,6 +113,7 @@ export default async function AdminCustomersPage({
                     >
                       Joined
                     </SortableTh>
+                    <Th className="text-right">Pay on Delivery</Th>
                     <Th className="text-right">Orders</Th>
                   </tr>
                 </thead>
@@ -161,6 +163,14 @@ export default async function AdminCustomersPage({
                         </Td>
                         <Td className="text-muted-foreground whitespace-nowrap">
                           {formatDate(customer.joinedAt)}
+                        </Td>
+                        <Td className="text-right">
+                          <CodBlockControl
+                            customerId={customer.id}
+                            customerName={customer.name ?? "this customer"}
+                            blocked={customer.codBlockedAt !== null}
+                            reason={customer.codBlockedReason}
+                          />
                         </Td>
                         <Td className="pr-1 text-right">
                           {customer.orderCount > 0 && lookup ? (

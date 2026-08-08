@@ -66,6 +66,15 @@ export type AdminCustomerRow = {
   lifetimeValue: number;
   lastOrderAt: string | null;
   joinedAt: string;
+  /**
+   * Non-null means Pay on Delivery has been withdrawn from this customer.
+   *
+   * Read here rather than on a detail screen because the whole point of the
+   * control is that the owner can see who it applies to while looking at the
+   * list of people who have been refusing parcels.
+   */
+  codBlockedAt: string | null;
+  codBlockedReason: string | null;
 };
 
 export async function listCustomers(
@@ -79,7 +88,9 @@ export async function listCustomers(
     // Admins are excluded rather than badged. The owner is not their own
     // customer, and a role column on a customer list is an auth field on a
     // screen that has deliberately not got any.
-    .select(`id, full_name, phone, created_at`, { count: "exact" })
+    .select(`id, full_name, phone, created_at, cod_blocked_at, cod_blocked_reason`, {
+      count: "exact",
+    })
     .eq("role", "customer");
 
   if (params.q) {
@@ -118,6 +129,8 @@ export async function listCustomers(
     full_name: string | null;
     phone: string | null;
     created_at: string;
+    cod_blocked_at: string | null;
+    cod_blocked_reason: string | null;
   }>(
     "admin.customers.list",
     query
@@ -182,6 +195,8 @@ export async function listCustomers(
       const totals = tally.get(row.id);
       return {
         id: row.id,
+        codBlockedAt: row.cod_blocked_at,
+        codBlockedReason: row.cod_blocked_reason,
         name: row.full_name,
         email: totals?.email ?? null,
         phone: row.phone,
