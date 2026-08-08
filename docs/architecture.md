@@ -37,6 +37,19 @@ an hour with tags — **13 cached bindings**, which is the number
 data does not. Measured on a local production build at the end of Phase 4: warm
 TTFB of 8–15ms, against 111ms cold.
 
+**Stock is not served from the cache.** `unstable_cache` held
+`variants[].stock_quantity` for an hour under the `catalog` tag, and nothing that
+changed stock invalidated that tag — not checkout, not a cancellation, and not
+the admin's own stock editor, which called `revalidatePath("/", "layout")` and so
+expired the *route* cache while leaving every `unstable_cache` entry exactly
+where it was. A size the owner had zeroed went on being offered for the rest of
+the hour. Phase 7 splits the two: catalog **content** stays cached for its hour,
+and **availability** is read live and laid over the top
+(`src/lib/queries/availability.ts`). Every path that moves a unit also expires
+the tag (`src/lib/stock-freshness.ts`), which keeps cards honest; the product
+page does not even have that window. Measured cost on a warm production build:
+`/product/[slug]` TTFB 11ms → 14ms.
+
 Two things are deliberately **not** cached:
 
 - `/shop` and `/search`. Their filters come from the query string, so a cache
@@ -445,39 +458,89 @@ zero, because a return whose cost is unknown is not a free return.
 
 ### The advance, and what the courier collects
 
-Pay on Delivery charges an **advance** through Razorpay at checkout; the courier
-collects the **balance** in cash. `advanceFor()` decides the split and is
-deliberately pure — no settings reader, no cart, no order, three numbers in and
-two out — so the checkout UI can import the rule to *display* a split without
-dragging a Supabase client into the browser bundle, which is the failure CI
-already caught once. It is exhaustively tested by `npm run audit:totals`.
+**The advance is the full round trip — forward freight plus RTO freight —
+because on a refusal the shop pays both legs.** It is then netted off what the
+courier collects, so the customer never pays twice:
 
-The floor is applied twice, because the two floors answer different questions.
-The **configured minimum** is the shop's answer to "delivery came out free, so
-how much do we still take to secure the order?" — without it an order over the
-free-delivery threshold produces an advance of zero, which is the unsecured COD
-this model removes. **Razorpay's floor** of 100 paise is the provider's answer
-and is not negotiable: an order below it cannot be created at all, so an owner
-who types `0` into the minimum field gets a working checkout rather than a
-broken one.
+```
+advance = forward_freight + rto_freight        quoted live, one courier entry
+balance = goods_total + delivery_fee − advance
+```
 
-The advance is then clamped to the grand total. That is reachable rather than
-theoretical: a ₹150 pair of flip-flops to a remote PIN can genuinely cost more
-to send than it sells for, and an advance larger than the order would leave the
-courier a negative amount to "collect". The whole order is simply taken online
-and the courier collects nothing.
+The customer's total is identical either way; only the timing changes. What
+changes for the shop is that a refused parcel is already paid for.
 
-Prepaid is expressed in the same two numbers rather than with a null — its
-advance is the whole order and its balance is zero. So every order in the system
-answers the same two questions, and one invariant covers both methods:
+Worked against real rates from this account — Cuddapah 516360 → Bangalore
+560001, 1 kg, ₹1,000 declared, Delhivery Surface (`rate 191.36 = freight 139.36
++ cod 52.00`, `rto_charges 142.00`):
+
+| | Amount |
+|---|---|
+| Goods | ₹1,000.00 |
+| Delivery fee the customer pays — the live COD rate, rounded to ₹10 | ₹200.00 |
+| **Advance, online now** — freight ₹139.36 + RTO ₹142.00 | **₹281.36** |
+| **Balance, collected in cash** | **₹918.64** |
+| Total either way | ₹1,200.00 |
+
+**Delivered:** the shop receives the whole ₹1,200, pays ₹139.36 freight and ₹52
+COD fee, and nets ₹1,008.64. **Refused:** the shop keeps ₹281.36 and pays
+₹139.36 + ₹142 = ₹281.36. Net zero, goods back on the shelf.
+
+**Shiprocket reverses the COD fee on an RTO, which is why that fee is not in the
+advance.** Recovering it would over-collect on exactly the orders the advance
+exists to protect. It stays a named line on the *delivery charge*, where it is
+the whole of the difference between a prepaid total and a Pay-on-Delivery one.
+
+**What this replaced, and why.** `cod_advance_mode` — `shipping_fee`, `fixed`,
+`greater_of` — is gone, along with `cod_advance_minimum_paise` and
+`cod_advance_fixed_paise`. All three priced the deposit from what the *customer*
+was charged for delivery, which has no relationship to what a refusal costs the
+shop: under a fixed ₹99 advance against a ₹281 round trip, every refused parcel
+lost ₹182 and the shop found out by reconciliation. The rule now prices the
+exposure directly, and there is nothing left to configure about how the advance
+is *derived* — only what bounds it.
+
+The guard rails, each a setting the owner sets and the code enforces:
+
+| | |
+|---|---|
+| `cod_minimum_order_value_paise` | Below this the method is **withdrawn**, not the advance clamped. A clamped advance means the shop is carrying a return it has not been paid for |
+| `cod_advance_maximum_paise` | A ceiling on the deposit. `0` means no cap |
+| `include_gst_in_advance` | Shiprocket bills freight plus 18%. On, the advance is `(forward + rto) × 1.18` |
+| Razorpay's 100-paise floor | Always satisfied by this model — a courier does not carry a parcel for under a rupee — and asserted anyway, because the day it stops being true checkout breaks with no visible cause |
+
+The advance is clamped to the grand total last, after the cap, so a cheap order
+is still clamped to its own value when a cap has already bound. Applying only
+one of the two would let a ₹200 cap produce a negative balance on a ₹150 order.
+
+**Prepaid is expressed in the same two numbers** rather than with a null — its
+advance is the whole order and its balance is zero. So every order answers the
+same two questions, and one invariant covers both methods:
 
 ```
 advance_amount + balance_due_on_delivery = grand_total
 ```
 
-It is a **check constraint**, not a convention. A courier collecting the wrong
-amount is discovered by customer complaint, which is far too late and far too
-expensive.
+It is a **check constraint**, not a convention.
+
+**Prepaid is also visibly cheaper.** Prepaid orders are refused far less often
+than cash ones, and that is worth money — so `prepaid_discount` passes some of it
+back, as a **named line** on the payment step beside the Pay-on-Delivery option.
+Folded into `discountTotal` so `grandTotal` arithmetic is unchanged, returned
+separately so it can be drawn where a customer can act on it.
+
+**The quote is frozen with the order.** `quoted_courier_name`,
+`quoted_courier_id`, `quoted_forward_paise`, `quoted_rto_paise`,
+`quoted_cod_fee_paise`, `quote_taken_at` and `quote_source`. That is what makes a
+variance answerable from our own data when the courier assigned at fulfilment is
+not the one quoted — and `quote_source` means a fallback rate can never be read
+back later as though Shiprocket had quoted it.
+
+**Weight comes from the product.** `quoteFor` used to multiply
+`shipping_defaults.weight_grams` — 900g, one number for the whole catalogue — by
+the number of pairs, so a bag of boots and a bag of flip-flops quoted the same
+freight. Rate bands are per half-kilogram on this account (`min_weight: 0.5`), so
+that is not a rounding error: it under-recovers on every heavy order.
 
 **Shiprocket is told the balance, never the total.** `createShipment` sets the
 COD collectable from `balance_due_on_delivery` and records what it sent in

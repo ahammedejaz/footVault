@@ -50,6 +50,7 @@ Open http://localhost:3000. The design system renders at `/style-guide`.
 | `npm run seed:sql` | Write `supabase/seed.sql` instead, for `supabase db reset` |
 | `npm run seed:images` | Regenerate the drawn product assets in `public/seed/` |
 | `npm run audit` | The browser and database gate — every `audit:*` below except `security`, `lighthouse`, `shots` and `teardown` |
+| `npm run audit:literals` | No policy number typed anywhere — in a component **or** in owner-edited CMS content |
 | `npm run audit:overflow` | Six widths × every route — overflow, 44px tap targets, 16px inputs |
 | `npm run audit:a11y` | axe-core, WCAG 2.2 A/AA, at 390px and 1440px, overlays included |
 | `npm run audit:keyboard` | home → category → filter → product → size, by keyboard only |
@@ -59,7 +60,7 @@ Open http://localhost:3000. The design system renders at `/style-guide`.
 | `npm run audit:hydration` | Headless-Chromium console: no hydration mismatch below `<body>` |
 | `npm run audit:interactions` | The behaviour a screenshot cannot show |
 | `npm run audit:links` | Crawls every internal link; checks titles and JSON-LD |
-| `npm run audit:auth` | Role escalation over real HTTP; `/admin` 404s for everyone but an admin |
+| `npm run audit:auth` | Role escalation over real HTTP; `/admin` 404s for everyone but an admin — **document and flight response alike**, which is what F-2 was |
 | `npm run audit:cart` | Merge on sign-in against the live database, RLS in force |
 | `npm run audit:bag` | The whole purchase path in Chromium at 390px |
 | `npm run audit:signedin` | The signed-in storefront: saved list, account menu, account cart |
