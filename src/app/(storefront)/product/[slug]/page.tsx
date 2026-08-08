@@ -14,6 +14,7 @@ import {
 } from "@/lib/queries/cached";
 import { getSavedProductIds } from "@/lib/queries/wishlist";
 import { setting, type ShippingSettings } from "@/lib/queries/content";
+import { DeliveryCheck } from "@/components/storefront/delivery-check";
 import { formatPaise } from "@/lib/format";
 import { SITE_URL } from "@/lib/env";
 import { staticParamsOr } from "@/lib/static-params";
@@ -169,10 +170,14 @@ export default async function ProductPage({
               />
               <dt className="font-medium">Delivery</dt>
               <dd className="text-muted-foreground col-start-2">
-                2–4 working days to metros. Free over{" "}
-                {formatPaise(shipping.free_above_paise)}. Below that, the
-                courier&rsquo;s own rate to your pin code, shown at checkout.
+                Free over {formatPaise(shipping.free_above_paise)}. Below that,
+                the courier&rsquo;s own rate to your pin code, shown at
+                checkout.
               </dd>
+            </div>
+            <div className="col-span-2">
+              {/* Availability and timing, before the customer commits to anything. */}
+              <DeliveryCheck />
             </div>
             <div className="grid grid-cols-[1rem_1fr] gap-x-3">
               <RotateCcw
