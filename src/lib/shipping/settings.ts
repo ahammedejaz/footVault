@@ -1,7 +1,7 @@
 import "server-only";
 
 import type { AdvanceRule } from "@/lib/payments/advance";
-import { MIN_CHARGEABLE_PAISE, type PaymentMethod } from "@/lib/payments/types";
+import { type PaymentMethod } from "@/lib/payments/types";
 import { maybeRow } from "@/lib/queries/run";
 import { createAdminClient } from "@/lib/supabase/admin";
 

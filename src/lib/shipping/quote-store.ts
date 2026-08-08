@@ -86,6 +86,37 @@ export async function quoteFor(input: {
     settings: await shippingSettings(),
   });
 
+  /**
+   * **Which one served this quote, said out loud.**
+   *
+   * The brief: *"Log which one served each quote — a fallback must never be
+   * presented silently as a live rate."* A fallback is a settings number the
+   * owner typed when a courier could not be reached; it looks exactly like a
+   * live rate on the page and in the database, and the only difference is this
+   * line and the `quote_source` column it is written to.
+   *
+   * `warn` for a fallback rather than `info`, because a shop quietly running on
+   * fallback rates all afternoon is the shop mispricing every order, and it
+   * should be visible in a log filtered to problems.
+   */
+  if (fee.basis === "fallback") {
+    console.warn("[shipping] quote served from the FALLBACK, not a live rate", {
+      postcode: input.postalCode,
+      method: input.method,
+      reason: verdict.reason ?? "unknown",
+      feePaise: fee.feePaise,
+    });
+  } else {
+    console.info("[shipping] quote served live", {
+      postcode: input.postalCode,
+      method: input.method,
+      courier: fee.courierName,
+      feePaise: fee.feePaise,
+      forwardPaise: fee.costForwardPaise,
+      rtoPaise: fee.costRtoPaise,
+    });
+  }
+
   await storeQuote(input, fee);
   return { ...fee, fresh: true };
 }

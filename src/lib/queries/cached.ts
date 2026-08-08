@@ -63,7 +63,14 @@ export const CHROME_CACHE_TAG = "chrome";
  * A version in the key makes a shape change a cache miss, which is what it
  * always should have been.
  */
-const SHAPE_VERSION = "v2";
+/*
+ * v3 — Phase 7. The stored shape did not change; what is *done* with it did.
+ * The cache now holds catalog content whose stock figures are deliberately
+ * stale, with availability read live and laid over the top, so an entry written
+ * by v2 code is read by a different contract. Bumped rather than argued about:
+ * one cold hour is cheaper than reasoning about whether it was safe.
+ */
+const SHAPE_VERSION = "v3";
 
 const ONE_HOUR = 3600;
 const options = { revalidate: ONE_HOUR, tags: [CHROME_CACHE_TAG] };

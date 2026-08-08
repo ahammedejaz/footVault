@@ -51,6 +51,9 @@ export function Totals({
   /** Money owed at the door is what makes an order a Pay-on-Delivery order. */
   const paysOnDelivery = totals.balanceDueOnDelivery > 0;
 
+  const prepaidDiscount = totals.prepaidDiscount ?? 0;
+  const otherDiscount = Math.max(0, totals.discountTotal - prepaidDiscount);
+
   return (
     <div className={className}>
       <dl className="space-y-2 text-sm">
@@ -78,10 +81,24 @@ export function Totals({
           </Row>
         ) : null}
 
+        {/*
+          The prepaid discount is drawn as its own line rather than folded into
+          "Discount". It is the reason a customer might change payment method,
+          and a total that is quietly lower persuades nobody — the owner's rule
+          everywhere in this codebase is that a difference between two payment
+          methods has to be something a customer can see and point at.
+        */}
+        {prepaidDiscount > 0 ? (
+          <Row
+            label="Paying online"
+            hint=" — our thanks for settling up front"
+          >
+            −{formatPaise(prepaidDiscount)}
+          </Row>
+        ) : null}
+
         <Row label="Discount" muted>
-          {totals.discountTotal > 0
-            ? `−${formatPaise(totals.discountTotal)}`
-            : "—"}
+          {otherDiscount > 0 ? `−${formatPaise(otherDiscount)}` : "—"}
         </Row>
       </dl>
 
@@ -104,10 +121,15 @@ export function Totals({
               {formatPaise(totals.balanceDueOnDelivery)}
             </Row>
           </dl>
+          {/*
+            The brief's sentence, verbatim, because it is the one that stops a
+            customer thinking they are being charged twice: the amount paid now
+            is the delivery, and it is *taken off* what the courier collects
+            rather than added to it.
+          */}
           <p className="text-muted-foreground text-xs text-pretty">
-            {formatPaise(totals.advanceAmount)} confirms your order now. The
-            courier collects{" "}
-            {formatPaise(totals.balanceDueOnDelivery)} in cash when it arrives.
+            The amount you pay now covers delivery. The rest is paid in cash
+            when your order arrives.
           </p>
         </div>
       ) : null}

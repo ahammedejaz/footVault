@@ -265,6 +265,17 @@ export type OrderLine = {
 export type OrderTotals = {
   subtotal: number;
   discountTotal: number;
+  /**
+   * How much of `discountTotal` was given for paying online.
+   *
+   * Broken out so the payment step can draw it as a **named** line beside the
+   * Pay-on-Delivery option, which is the only place a customer can act on it. A
+   * discount folded silently into a total is a discount that persuades nobody.
+   * Optional because an order read back from the database does not carry it —
+   * only `discount_total` is stored, and the reason it was given belongs to the
+   * moment of choosing rather than to the row.
+   */
+  prepaidDiscount?: number;
   /** The **total** charged for delivery, including any COD handling. */
   shippingFee: number;
   /**

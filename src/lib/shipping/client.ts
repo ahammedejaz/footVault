@@ -8,6 +8,7 @@ import {
   getShiprocketToken,
   refreshShiprocketToken,
   ShiprocketAuthError,
+  ShiprocketLockedOutError,
   ShiprocketNotConfiguredError,
 } from "@/lib/shipping/token";
 
@@ -49,7 +50,14 @@ export type ShiprocketResult<T> =
        * `timeout` / `network` — we never got an answer.
        * `provider` — Shiprocket answered with an error status.
        */
-      reason: "not_configured" | "auth" | "timeout" | "network" | "provider";
+      reason:
+        | "not_configured"
+        | "auth"
+        /** Sign-in is latched off after a credential rejection. See token.ts. */
+        | "locked_out"
+        | "timeout"
+        | "network"
+        | "provider";
       status: number | null;
       message: string;
       /** Shiprocket's own body, when it sent one worth showing an admin. */
@@ -86,7 +94,11 @@ export async function shiprocketFetch<T>(
     }
     return {
       ok: false,
-      reason: "auth",
+      // A latched lockout is its own answer, not a generic auth failure. The
+      // admin needs to know shipping is stopped *deliberately* and that there
+      // is a button to clear it, rather than that Shiprocket is unreachable.
+      reason:
+        error instanceof ShiprocketLockedOutError ? "locked_out" : "auth",
       status: null,
       message:
         error instanceof ShiprocketAuthError
