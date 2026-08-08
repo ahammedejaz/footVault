@@ -1,3 +1,4 @@
+import { contentTokens, fillTokens } from "@/lib/content-tokens";
 import Image from "next/image";
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
@@ -288,7 +289,7 @@ async function ProductRail({ section }: { section: HomepageSection }) {
 
 type PromoItem = { label: string; detail?: string };
 
-function PromoStrip({ section }: { section: HomepageSection }) {
+async function PromoStrip({ section }: { section: HomepageSection }) {
   const raw = section.payload.items;
   const items: PromoItem[] = Array.isArray(raw)
     ? raw.filter(
@@ -300,6 +301,20 @@ function PromoStrip({ section }: { section: HomepageSection }) {
     : [];
   if (items.length === 0) return null;
 
+  /**
+   * The strip is a list of promises, so every number in it has to be the number
+   * the till keeps.
+   *
+   * This carried "Free shipping over ₹2,499" on the homepage of the live shop
+   * while `site_settings.shipping.free_above_paise` said ₹6,499 — the same
+   * drift Phase 7 found in the announcement bar and on `/page/shipping`, in a
+   * third place, and it survived the sweep that fixed those two because it
+   * lives in `homepage_sections.payload` rather than in prose the gate was
+   * looking at. Tokens resolve here too now, and `audit:literals` reads the
+   * jsonb.
+   */
+  const tokens = await contentTokens();
+
   return (
     <section
       className="bg-fog border-border border-y"
@@ -307,13 +322,20 @@ function PromoStrip({ section }: { section: HomepageSection }) {
     >
       <ul className="mx-auto grid max-w-7xl gap-x-8 gap-y-6 px-4 py-10 sm:grid-cols-2 sm:px-6 lg:grid-cols-4">
         {items.map((item) => (
+          /*
+            Keyed on the **raw** label, before substitution, and deliberately.
+            A key built from the filled text would change the moment the owner
+            nudges the free-delivery threshold, remounting a list item whose
+            identity has not changed. The raw token is stable for exactly as
+            long as the promise is.
+          */
           <li key={item.label} className="reveal">
             <p className="font-mono text-xs tracking-[0.06em] uppercase">
-              {item.label}
+              {fillTokens(item.label, tokens)}
             </p>
             {item.detail ? (
               <p className="text-muted-foreground mt-1.5 text-sm">
-                {item.detail}
+                {fillTokens(item.detail, tokens)}
               </p>
             ) : null}
           </li>

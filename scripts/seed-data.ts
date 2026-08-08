@@ -910,13 +910,13 @@ Our contact details and opening hours are in the footer of every page, and they 
 
 Orders placed before 4pm on a working day are dispatched the same day. Most addresses receive in 3–5 working days; remote pin codes can take longer.
 
-**Paying online** — delivery is free on orders of ₹2,499 or more. Below that you pay what the courier charges to reach your pin code. The exact figure appears as soon as you enter your pin code, never added at the last step.
+**Paying online** — delivery is free on orders of {{free_shipping_threshold}} or more. Below that you pay what the courier charges to reach your pin code. The exact figure appears as soon as you enter your pin code, never added at the last step.
 
-**Pay on Delivery** — you pay the delivery charge online when you place the order, and the rest in cash to the courier when it arrives. Your order is not placed until that first payment goes through.
+**Pay on Delivery** — you pay {{delivery_advance}} online when you place the order, and the rest in cash to the courier when it arrives. Your order is not placed until that first payment goes through.
 
-Delivery is charged on every Pay-on-Delivery order, whatever its value, and it is higher than the online rate. A parcel refused at the door costs us both the delivery and the return, so the charge covers the round trip. Paying in full online is always cheaper, and free above ₹2,499.
+The amount you pay now covers delivery, and it is taken off what the courier collects — so you pay the same either way. Checkout shows all three figures before you pay: what you pay now, what the courier will collect, and the total.
 
-Checkout shows all three figures before you pay: what you pay now, what the courier will collect, and the total.
+Pay on Delivery is offered on orders of {{cod_minimum_order_value}} and above. Below that, paying online is the only option, because the delivery charge would be most of the order.
 
 Not every courier will collect cash at every pin code. If yours is one they will not, the option is not offered and you can pay online instead — the order still comes to the same address. A very small number of pin codes have no courier service from us at all, and checkout will say so before you pay rather than take an order we cannot deliver.`,
   },
@@ -934,7 +934,7 @@ Not every courier will collect cash at every pin code. If yours is one they will
 **If a pair arrives damaged, we will replace it.** That is the one thing we cover, and it comes with a hard deadline:
 
 - Contact us **within 24 hours of the parcel being delivered**. After that we cannot help, because we can no longer tell damage in transit from damage in use.
-- Call or WhatsApp the store. Do not wait for an email reply.
+- Call or WhatsApp the store on the number on our contact page. Do not wait for an email reply.
 - Keep the box, the packaging and the courier label. Send us photographs of the damage and of the packaging it arrived in — the courier will not accept a claim without them.
 - Do not wear the pair. A sole that has been outside cannot be assessed or replaced.
 
@@ -942,7 +942,9 @@ If we agree the pair was damaged in transit, we send a replacement of the same i
 
 **Sizes.** We cannot exchange for a different size, so please use the size guide on every product page before ordering, and ask us if you are unsure. We would much rather answer a question than turn down a request afterwards.
 
-**Pay on Delivery.** The delivery charge is paid online when you place the order, and it is not refundable — it pays the courier to carry the parcel to you, and again to carry it back if it is refused. Refusing a parcel at the door does not return that charge.
+**Pay on Delivery.** The amount you pay online when you place the order covers delivery both ways. If you cancel before we have handed the parcel to the courier, it comes back to you in full. Once it is on the road it is not refundable, because it pays the courier to carry the parcel to you and again to carry it back if it is refused.
+
+**If we get it wrong** — the wrong shoe, the wrong size, or damage that happened before it left us — you get everything back, with nothing deducted. That is not the same as a change of mind, and we do not treat it as one.
 
 Nothing on this page affects your statutory rights under Indian consumer law.`,
   },
@@ -1009,7 +1011,7 @@ export const siteSettings: Array<{
   {
     key: "announcement",
     value: {
-      text: "Damage on arrival? Tell us within 24 hours · Free shipping over ₹2,499",
+      text: "Damage on arrival? Tell us within {{return_window}} · Free delivery over {{free_shipping_threshold}}",
       href: "/page/returns",
       is_active: true,
     },
@@ -1118,10 +1120,10 @@ export const homepageSections = [
       items: [
         {
           label: "Damaged in transit? Replaced",
-          detail: "Tell us within 24 hours of delivery.",
+          detail: "Tell us within {{return_window}} of delivery.",
         },
         {
-          label: "Free shipping over ₹2,499",
+          label: "Free delivery over {{free_shipping_threshold}}",
           detail: "The courier's own rate below that.",
         },
         {
