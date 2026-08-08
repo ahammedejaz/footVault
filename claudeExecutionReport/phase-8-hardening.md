@@ -225,3 +225,131 @@ Dimensions are not optional padding. Couriers bill the **greater** of actual and
 Blank rows are accepted and fall through to the 900 g default, so this can be filled in a batch at a time. But **a row with a weight and no dimensions is the worst case** — it is confidently wrong rather than obviously absent.
 
 Numbers only, no units in the cells. Return the file as-is.
+
+---
+
+# Check 1, resolved · the live webhook, verified end to end
+
+The owner created it. Verified rather than accepted:
+
+```
+GET https://api.razorpay.com/v1/webhooks   (live keys)
+  id:         TNQEeajKR1jLsw
+  url:        https://www.footvault.in/api/payments/razorpay/webhook
+  active:     true
+  secret set: true
+  events:     order.paid, payment.captured, payment.failed,
+              refund.failed, refund.processed
+  created:    2026-08-08T21:22:06Z
+```
+
+URL is the **www** host directly, so no webhook POST depends on the apex's 308. All five events, including the two Batch 3 needs.
+
+**The secret, proven against the deployed code rather than by comparing strings.** A signed probe to production, with a payload that passes the schema and lands in the `unhandled` arm — signature verified, nothing written, no `recordAndApply`:
+
+| Request | Response |
+|---|---|
+| body signed with the real secret | `200 {"ok":true,"ignored":true}` |
+| identical body, deliberately wrong secret | `400 {"ok":false}` |
+
+The control is what makes the first line mean anything: a route that accepted everything would also have returned 200. **The secret deployed in Vercel Production matches.**
+
+**One link I cannot close, stated plainly.** This proves Vercel's secret equals the value I hold. It does not prove Razorpay signs with that same value — Razorpay never returns a webhook secret through its API, so only a real delivery can prove it. The first live payment settles it, and until then the dashboard's liveness tile showing `never`/`behind` is the evidence. Worth doing deliberately rather than waiting for a customer: admin-guide §8.2 already asks for one real test payment.
+
+---
+
+# Batch 1
+
+**Gates: 8 passed, 0 failed** — `typecheck`, `lint`, `shapes`, `audit:literals`, plus four new suites. `npm run audit`'s browser passes are not among them; see *What is not proven*.
+
+| Item | State |
+|---|---|
+| Fixtures guard against production | done, 9/9 |
+| P0-a1 mode + webhook liveness + refund queue | done, 31/31 |
+| P0-a2 reconciler, narrowed sweep, `illegal_transition` severity | code done, 16/16; **migrations written, not applied** |
+| P0-4b say exactly what to refund | done, 9/9 |
+| Staging database | **not done** — needs the owner |
+
+## The urgent thing found on the way in
+
+`scripts/audit/fixtures.ts` builds its Supabase clients from `.env.local`, and `.env.local` points at **production** with live Razorpay keys. `npm run audit` signs up accounts, fills carts and places orders. Running it — at any point in the last day — would have written QA accounts and real orders into the live shop, beside real customers, and reported a pass. Nothing would have stopped it or said so afterwards.
+
+The guard is a module-scope throw in `fixtures.ts`, the file that creates data, so it fires on import and no entry point can reach a fixture builder without passing it. Not an environment flag: the failure is silent and irreversible, and a flag is a slower way to the same place. Proven end to end, not just unit-tested:
+
+```
+$ npx tsx -e 'import("scripts/audit/fixtures.ts")'
+GUARD FIRED:
+Refusing to build QA fixtures against the production database.
+  NEXT_PUBLIC_SUPABASE_URL points at ahumjhwqgmskjsitctcj, which is the live shop.
+```
+
+`teardown.ts` deliberately still works against production — it only deletes rows carrying the QA prefix, and it is how you clean up if this guard arrived a day late. It now prints a loud warning when it does.
+
+## P0-a2 · the reconciler
+
+**The root cause, precisely.** The exclusion in `release_abandoned_orders` skipped orders whose `payments` row was `pending`, `captured` or `refunded`. `checkout.ts` writes that row at **`created`**, which is not in the list. So every Razorpay order was eligible for cancellation between "customer is paying" and "webhook confirms" — and with no live webhook, nothing would ever move the row off `created`, making cancellation certain rather than merely possible.
+
+A longer list is not the fix: a list of "statuses meaning paid" has to be complete to be safe, and this one was not. The function is narrowed to what it can decide **without asking anybody** — orders with no `payments` row at all. Everything else goes to `/api/cron/release-abandoned-orders`, which asks Razorpay first.
+
+**The rule, and it is the whole design:** only a positive *"nothing was ever authorised"* can cancel. Unreachable, 5xx, rate-limited, unparseable, or a refunded payment all leave the order untouched for the next tick. Cancelling late costs ten more minutes of held stock; cancelling wrongly charges a customer and restocks goods they own.
+
+I extracted that decision into `src/lib/payments/reconcile.ts` as a pure function rather than leaving it as branches inside the handler — the thing that can cancel a paid order should be assertable without a database or a Razorpay account. That is a change to the plan and it is why the suite below exists at all.
+
+```
+razorpay unreachable → leave, NOT cancel                  ok
+no provider order id → leave, NOT cancel                  ok
+a refunded payment → leave for a human, NOT cancel        ok
+a captured payment → rescue, NOT cancel                   ok
+an authorized-but-not-captured payment → rescue           ok
+razorpay answers with no payments at all → cancel         ok
+only failed attempts → cancel                             ok
+'could not ask' and 'the answer was no' differ            ok
+no authorization header / empty / wrong / no Bearer → 401 ok ×4
+the correct bearer token is accepted (examined 0 orders)  ok
+16/16
+```
+
+The four 401s prove nothing on their own — a route that rejected everything would pass them all — so the accepted case is asserted too. It ran against a real server and examined 0 orders, which is safe because production currently holds **zero** pending-unpaid orders.
+
+**Idempotency is inherited, not invented.** Reconciled payments go through `recordAndApply` with event ids derived by the same `webhookEventId` the webhook uses, so a reconciliation and a later webhook delivery for one payment collapse via `payment_events_unique_per_provider`.
+
+## `illegal_transition` — the plan's reasoning was right, its premise was not
+
+The plan said to escalate it to `console.error`. The code comment justifying `console.info` said it is "the normal outcome when the browser callback got here first" — which would have made escalation noisy on every order.
+
+Traced through `payment-state.ts` instead of trusting either: when the callback has already confirmed the order, `applyPaymentOutcome` sees a `confirmed` order, which is neither `pending` nor terminal (`TERMINAL_ORDER_STATUSES` is `cancelled`, `returned` only), so **neither branch that sets `illegal` fires** and the result is `applied: true`. That race cannot produce `illegal_transition`.
+
+It has exactly two causes, and both are somebody's money: a capture short of what was owed, and a capture against an already-cancelled order. Escalated, and the misleading comment replaced with the trace.
+
+## P0-4b · what to refund
+
+```
+This order has been paid, so cancelling it would mean refunding it. Refund ₹349
+against payment pay_TNEWQBLIJ4gAGN in Razorpay, then cancel. That is the advance
+taken at checkout, not the ₹1,848 order total — the balance was never collected.
+```
+
+Real figures from live order FV-2026-00571. The amount is `advance_amount`, never `grand_total`: on a Pay-on-Delivery order those differ by ₹1,499 and the old wording — "refund in Razorpay first" — named neither number nor payment. `orders_advance_balance_sums` guarantees the two are equal on a prepaid order, so one field is correct for both and there is no branch on payment method. A missing reference says so rather than printing `null`; a missing amount declines to name a figure rather than printing ₹0.
+
+## What I got wrong, and caught
+
+- **`create extension pg_net with schema extensions`** would likely have failed at apply time. pg_net is `relocatable = false` and its install script creates its own `net` schema; checked against `pg_available_extension_versions` and corrected to the documented plain form. This is precisely the class of error that only shows up when a migration is applied, which is the thing I cannot do here.
+- **The first version of the reconciler test contained an assertion of literal `true`** and two references to database objects that do not exist, left behind while changing approach. A test that cannot fail is worse than no test; rewritten against the extracted pure function.
+- **Re-exporting the client factories from `fixtures.ts` did not give the file local bindings**, so its own internal calls broke. Caught by typecheck, not by reading.
+- **The module doc for `transition.ts` ended up describing the new helper** after I inserted it above `TransitionResult`. Moved to the end of the file.
+
+## What is NOT proven, plainly
+
+- **Neither migration has been applied.** Migrations reach this project by hand through the MCP server, not by CI, so applying one changes the live shop *before* the PR is reviewed — and applying the narrowing before the route is deployed would leave orders with a payment attempt swept by nothing at all. Both files carry that ordering note. **They are a deploy step, in this order: merge and deploy, then apply `20260809030000`, then create the two Vault secrets, then apply `20260809030100`.**
+- **The reconciler has never run against a real abandoned order**, because none exists — production has zero pending-unpaid orders. What is proven is the decision table, the auth, and that an authorised tick runs clean.
+- **`pg_net` → route has never made a real call.** The `net.http_post` signature and the Vault read are taken from Supabase's current documentation and the parameter names verified against it, but nothing has executed. First evidence will be `cron.job_run_details` after the migration is applied.
+- **No browser gates ran** — `audit:overflow`, `audit:a11y`, the six-width sweep and Lighthouse all need fixtures, and fixtures now correctly refuse to run against production. **They are blocked on the staging database**, which needs the owner to create a Supabase project. This is the same gap Stage 1 reported; it has not moved.
+- **The admin dashboard's new tiles have not been seen rendered.** They typecheck and lint, and their queries are exercised against real rows read-only, but `/admin` needs an admin session and no browser has loaded it.
+- **The snapshot is a data export, not a `pg_dump`.** 30 tables, 1,815 rows, every count matching, taken through the service role before any work. It does **not** include `auth.users` (4 rows) — the auth schema is not exposed to PostgREST. A real dump needs the database password, which I do not have. Schema is covered by the 72 migration files in git.
+
+## Also found, outside Batch 1's scope
+
+- **`--state-low` is a dead design token.** `admin/inventory/page.tsx:102` and `admin/customers/cod-block-control.tsx:81` still reference it, so the inventory page's "The stock check could not run" warning renders as unstyled text where a warning was intended.
+- **`orders` has no `cancelled_at` column.** The refund queue derives it from `order_status_history`, falling back to `updated_at`.
+- **`http://localhost:3000/**` is still missing from the Supabase redirect allow-list** (pre-flight check 2). Local Google sign-in bounces to production.
+- **`.env.local` holds live Razorpay keys**, so anyone running checkout locally charges a real card. The new key-mode check now warns about exactly this on every local `/admin` load, which is the correct behaviour and will look like a bug until a test key is used.
