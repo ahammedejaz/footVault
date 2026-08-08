@@ -29,7 +29,8 @@ export type PaymentStatus = Database["public"]["Enums"]["payment_status"];
  * array is a terminal state.
  *
  *   pending ──▶ confirmed ──▶ packed ──▶ shipped ──▶ delivered ──▶ returned
- *      │            │            │           │
+ *      │            │            │           │                          ▲
+ *      │            │            │           └──▶ returning ────────────┘
  *      └────────────┴────────────┴───────────┴──────▶ cancelled
  *
  * `pending` means the order row exists and stock is already claimed — it is
@@ -42,6 +43,15 @@ export type PaymentStatus = Database["public"]["Enums"]["payment_status"];
  * transitions out of `cancelled` or `returned` at all. An order that needs to
  * come back from either is a new order or an admin correction with an audit
  * row, not a status edit.
+ *
+ * **`returning` is Phase 7, and it exists because of a gap that costs stock.**
+ * Tracking says RTO hours or days before the parcel is back in the shop, and
+ * parcels are lost, stolen and crushed on the way back. Going straight from
+ * `shipped` to `returned` would mean the only place to restock is a tracking
+ * event, which silently invents inventory the shop does not have. `returning`
+ * is the interval: the order is off the road, the admin can see it on the
+ * dashboard, and **nothing is restocked until somebody has the box in their
+ * hands** and marks it received.
  */
 export const ORDER_TRANSITIONS: Readonly<
   Record<OrderStatus, readonly OrderStatus[]>
@@ -49,8 +59,13 @@ export const ORDER_TRANSITIONS: Readonly<
   pending: ["confirmed", "cancelled"],
   confirmed: ["packed", "cancelled"],
   packed: ["shipped", "cancelled"],
-  shipped: ["delivered", "cancelled"],
+  shipped: ["delivered", "cancelled", "returning"],
   delivered: ["returned"],
+  // A parcel on its way back can only finish arriving. It cannot become
+  // `delivered` — that would be a second delivery of the same parcel — and it
+  // cannot be cancelled, because cancelling restocks and the units are in a
+  // van.
+  returning: ["returned"],
   cancelled: [],
   returned: [],
 } as const;
@@ -89,6 +104,17 @@ export const RESTOCKS_ON_ENTRY: Readonly<Record<OrderStatus, boolean>> = {
   shipped: false,
   delivered: false,
   cancelled: true,
+  /**
+   * Neither of these restocks, and `returning` least of all.
+   *
+   * `returned` has never restocked: a returned pair is inspected before it can
+   * be sold again, and an automatic restock puts a damaged shoe on the shelf.
+   * `returning` cannot restock even in principle — the units are in a van. Both
+   * are put back by an explicit admin action on physical receipt, which writes
+   * an `inventory_movements` row with reason `rto_return` and a named actor, so
+   * the ledger says who counted the box.
+   */
+  returning: false,
   returned: false,
 } as const;
 
@@ -239,6 +265,17 @@ export type OrderLine = {
 export type OrderTotals = {
   subtotal: number;
   discountTotal: number;
+  /**
+   * How much of `discountTotal` was given for paying online.
+   *
+   * Broken out so the payment step can draw it as a **named** line beside the
+   * Pay-on-Delivery option, which is the only place a customer can act on it. A
+   * discount folded silently into a total is a discount that persuades nobody.
+   * Optional because an order read back from the database does not carry it —
+   * only `discount_total` is stored, and the reason it was given belongs to the
+   * moment of choosing rather than to the row.
+   */
+  prepaidDiscount?: number;
   /** The **total** charged for delivery, including any COD handling. */
   shippingFee: number;
   /**

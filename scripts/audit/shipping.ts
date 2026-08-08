@@ -527,47 +527,87 @@ async function main() {
       fallbackFeePaise: { razorpay: 19_900, cod: 34_900 },
       codEnabled: true,
       codAdvanceMode: "greater_of" as const,
-      codAdvanceMinimumPaise: 9_900,
-      codAdvanceFixedPaise: 9_900,
+      codMinimumOrderValuePaise: 0,
+      codAdvanceMaximumPaise: 0,
+      includeGstInAdvance: false,
+      prepaidDiscount: { mode: "flat" as const, value: 0 },
+      customerDeliveryFeeMode: "live" as const,
+      customerDeliveryFlatPaise: 0,
+      rtoDeductionPolicy: "actual_freight" as const,
+      rtoDeductionFlatPaise: 0,
     };
 
     // Measured against the live account: Delhivery Surface, Cuddapah to
     // Bengaluru, 0.9kg. rate already includes the cash-collection fee.
+    /**
+     * Delhivery Surface on the tested lane, as quoted live on 2026-08-08:
+     * 516360 → 560001, 1 kg, ₹1,000 declared.
+     *
+     *   rate 191.36 = freight 139.36 + cod 52.00,  rto 142.00
+     *
+     * `forwardCostPaise` is the all-in rate because a Pay-on-Delivery quote is
+     * taken with `cod=1`; `freightPaise` is the leg without the collection fee,
+     * and it is the half of the advance that this file's assertions depend on.
+     */
     const live = {
-      estimatedDays: 3,
+      estimatedDays: 4,
       deliverable: true,
-      forwardCostPaise: 20533,
+      forwardCostPaise: 19136,
+      freightPaise: 13936,
+      codFeePaise: 5200,
       rtoCostPaise: 14200,
       codAvailable: true,
-      cheapestRatePaise: 20533,
+      cheapestRatePaise: 19136,
       courierName: "Delhivery Surface",
+      courierId: 43,
+      couriers: [],
+      recommendedCourierId: 10,
       source: "shiprocket" as const,
     };
+
+    /** The same lane quoted prepaid, where `rate` and `freight` coincide. */
+    const livePrepaid = { ...live, forwardCostPaise: 13936, codFeePaise: 0 };
 
     const prepaidUnder = deliveryFee({
       method: "razorpay",
       subtotalPaise: 199900,
-      verdict: live,
+      verdict: livePrepaid,
       settings: SETTINGS,
     });
     check(
       "prepaid under the threshold pays the forward rate, rounded up to Rs 10",
-      prepaidUnder.feePaise === 21000,
+      prepaidUnder.feePaise === 14000,
       String(prepaidUnder.feePaise),
+    );
+    check(
+      "and none of it is a Pay-on-Delivery extra",
+      prepaidUnder.codHandlingPaise === 0,
+      String(prepaidUnder.codHandlingPaise),
     );
 
     const prepaidOver = deliveryFee({
       method: "razorpay",
       subtotalPaise: SETTINGS.freeAbovePaise,
-      verdict: live,
+      verdict: livePrepaid,
       settings: SETTINGS,
     });
     check(
-      "prepaid at exactly Rs 2,499 is free",
+      "prepaid at exactly the threshold is free",
       prepaidOver.feePaise === 0 && prepaidOver.basis === "free",
       JSON.stringify(prepaidOver.feePaise),
     );
 
+    /**
+     * **Phase 7 changed this number, and the change is the money model.**
+     *
+     * A Pay-on-Delivery delivery charge used to be `forward + RTO` — the
+     * customer paid for a return that usually never happened. The return leg is
+     * now covered by the *advance*, which is netted straight off what the
+     * courier collects, so it costs a customer nothing on a delivered parcel
+     * and covers the shop completely on a refused one. What is charged for
+     * delivery is now simply what the courier charges to deliver: the live COD
+     * rate, ₹191.36, rounded up to ₹200.
+     */
     const codUnder = deliveryFee({
       method: "cod",
       subtotalPaise: 199900,
@@ -575,9 +615,25 @@ async function main() {
       settings: SETTINGS,
     });
     check(
-      "COD pays forward PLUS the return leg — 205.33 + 142 rounds to Rs 350",
-      codUnder.feePaise === 35000,
+      "Pay on Delivery pays the live COD rate — 191.36 rounds to Rs 200",
+      codUnder.feePaise === 20000,
       String(codUnder.feePaise),
+    );
+    check(
+      "the cash-collection fee is the whole of the named extra",
+      codUnder.codHandlingPaise === 5200 &&
+        codUnder.shippingFeePaise === 14800,
+      `${codUnder.shippingFeePaise} + ${codUnder.codHandlingPaise}`,
+    );
+    check(
+      "the two parts still sum to the total charged",
+      codUnder.shippingFeePaise + codUnder.codHandlingPaise ===
+        codUnder.feePaise,
+    );
+    check(
+      "the shop's own costs are freight and RTO, not the all-in rate",
+      codUnder.costForwardPaise === 13936 && codUnder.costRtoPaise === 14200,
+      `${codUnder.costForwardPaise} / ${codUnder.costRtoPaise}`,
     );
 
     const codOver = deliveryFee({
@@ -587,21 +643,26 @@ async function main() {
       settings: SETTINGS,
     });
     check(
-      "COD gets NO free threshold, however large the order",
-      codOver.feePaise === 35000 && codOver.basis === "shiprocket",
+      "Pay on Delivery gets NO free threshold, however large the order",
+      codOver.feePaise === 20000 && codOver.basis === "shiprocket",
       `${codOver.feePaise} / ${codOver.basis}`,
     );
 
-    const noRto = deliveryFee({
+    const flat = deliveryFee({
       method: "cod",
       subtotalPaise: 199900,
-      verdict: { ...live, rtoCostPaise: null },
-      settings: SETTINGS,
+      verdict: live,
+      settings: { ...SETTINGS, customerDeliveryFeeMode: "flat" as const, customerDeliveryFlatPaise: 9900 },
     });
     check(
-      "a missing return cost is assumed to equal the forward one, never zero",
-      noRto.feePaise === 42000,
-      String(noRto.feePaise),
+      "the owner can charge a flat fee and absorb the difference",
+      flat.feePaise === 9900,
+      String(flat.feePaise),
+    );
+    check(
+      "and the shop's real costs are still recorded truthfully",
+      flat.costForwardPaise === 13936 && flat.costRtoPaise === 14200,
+      `${flat.costForwardPaise} / ${flat.costRtoPaise}`,
     );
 
     const outage = deliveryFee({
@@ -647,25 +708,20 @@ async function main() {
      * Pay-on-Delivery one must be something a customer can see and point at.
      */
     check(
-      "the COD extra is split out as its own line",
-      codUnder.shippingFeePaise === 21000 &&
-        codUnder.codHandlingPaise === 14000,
-      `${codUnder.shippingFeePaise} + ${codUnder.codHandlingPaise}`,
-    );
-    check(
       "prepaid never carries a COD handling line",
       prepaidUnder.codHandlingPaise === 0 && prepaidOver.codHandlingPaise === 0,
     );
     check(
       "the split always reconstitutes the fee actually charged",
-      [prepaidUnder, prepaidOver, codUnder, codOver, noRto, outage, outageFree].every(
-        (f) => f.shippingFeePaise + f.codHandlingPaise === f.feePaise,
-      ),
-    );
-    check(
-      "splitting did not change what the customer pays",
-      codUnder.feePaise === 35000 && prepaidUnder.feePaise === 21000,
-      `${codUnder.feePaise} / ${prepaidUnder.feePaise}`,
+      [
+        prepaidUnder,
+        prepaidOver,
+        codUnder,
+        codOver,
+        flat,
+        outage,
+        outageFree,
+      ].every((f) => f.shippingFeePaise + f.codHandlingPaise === f.feePaise),
     );
   }
 

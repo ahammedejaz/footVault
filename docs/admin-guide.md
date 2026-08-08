@@ -103,36 +103,52 @@ before any money moves. From Cuddapah, Port Blair is one of those.
 
 ### What you do control
 
-Five settings. Change one and the whole site follows it at once — the bag, the
-checkout page, the emails, everything.
+These live in **Settings → Delivery and Pay on Delivery** in the admin panel.
+Change one and the whole site follows it at once — the bag, the checkout page,
+the emails, the announcement strip, the policy pages. Every control on that
+screen says what it does *and* what happens if you set it too high or too low.
 
-**These live in the database today. There is no screen for them yet.** To change
-one, tell your developer which setting and what value. Ask them to add the
-`/admin/settings` screen when there is time; it is a small job and it removes
-them from this list.
-
-| What it decides | The name to quote | Today |
-|---|---|---|
-| The order value at which delivery becomes **free** — for customers paying online, in full | `free_above_paise` | **₹2,499** |
-| How the upfront amount on a Pay-on-Delivery order is worked out | `cod_advance_mode` | **whichever is larger** |
-| The **smallest** amount ever taken upfront | `cod_advance_minimum_paise` | **₹99** |
-| Whether Pay on Delivery is offered at all | `cod_enabled` | **on** |
-| The stand-in delivery charge used only when Shiprocket cannot be reached | `fallback_fee_paise` | **₹199** online, **₹349** Pay on Delivery |
+| What it decides | Today |
+|---|---|
+| The order value at which delivery becomes **free**, for customers paying online | **₹6,499** |
+| Whether Pay on Delivery is offered at all | **on** |
+| The **smallest order** that may pay on delivery | **₹999** |
+| The **most** that may ever be taken upfront | **₹500** |
+| Whether the 18% GST on delivery is recovered in the upfront amount | **absorbed** |
+| The discount for paying online | **none** |
+| How the delivery charge is decided | **the courier's live rate** |
+| What a customer who paid online gets back when a parcel comes back | **everything except what the journey cost** |
+| The stand-in delivery charge used only when Shiprocket cannot be reached | **₹199** online, **₹349** Pay on Delivery |
 
 **Free delivery is for people paying online only.** A Pay-on-Delivery order is
-charged for delivery whatever it is worth, because the return journey has to be
-paid for whether the basket is ₹800 or ₹18,000 — and it is the big orders that
-hurt most when they come back.
+charged for delivery whatever it is worth.
 
-**"Whichever is larger"** means the upfront amount is the delivery charge, or the
-smallest allowed amount, whichever comes to more. Two other ways are possible if
-you ever want them: always the delivery charge, or always a fixed sum.
+## How the upfront amount works, in one paragraph
 
-**The smallest amount exists for one reason, and it is worth understanding.**
-Suppose delivery on an order came out free. If the upfront amount were simply
-"the delivery charge", it would be zero — and you would be back to accepting an
-order with no money against it, which is the exact thing this change removed. The
-₹99 floor means every order takes *something*.
+**The customer pays the full round trip online — what it costs to send the
+parcel plus what it costs to get it back — and that amount is taken off what the
+courier collects.** So they pay the same total either way; only the timing
+changes. If the parcel is refused at the door you are already covered: you keep
+the upfront amount, and it is exactly what the two journeys cost you.
+
+On a ₹1,000 order to Bangalore, at the rates this account was quoted on 8 August:
+delivery ₹200, upfront ₹281.36, courier collects ₹918.64, customer pays ₹1,200
+either way. Refused, you keep ₹281.36 and pay ₹281.36. Net zero, shoes back on
+the shelf.
+
+**You no longer choose how the upfront amount is worked out.** There used to be
+three ways — the delivery charge, a fixed sum, or whichever was larger — and all
+three priced it from what the *customer* was charged, which has nothing to do
+with what a refusal costs you. Under a fixed ₹99 against a ₹281 round trip you
+lost ₹182 on every refused parcel and only found out by counting. What you set
+now is the two **bounds**: the smallest order allowed to pay on delivery, and the
+most you are ever willing to ask for upfront.
+
+**The smallest order matters more than it looks.** Below it, Pay on Delivery is
+not offered at all — not offered with a smaller deposit. A smaller deposit would
+mean you are carrying a return you have not been paid for, and on a ₹250 pair of
+flip-flops the round trip is more than the shoes.
+
 
 It is a safety net rather than something that fires every day: as the settings
 stand, a Pay-on-Delivery order is always charged for delivery, so the delivery

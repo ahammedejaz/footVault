@@ -234,7 +234,7 @@ export async function placeCodOrder(
     p_initial_status: "confirmed",
     p_payment_status: "paid",
     p_shipping_flat_fee: SHIPPING,
-    p_free_shipping_above: null,
+    p_free_shipping_above: undefined,
     p_advance_amount: SHIPPING,
     p_cod_handling_fee: 15_000,
     p_guest_token: options.guest ? (token as string) : undefined,

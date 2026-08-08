@@ -85,6 +85,12 @@ export const ORDER_STATUS_COPY: Readonly<Record<OrderStatus, StatusCopy>> = {
     label: "Cancelled",
     blurb: "This order was cancelled and the pairs went back on the shelf.",
   },
+  // Said from the customer's side, not the courier's. "RTO" is a logistics
+  // acronym; "on its way back to us" is what happened.
+  returning: {
+    label: "Coming back",
+    blurb: "This parcel is on its way back to us.",
+  },
   returned: {
     label: "Returned",
     blurb: "Returned to us.",

@@ -83,5 +83,39 @@ export function isShiprocketConfigured(): boolean {
  * needs a different one.
  */
 export function shiprocketPickupLocation(): string {
-  return process.env.SHIPROCKET_PICKUP_LOCATION?.trim() || "Primary";
+  const configured = process.env.SHIPROCKET_PICKUP_LOCATION?.trim();
+  if (configured) return configured;
+
+  /**
+   * **No default, and this throws.**
+   *
+   * It used to fall back to `"Primary"`, which is not what this account's
+   * location is called — it is `warehouse`, lowercase, and Shiprocket matches
+   * the nickname as a literal string. So the fallback did not degrade
+   * gracefully; it deferred the failure to the worst possible moment. Every
+   * quote, every serviceability check and every page render would keep working,
+   * and the first thing that broke would be **creating a real shipment for a
+   * real order** — with "Wrong Pickup location entered" coming back from a
+   * third party, at the counter, on an order somebody has already paid for.
+   *
+   * Failing here instead means an unset variable is found by the deployment
+   * that introduced it. Nothing on the customer path calls this: quoting takes
+   * the pickup *postcode* from `site_settings.shipping_defaults`, so a missing
+   * nickname cannot stop the shop selling. It stops the shop shipping, loudly,
+   * which is the correct direction.
+   */
+  throw new ShiprocketConfigError(
+    "SHIPROCKET_PICKUP_LOCATION is not set. It must be the pickup location's " +
+      "nickname exactly as it is spelled in Settings → Company → Pickup Addresses " +
+      'in the Shiprocket panel — for this account, "warehouse", lowercase. ' +
+      "Shiprocket matches it as a literal string, so a mismatch is rejected at " +
+      "order creation rather than at boot.",
+  );
+}
+
+export class ShiprocketConfigError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ShiprocketConfigError";
+  }
 }

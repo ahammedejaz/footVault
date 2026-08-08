@@ -1,4 +1,5 @@
 import { AnnouncementBar } from "@/components/storefront/announcement-bar";
+import { FlashToast } from "@/components/storefront/flash-toast";
 import { BagDrawer } from "@/components/storefront/bag-drawer";
 import { SiteFooter } from "@/components/storefront/site-footer";
 import { SiteHeader } from "@/components/storefront/site-header";
@@ -30,6 +31,8 @@ export function StorefrontChrome({ children }: { children: React.ReactNode }) {
           none of them is an ancestor of the others. It fetches on open, so
           being here costs nothing until somebody uses it. */}
       <BagDrawer />
+      {/* Confirms anything that happened during a redirect — sign-out, today. */}
+      <FlashToast />
     </>
   );
 }

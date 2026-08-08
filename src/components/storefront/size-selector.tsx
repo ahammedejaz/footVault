@@ -14,38 +14,66 @@ import { cn } from "@/lib/utils";
  * stop and the arrows move within it — twelve tab stops to get past a size
  * strip is how a keyboard user ends up somewhere else.
  *
- * Sold-out sizes stay in the run and stay selectable. They are struck through
- * and their accessible name says "sold out", and choosing one is a real answer:
- * the line underneath then says so. Removing them, or making them unfocusable,
- * would hide exactly the information the size strip exists to show.
+ * **Sold-out sizes stay in the run, and stopped being selectable in Phase 7.**
+ * They were selectable by design until then, on the reasoning that choosing one
+ * is a real answer and the line underneath says so. The owner's zero-stock
+ * report ended that: a chip that can be chosen is a chip that leads somewhere,
+ * and the somewhere was an add-to-bag button that had to refuse. The brief is
+ * explicit — *"is not selectable, and cannot be added to the bag"* — so a
+ * sold-out chip now answers a press by saying so instead of by becoming the
+ * selection, and the arrows step over it.
+ *
+ * `aria-disabled` rather than `disabled`, and the distinction is the whole
+ * reason the chip still works: a `disabled` button cannot be focused, cannot be
+ * reached by a screen reader walking the group, and so can never explain
+ * itself. This one is focusable, announces "UK 8, sold out", and passes the
+ * press to `onUnavailable` so the live region can repeat it for anybody who
+ * cannot see the strikethrough.
  */
 export function SizeSelector({
   sizes,
   selected,
   onSelect,
+  onUnavailable,
   labelledBy,
 }: {
   sizes: SizeAvailability[];
   selected: string | null;
   onSelect: (size: string) => void;
+  /** A sold-out chip was pressed. Announce it; do not select it. */
+  onUnavailable?: (size: string) => void;
   labelledBy: string;
 }) {
   const refs = React.useRef(new Map<string, HTMLButtonElement>());
 
   // Whichever chip the arrows would land on first: the selection, or the first
-  // size available to buy, or failing that the first size at all.
+  // size available to buy, or failing that the first size at all — because a
+  // run with nothing left still has to be reachable to be read.
   const fallback =
     sizes.find((entry) => entry.size === selected)?.size ??
     sizes.find((entry) => entry.available)?.size ??
     sizes[0]?.size ??
     null;
 
+  /**
+   * Arrow to the next size that can actually be chosen.
+   *
+   * Stepping onto a sold-out chip and selecting it was the old behaviour and is
+   * exactly what "not selectable" rules out. Bounded by the run's length so a
+   * product with nothing left cannot spin: if the walk comes all the way back
+   * round, there is nowhere to go and the focus stays put.
+   */
   const move = (from: number, delta: number) => {
     if (sizes.length === 0) return;
-    const next = (from + delta + sizes.length) % sizes.length;
-    const size = sizes[next]!.size;
-    onSelect(size);
-    refs.current.get(size)?.focus();
+    for (let step = 1; step <= sizes.length; step++) {
+      const next =
+        (((from + delta * step) % sizes.length) + sizes.length) % sizes.length;
+      const entry = sizes[next]!;
+      if (!entry.available) continue;
+      onSelect(entry.size);
+      refs.current.get(entry.size)?.focus();
+      return;
+    }
   };
 
   const onKeyDown = (
@@ -93,6 +121,7 @@ export function SizeSelector({
             type="button"
             role="radio"
             aria-checked={isSelected}
+            aria-disabled={entry.available ? undefined : true}
             // The strikethrough is the whole message and it is invisible to a
             // screen reader, so the name carries it instead.
             aria-label={
@@ -106,7 +135,13 @@ export function SizeSelector({
                 : -1
             }
             onKeyDown={(event) => onKeyDown(event, index)}
-            onClick={() => onSelect(entry.size)}
+            onClick={() => {
+              if (!entry.available) {
+                onUnavailable?.(entry.size);
+                return;
+              }
+              onSelect(entry.size);
+            }}
             className={cn(
               // 48px, per the design system: comfortably over the 44px floor
               // with room for a half size like 8.5 without wrapping.
@@ -115,7 +150,7 @@ export function SizeSelector({
                 ? "border-ink bg-ink text-paper font-medium"
                 : entry.available
                   ? "border-border hover:border-foreground"
-                  : "border-border/70 text-dim line-through decoration-1",
+                  : "border-border/70 text-dim line-through decoration-1 cursor-not-allowed",
             )}
           >
             <span aria-hidden>{entry.size}</span>

@@ -43,8 +43,31 @@ export type ServiceabilityVerdict = {
    * What the courier charges the shop to carry it there, in paise. With `cod=1`
    * this already includes Shiprocket's cash-collection fee, which is a
    * percentage of the order value rather than a flat amount.
+   *
+   * This is the courier's `rate`, and `rate = freight_charge + cod_charges` —
+   * verified against the live account: Delhivery Surface, 516360 → 560001, 1kg,
+   * ₹1,000 declared, quoted `rate: 191.36`, `freight_charge: 139.36`,
+   * `cod_charges: 52`.
    */
   forwardCostPaise: number | null;
+  /**
+   * The forward leg **without** the cash-collection fee.
+   *
+   * Phase 7's advance is `forward freight + RTO freight` and neither leg
+   * includes the COD fee: on a refused parcel Shiprocket reverses the fee, so
+   * charging the customer an advance that covers it would over-collect on
+   * exactly the orders the advance exists to protect. Split out rather than
+   * derived, because `rate - cod_charges` is an arithmetic identity that stops
+   * holding the day Shiprocket adds a third component.
+   */
+  freightPaise: number | null;
+  /**
+   * Shiprocket's cash-collection fee — a percentage of the declared value
+   * (`cod_multiplier`, 3% on this account), floored at a minimum. It is the
+   * whole of the difference between a prepaid delivery charge and a
+   * Pay-on-Delivery one, which is what makes it renderable as a named line.
+   */
+  codFeePaise: number | null;
   /**
    * What it costs the shop if the parcel comes back — a COD customer refusing at
    * the door. The shop pays this and collects nothing, which is why the COD fee
@@ -60,6 +83,18 @@ export type ServiceabilityVerdict = {
   /** The cheapest quoted rate in paise, for the admin's eyes only. */
   cheapestRatePaise: number | null;
   courierName: string | null;
+  /** Shiprocket's own id for the courier, frozen onto the order with the rate. */
+  courierId: number | null;
+  /**
+   * Every courier the lane offered, with its rates and its scores.
+   *
+   * Carried so the admin can be shown the choice at fulfilment rather than
+   * being handed whichever one was cheapest at quote time. See
+   * `courierChoices()` and `courier_selection_mode`.
+   */
+  couriers: CourierQuote[];
+  /** Which courier Shiprocket itself recommends, and why it says it does. */
+  recommendedCourierId: number | null;
   /** How we arrived at this, so the UI and the audit can tell them apart. */
   source: "shiprocket" | "unknown";
   /** Set when `source` is `unknown`, for the log and the audit script. */
@@ -71,11 +106,52 @@ export const UNKNOWN_SERVICEABILITY: ServiceabilityVerdict = {
   estimatedDays: null,
   deliverable: true,
   forwardCostPaise: null,
+  freightPaise: null,
+  codFeePaise: null,
   rtoCostPaise: null,
   codAvailable: true,
   cheapestRatePaise: null,
   courierName: null,
+  courierId: null,
+  couriers: [],
+  recommendedCourierId: null,
   source: "unknown",
+};
+
+/**
+ * One courier's offer on one lane.
+ *
+ * The scores are Shiprocket's own and they are not all the same kind of number,
+ * which is worth knowing before any of them is used to choose:
+ *
+ *   - `slaAdherence` and its siblings are **ranks**, 1 best to 5 worst, and are
+ *     absent on couriers Shiprocket has not ranked. Measured on the live
+ *     account, 516360 → 560001: Delhivery Air 2, Delhivery Surface 3, Blue Dart
+ *     Air 5, India Post absent.
+ *   - `rtoPerformance`, `trackingPerformance` and `deliveryPerformance` are
+ *     out of 5 and on this account came back **identical for every courier**
+ *     (4.4, 4.5, 4.5). They are surfaced anyway, and the admin screen says so,
+ *     because an account with volume will see them separate — but nothing is
+ *     ranked on them today, since a tie is not a signal.
+ *   - `rating` does vary (4.4 – 4.83) and is what the "best rated" mode uses.
+ */
+export type CourierQuote = {
+  id: number;
+  name: string;
+  /** All-in, as quoted: freight plus the cash-collection fee. */
+  ratePaise: number | null;
+  freightPaise: number | null;
+  codFeePaise: number | null;
+  rtoPaise: number | null;
+  days: number | null;
+  cod: boolean;
+  rating: number | null;
+  slaAdherence: number | null;
+  rtoPerformance: number | null;
+  trackingPerformance: number | null;
+  deliveryPerformance: number | null;
+  /** True when the shop has chosen not to quote from this courier. */
+  excluded: boolean;
 };
 
 /**
@@ -109,13 +185,21 @@ function providerMessage(payload: unknown): string {
 }
 
 type CourierRow = {
+  courier_company_id?: unknown;
   courier_name?: unknown;
   rate?: unknown;
+  freight_charge?: unknown;
+  cod_charges?: unknown;
   rto_charges?: unknown;
   estimated_delivery_days?: unknown;
   etd_hours?: unknown;
   cod?: unknown;
   is_surface?: unknown;
+  rating?: unknown;
+  SLA_Adherence?: unknown;
+  rto_performance?: unknown;
+  tracking_performance?: unknown;
+  delivery_performance?: unknown;
 };
 
 export async function checkServiceability(input: {
@@ -134,7 +218,10 @@ export async function checkServiceability(input: {
   }
 
   const result = await shiprocketFetch<{
-    data?: { available_courier_companies?: CourierRow[] };
+    data?: {
+      available_courier_companies?: CourierRow[];
+      recommended_courier_company_id?: unknown;
+    };
   }>("/courier/serviceability/", {
     query: {
       pickup_postcode: input.pickupPostcode,
@@ -192,13 +279,9 @@ export async function checkServiceability(input: {
      */
     if (UNSERVICEABLE_ROUTE.test(providerMessage(result.data))) {
       return {
-        estimatedDays: null,
+        ...UNKNOWN_SERVICEABILITY,
         deliverable: false,
-        forwardCostPaise: null,
-        rtoCostPaise: null,
         codAvailable: false,
-        cheapestRatePaise: null,
-        courierName: null,
         source: "shiprocket",
         reason: "no courier serves this route",
       };
@@ -206,19 +289,28 @@ export async function checkServiceability(input: {
     return { ...UNKNOWN_SERVICEABILITY, reason: "no couriers returned" };
   }
 
-  const readable = couriers
+  const readable: CourierQuote[] = couriers
     .map((courier) => ({
+      id: toInt(courier.courier_company_id) ?? 0,
       name:
         typeof courier.courier_name === "string" ? courier.courier_name : null,
       ratePaise: toRatePaise(courier.rate),
+      freightPaise: toRatePaise(courier.freight_charge),
+      codFeePaise: toRatePaise(courier.cod_charges),
       rtoPaise: toRatePaise(courier.rto_charges),
       days: toDays(courier),
       cod: courier.cod === 1 || courier.cod === true,
+      rating: toScore(courier.rating),
+      slaAdherence: toScore(courier.SLA_Adherence),
+      rtoPerformance: toScore(courier.rto_performance),
+      trackingPerformance: toScore(courier.tracking_performance),
+      deliveryPerformance: toScore(courier.delivery_performance),
+      excluded: false,
     }))
-    .filter(
-      (courier): courier is typeof courier & { name: string } =>
-        courier.name !== null,
-    );
+    .filter((courier): courier is CourierQuote & { name: string } =>
+      Boolean(courier.name),
+    )
+    .map((courier) => ({ ...courier, excluded: isExcluded(courier.name) }));
 
   if (readable.length === 0) {
     return {
@@ -237,9 +329,17 @@ export async function checkServiceability(input: {
    * turn "we choose not to use this courier" into "we cannot deliver here",
    * which is a different and much more expensive statement.
    */
-  const parsed = readable.filter((courier) => !isExcluded(courier.name));
-  const priceable = parsed.length > 0 ? parsed : readable;
+  const kept = readable.filter((courier) => !courier.excluded);
+  const priceable = kept.length > 0 ? kept : readable;
 
+  /**
+   * **One courier entry supplies every leg.** The brief is explicit: *"Never mix
+   * a forward rate from one courier with an RTO rate from another."* Under the
+   * round-trip advance that is not a tidiness rule — the advance is
+   * `freight + rto` and a mismatched pair would price a journey no parcel takes.
+   * So the cheapest entry is selected once and read four times, rather than
+   * four minimums being taken independently.
+   */
   const withRates = priceable.filter((courier) => courier.ratePaise !== null);
   const cheapest = withRates.length
     ? withRates.reduce((best, courier) =>
@@ -259,6 +359,11 @@ export async function checkServiceability(input: {
     estimatedDays: days.length ? Math.min(...days) : null,
     deliverable: true,
     forwardCostPaise: cheapest?.ratePaise ?? null,
+    // Falls back to the all-in rate rather than to null when Shiprocket omits
+    // the breakdown: an advance that under-recovers is a smaller wrong than one
+    // that cannot be computed at all, and it errs towards the customer.
+    freightPaise: cheapest?.freightPaise ?? cheapest?.ratePaise ?? null,
+    codFeePaise: cheapest?.codFeePaise ?? null,
     // The return leg for the courier we would actually use, not the cheapest
     // return leg available — they are not the same parcel.
     rtoCostPaise: cheapest?.rtoPaise ?? null,
@@ -266,8 +371,28 @@ export async function checkServiceability(input: {
     codAvailable: readable.some((courier) => courier.cod),
     cheapestRatePaise: cheapest?.ratePaise ?? null,
     courierName: cheapest?.name ?? null,
+    courierId: cheapest?.id ?? null,
+    couriers: readable,
+    recommendedCourierId:
+      toInt(
+        (result.data?.data as { recommended_courier_company_id?: unknown })
+          ?.recommended_courier_company_id,
+      ) ?? null,
     source: "shiprocket",
   };
+}
+
+/** A whole number from a field Shiprocket sends as either a number or a string. */
+function toInt(value: unknown): number | null {
+  const parsed = typeof value === "string" ? Number.parseInt(value, 10) : value;
+  return typeof parsed === "number" && Number.isFinite(parsed) ? parsed : null;
+}
+
+/** A score, left as the decimal Shiprocket sent. Absent means unranked. */
+function toScore(value: unknown): number | null {
+  const parsed =
+    typeof value === "string" ? Number.parseFloat(value) : value;
+  return typeof parsed === "number" && Number.isFinite(parsed) ? parsed : null;
 }
 
 /** Shiprocket quotes rupees, sometimes as a string. The codebase holds paise. */

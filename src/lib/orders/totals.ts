@@ -1,7 +1,11 @@
 import "server-only";
 
 import type { OrderTotals } from "@/lib/orders/types";
-import { advanceFor } from "@/lib/payments/advance";
+import {
+  advanceFor,
+  codOfferedForOrder,
+  prepaidDiscountFor,
+} from "@/lib/payments/advance";
 import type { PaymentMethod } from "@/lib/payments/types";
 import { quoteFor } from "@/lib/shipping/quote-store";
 import { advanceRule, shippingSettings } from "@/lib/shipping/settings";
@@ -37,6 +41,15 @@ export type CheckoutTotals = OrderTotals & {
   courierName: string | null;
   /** `shiprocket` when priced from a live rate, `fallback` when Shiprocket was unreachable. */
   basis: "free" | "shiprocket" | "fallback";
+  /** What was passed back for paying online. A named line; zero on Pay on Delivery. */
+  prepaidDiscount: number;
+  /** Why Pay on Delivery is not on offer, when it is not. Null when it is. */
+  codWithheldReason: "below_minimum" | "settings" | "courier" | null;
+  /** The two legs the advance is made of, and the courier both came from. */
+  quotedForwardPaise: number | null;
+  quotedRtoPaise: number | null;
+  quotedCodFeePaise: number | null;
+  courierId: number | null;
 };
 
 export async function computeOrderTotals(input: {
@@ -47,8 +60,10 @@ export async function computeOrderTotals(input: {
   units: number;
   /** Coupons are Phase 8. The parameter exists so the arithmetic is already right. */
   discountPaise?: number;
+  /** Set when this customer has had Pay on Delivery withdrawn. */
+  codBlocked?: boolean;
 }): Promise<CheckoutTotals> {
-  const discountTotal = input.discountPaise ?? 0;
+  const couponDiscount = input.discountPaise ?? 0;
 
   const [quote, settings] = await Promise.all([
     quoteFor({
@@ -62,24 +77,51 @@ export async function computeOrderTotals(input: {
   ]);
 
   /**
+   * **Prepaid is visibly cheaper, as a line the customer can point at.**
+   *
+   * Prepaid orders are refused far less often than cash ones, and that is worth
+   * money to the shop — so some of it goes back. It is folded into
+   * `discountTotal` so `grandTotal` arithmetic is unchanged and every existing
+   * read site still works, and returned separately so the payment step can draw
+   * it beside the Pay-on-Delivery option, which is the only place a customer can
+   * act on it. The owner sets the value; this file only knows it is a line.
+   */
+  const prepaidDiscount =
+    input.method === "cod"
+      ? 0
+      : prepaidDiscountFor({
+          discount: settings.prepaidDiscount,
+          goodsTotalPaise: input.subtotalPaise,
+        });
+
+  const discountTotal = couponDiscount + prepaidDiscount;
+
+  /**
    * `shippingFee` is the **total** charged for delivery, and `codHandlingFee`
-   * says how much of that total is the Pay-on-Delivery extra.
+   * says how much of that total is the Pay-on-Delivery extra — Shiprocket's
+   * cash-collection fee, and nothing else since Phase 7 moved the return leg
+   * into the advance.
    *
    * Modelled as "total, of which" rather than as two addends on purpose: it
    * keeps `grandTotal` arithmetic identical to what it has always been, and it
    * matches `orders.shipping_fee`, so no read site has to remember to add two
-   * columns together. The forward leg is derived once, in the `Totals`
-   * component, which is the only place that needs to draw them apart.
+   * columns together.
    */
   const shippingFee = quote.feePaise;
   const codHandlingFee = quote.codHandlingPaise;
   const grandTotal = input.subtotalPaise - discountTotal + shippingFee;
 
   /**
+   * **The advance is the round trip, and it is netted off the balance.**
+   *
+   * `advance = forward freight + RTO freight`, both from the same courier
+   * entry; `balance = goods + delivery − advance`. The customer's total is
+   * identical either way and a refused parcel is already paid for. See
+   * `src/lib/payments/advance.ts` for the arithmetic and the worked example.
+   *
    * Prepaid settles in full online, so its "advance" is the whole order and the
    * courier collects nothing. Expressing it this way rather than with a null
-   * means every order in the system answers the same two questions — how much
-   * was paid online, how much is owed at the door — and the invariant
+   * means every order answers the same two questions, and the invariant
    * `advance + balance = grand_total` holds for every row without a special
    * case. The database enforces exactly that.
    */
@@ -87,10 +129,42 @@ export async function computeOrderTotals(input: {
     input.method === "cod"
       ? advanceFor({
           rule: advanceRule(settings),
-          deliveryTotalPaise: shippingFee,
+          /*
+            `?? 0` would produce an advance of nothing on a fallback quote,
+            which is unsecured Pay on Delivery — the thing this model exists to
+            remove. The fallback fee stands in instead, and the return leg
+            mirrors the forward one, because a return whose cost is unknown is
+            not a free return.
+          */
+          forwardFreightPaise:
+            quote.costForwardPaise ?? settings.fallbackFeePaise.cod,
+          rtoFreightPaise:
+            quote.costRtoPaise ??
+            quote.costForwardPaise ??
+            settings.fallbackFeePaise.cod,
           grandTotalPaise: grandTotal,
         })
-      : { advancePaise: grandTotal, balanceDuePaise: 0 };
+      : { advancePaise: grandTotal, balanceDuePaise: 0, cappedBy: null };
+
+  /**
+   * Three separate reasons Pay on Delivery may not be offered, kept apart
+   * because they need different words on the payment step. "The shop has turned
+   * it off", "your basket is under the minimum" and "no courier here collects
+   * cash" are three different things to tell a customer, and only one of them
+   * is something they can do anything about.
+   */
+  const belowMinimum = !codOfferedForOrder({
+    goodsTotalPaise: input.subtotalPaise,
+    minimumOrderValuePaise: settings.codMinimumOrderValuePaise,
+  });
+  const codWithheldReason: CheckoutTotals["codWithheldReason"] =
+    !settings.codEnabled || input.codBlocked
+      ? "settings"
+      : belowMinimum
+        ? "below_minimum"
+        : !quote.codAvailable
+          ? "courier"
+          : null;
 
   return {
     subtotal: input.subtotalPaise,
@@ -102,11 +176,15 @@ export async function computeOrderTotals(input: {
     advanceAmount: split.advancePaise,
     balanceDueOnDelivery: split.balanceDuePaise,
     deliverable: quote.deliverable,
-    // A method the shop has switched off is not available whatever the courier
-    // says. The PIN-code check is the second gate, not the only one.
-    codAvailable: settings.codEnabled && quote.codAvailable,
+    codAvailable: codWithheldReason === null,
+    codWithheldReason,
+    prepaidDiscount,
     estimatedDays: quote.estimatedDays,
     courierName: quote.courierName,
+    courierId: quote.courierId,
+    quotedForwardPaise: quote.costForwardPaise,
+    quotedRtoPaise: quote.costRtoPaise,
+    quotedCodFeePaise: quote.codHandlingPaise,
     basis: quote.basis,
   };
 }

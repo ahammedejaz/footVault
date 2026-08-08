@@ -50,7 +50,8 @@ function whatHappensNext(method: PaymentMethod, totals: OrderTotals): string {
     return "We have received your payment. If your bank shows it as pending, it will settle shortly and your order is already confirmed.";
   }
   return (
-    `You have paid ${formatPaise(totals.advanceAmount)} now. ` +
+    `You have paid ${formatPaise(totals.advanceAmount)} now — that covers delivery, ` +
+    `and it has been taken off what the courier collects. ` +
     `The courier will collect the remaining ${formatPaise(totals.balanceDueOnDelivery)} ` +
     "in cash when your order arrives — please have the exact amount ready."
   );

@@ -5,6 +5,7 @@ import { z } from "zod";
 import { getCart } from "@/lib/queries/cart";
 import { callerIdentity, consumeRateLimit } from "@/lib/rate-limit";
 import { getCurrentUser } from "@/lib/auth";
+import { codBlockedForCaller } from "@/lib/orders/cod-block";
 import { computeOrderTotals } from "@/lib/orders/totals";
 
 /**
@@ -90,6 +91,10 @@ export async function quoteShipping(
 
   try {
     const totals = await computeOrderTotals({
+      // Withdrawn from this customer by the owner, for refusing parcels. Read
+      // here rather than assumed false: the parameter existed and nothing
+      // passed it, so the control was a column.
+      codBlocked: await codBlockedForCaller(),
       cartId: cart.id,
       postalCode: parsed.data.postalCode,
       method: parsed.data.paymentMethod,

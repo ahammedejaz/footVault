@@ -54,6 +54,7 @@ const KNOWN_PREFIXES = [
   "fv-signedin.", // signed-in.ts
   "fv-agentd.", // the checkout UI pass
   "fv-sec.", // the adversarial pass
+  "fv-secact.", // server-actions.ts — forged Server Action posts
   "fv-adopt.", // checkout-orders.ts — guest-order adoption
   "fv-thief.", // checkout-orders.ts — the stranger who must not read an order
   "fv-test-", // Phase 4 leftovers named in docs/rls-tests.md §8

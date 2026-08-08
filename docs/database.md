@@ -540,3 +540,108 @@ will be trusted.
 This is pre-existing and repo-wide, not new to Phase 5. The relative order is
 identical in both, so nothing replays out of sequence; what it costs is that
 matching a file to its recorded application is a manual step.
+
+---
+
+## What Phase 7 added
+
+### `returning`, and why `returned` was not enough
+
+`order_status` gained **`returning`**, between `shipped` and `returned`.
+Tracking reports RTO hours or days before the parcel is physically back, and
+parcels are lost, stolen and crushed on the way. Going straight to `returned`
+would mean the only place to restock is a tracking event, which silently invents
+inventory the shop does not have.
+
+| From | May now also go to |
+|---|---|
+| `shipped` | `returning` |
+| `returning` | `returned` — and nothing else |
+
+`returning` cannot be cancelled (cancelling restocks, and the units are in a
+van) and cannot become `delivered` (that would be a second delivery of the same
+parcel). Neither `returning` nor `returned` restocks. Stock returns from an
+explicit admin action on **physical receipt**, writing an `inventory_movements`
+row with reason `rto_return` and a named actor.
+
+`inventory_movement_reason` gained `rto_return` and `rto_writeoff`. Live values:
+`opening_balance, order, cancellation, sweep, admin_adjustment, restock,
+shipment, unspecified, replacement, rto_return, rto_writeoff`.
+
+### New columns
+
+| Table | Column | Why |
+|---|---|---|
+| `orders` | `quoted_courier_name`, `quoted_courier_id` | Which courier quoted. A variance against the one actually assigned is answerable from our own data |
+| `orders` | `quoted_forward_paise`, `quoted_rto_paise` | The two legs the advance is made of. **Both from one courier entry** |
+| `orders` | `quoted_cod_fee_paise` | Shiprocket's cash-collection fee, the whole of the Pay-on-Delivery extra |
+| `orders` | `quote_taken_at`, `quote_source` | `shiprocket` or `fallback`. A fallback must never be read back as a live rate |
+| `orders` | `rto_at`, `rto_received_at`, `rto_received_by`, `rto_restocked_at`, `rto_condition`, `rto_actual_charge_paise` | The physical side of a return, and what Shiprocket actually billed beside what it quoted |
+| `shipments` | `rto_at`, `rto_charge_paise` | |
+| `shipping_quotes` | `courier_id`, `freight_paise`, `cod_fee_paise`, `advance_paise` | The split stored on the quote the customer was shown, rather than recomputed later from a rate that has moved |
+| `profiles` | `cod_blocked_at`, `cod_blocked_reason` | Repeat refusals concentrate the loss. The owner can withdraw Pay on Delivery from one customer without withdrawing it from the shop |
+
+### `refunds`
+
+| | |
+|---|---|
+| Rows | one per refund attempt |
+| Idempotency | `razorpay_refund_id` is **unique**. A double-clicked refund cannot become two |
+| `reason` | `cancelled_before_dispatch` / `rto` / `shop_error` / `other` |
+| `deduction_breakdown` | jsonb, itemised, so "why is this ₹281 short" is answerable |
+| `status` | `created` / `pending` / `processed` / `failed`. Complete when the **webhook** says so, never when the API returns 200 |
+| RLS | one policy: admins read. `anon` has everything revoked; `authenticated` keeps only `SELECT`, because the admin policy is evaluated as that role |
+
+Same posture as `payments`, for the same reason: a customer needs to know one
+thing about money — whether their order is refunded — and `orders.payment_status`
+says it in a word. Everything here is provider vocabulary and the shop's own
+deduction arithmetic.
+
+### `create_order_with_stock` learns two more things
+
+| | |
+|---|---|
+| Added | `p_discount_total`, and six frozen-quote parameters |
+| Changed | `p_free_shipping_above` gained an explicit `default null` |
+| Unchanged | `SECURITY INVOKER`, `search_path = ''`, **`service_role` only** |
+
+**`p_discount_total` is not optional politeness.** The function hardcoded
+`discount_total = 0`, which was harmless while nothing discounted anything. The
+prepaid discount changes that: `computeOrderTotals` subtracts it, so a function
+that ignored it would write a `grand_total` higher than the figure the customer
+was shown and charge the difference. Clamped into `[0, subtotal]` like every
+other number that arrives from outside.
+
+`p_free_shipping_above` was already passed null by its only caller — the quote
+has applied every threshold before that point — but without an explicit default
+the generated TypeScript typed it non-nullable, which would have forced a `0`.
+`0` means "free above ₹0", which is free delivery on everything.
+
+The drop took the ACL with it, so the revoke and the `service_role` grant are
+re-issued in the same migration. Verified live: `proacl` is
+`{postgres=X/postgres,service_role=X/postgres}`.
+
+### `site_settings.shipping`
+
+`cod_advance_mode`, `cod_advance_minimum_paise` and `cod_advance_fixed_paise`
+were **deleted**, along with the rule they configured.
+
+| Key | What it decides |
+|---|---|
+| `free_above_paise` | Prepaid delivery is free at or above this |
+| `cod_enabled` | Master switch for Pay on Delivery |
+| `cod_minimum_order_value_paise` | Below this the method is withdrawn |
+| `cod_advance_maximum_paise` | Cap on the deposit. `0` means no cap |
+| `include_gst_in_advance` | Recover Shiprocket's 18%, or absorb it |
+| `prepaid_discount` | `{mode: flat\|percent, value}` — a percentage is stored as a percentage, a flat amount as paise |
+| `customer_delivery_fee_mode` | `live` passes the courier's rate through; `flat` charges `customer_delivery_flat_paise` and the shop absorbs the difference |
+| `rto_deduction_policy` | `actual_freight` / `flat` / `none` |
+| `fallback_fee_paise` | Reached **only** when Shiprocket is unreachable |
+
+### The Shiprocket auth latch
+
+`integration_tokens` gained a second row, keyed `shiprocket:auth_lockout`. It is
+not a token: `token` holds the reason and `expires_at` is when sign-in may be
+attempted again. See `src/lib/shipping/token.ts` — this account's API user was
+locked out during setup by repeated failed logins, and the code as it stood
+would have done it again at one login attempt per request.

@@ -18,27 +18,31 @@ import type { ShippingSettings } from "@/lib/shipping/settings";
  *   **Prepaid, at or above the free-delivery threshold** — free.
  *   **Prepaid, below it** — the cheapest courier's forward rate, excluding
  *     India Post, rounded up to the nearest ₹10.
- *   **Pay on Delivery, any value** — the forward rate *plus the return leg*.
- *     No free threshold at all.
+ *   **Pay on Delivery, any value** — the live COD rate for the lane: forward
+ *     freight plus Shiprocket's cash-collection fee. No free threshold.
  *
- * **Why Pay on Delivery has no free tier, and pays for the return.** A COD
- * parcel can be refused at the door. When that happens the shop pays to send it
- * and pays again to get it back, and collects nothing — measured against this
- * account, ₹205 out and ₹142 back on a single pair to Bengaluru. A free-delivery
- * COD order that is rejected is a pure loss of roughly ₹350, and it is precisely
- * the large orders a threshold would exempt that hurt most. The owner confirmed
- * this rule stands when the payment model changed.
+ * **The return leg left this file in Phase 7, and that is the money model
+ * changing rather than a rule being relaxed.** Until then a COD delivery charge
+ * was `forward + RTO`, so the customer paid for a return that usually never
+ * happened. The RTO leg is now covered by the *advance* — money the customer
+ * pays online and which is netted straight off what the courier collects, so it
+ * costs them nothing on a delivered parcel and covers the shop completely on a
+ * refused one. See `src/lib/payments/advance.ts`. What the customer pays for
+ * delivery is now simply what the courier charges to deliver.
  *
- * **The return leg is a named line, not a hidden markup.** `codHandlingPaise` is
- * returned separately from `shippingFeePaise` and is rendered as its own row
- * wherever a total is shown. That was the owner's condition for keeping the
- * surcharge: the difference between a prepaid total and a Pay-on-Delivery total
- * must be something a customer can see and point at, never an artefact of two
- * code paths that drifted. It drifted once already — see `settings.ts`.
+ * **The COD extra is still a named line.** `codHandlingPaise` is Shiprocket's
+ * cash-collection fee — a percentage of the declared value, `cod_multiplier`
+ * 3% on this account — and it is the whole of the difference between a prepaid
+ * delivery charge and a Pay-on-Delivery one. Returned separately so it can be
+ * drawn as its own row: the owner's condition for charging it at all is that a
+ * customer can see it and point at it.
  *
- * Note that `forwardCostPaise` already contains Shiprocket's cash-collection
- * fee when the quote was taken with `cod=1`, and that fee is a *percentage* of
- * the order value. So a COD fee legitimately grows with the basket.
+ * **Two figures here are the shop's cost and never the customer's price.**
+ * `costForwardPaise` is freight alone and `costRtoPaise` is the return leg;
+ * together they are the advance. They are carried through this type rather than
+ * re-quoted downstream so that both legs provably come from **one courier
+ * entry** — the brief's rule, and under a round-trip advance a mismatched pair
+ * would price a journey no parcel takes.
  */
 
 /** Rounded up to the nearest ₹10 so the customer never sees ₹210.68. */
@@ -61,9 +65,13 @@ export type DeliveryFee = {
   codAvailable: boolean;
   estimatedDays: number | null;
   courierName: string | null;
-  /** Shop cost, for the admin. Never rendered to a customer. */
+  /**
+   * Shop cost, and the two numbers the advance is made of. Never rendered to a
+   * customer as a price. **Both come from the same courier entry.**
+   */
   costForwardPaise: number | null;
   costRtoPaise: number | null;
+  courierId: number | null;
   /** `shiprocket` when priced from a live quote, `fallback` when guessed. */
   basis: "free" | "shiprocket" | "fallback";
 };
@@ -82,9 +90,22 @@ export function deliveryFee(input: {
     codAvailable: verdict.codAvailable,
     estimatedDays: verdict.estimatedDays,
     courierName: verdict.courierName,
-    costForwardPaise: verdict.forwardCostPaise,
+    courierId: verdict.courierId,
+    // Freight alone, never the all-in rate: the cash-collection fee is reversed
+    // by Shiprocket on an RTO, so an advance that included it would over-collect
+    // on exactly the orders the advance exists to cover.
+    costForwardPaise: verdict.freightPaise ?? verdict.forwardCostPaise,
     costRtoPaise: verdict.rtoCostPaise,
   };
+
+  /**
+   * The owner can choose to charge a flat delivery fee and absorb the
+   * difference — `customer_delivery_fee_mode`. It changes only what the
+   * *customer* pays; the shop's costs above still come from the live quote, so
+   * the advance and the RTO ledger stay truthful about what a parcel really
+   * costs. Free delivery still wins over it, because that is a promise.
+   */
+  const flatMode = settings.customerDeliveryFeeMode === "flat";
 
   // Prepaid crosses the threshold. Checked before the courier lookup matters,
   // so a Shiprocket outage cannot cost a customer their free delivery. A
@@ -100,6 +121,20 @@ export function deliveryFee(input: {
       codHandlingPaise: 0,
       feePaise: 0,
       basis: "free",
+    };
+  }
+
+  if (flatMode) {
+    const total = settings.customerDeliveryFlatPaise;
+    const codFee = isCod
+      ? Math.min(total, Math.max(0, verdict.codFeePaise ?? 0))
+      : 0;
+    return {
+      ...shared,
+      shippingFeePaise: total - codFee,
+      codHandlingPaise: codFee,
+      feePaise: total,
+      basis: verdict.source === "shiprocket" ? "shiprocket" : "fallback",
     };
   }
 
@@ -127,25 +162,21 @@ export function deliveryFee(input: {
   }
 
   /**
-   * The return leg, for Pay on Delivery only.
+   * `forward` is the courier's all-in `rate`. Under Pay on Delivery the quote
+   * was taken with `cod=1`, so it already contains the cash-collection fee;
+   * under prepaid it was taken with `cod=0` and the two are the same number.
+   * Either way it is what the courier charges to deliver, and it is what the
+   * customer pays.
    *
-   * `?? forward` rather than `?? 0` when Shiprocket gave a rate but no RTO
-   * figure: a missing return cost is not a free return. Assuming the return
-   * costs about what the delivery costs is far closer to the truth than
-   * assuming it is nothing, and it errs towards covering the shop.
+   * Rounded once on the total and then split, never rounded twice. Rounding
+   * each part separately quietly raises the price: ₹139.36 and ₹52.00 become
+   * ₹140 and ₹60 — ₹200 instead of ₹200… and ₹105.20 and ₹30.10 become ₹110 and
+   * ₹40 rather than ₹140. The customer pays the rounded total and the named
+   * line carries whatever the remainder is.
    */
-  const rto = isCod ? (verdict.rtoCostPaise ?? forward) : 0;
-
-  /**
-   * Rounded once on the total, then split — rather than rounded twice.
-   *
-   * Rounding each leg separately would quietly raise the price: ₹205 and ₹142
-   * become ₹210 and ₹150 (₹360) instead of ₹350. The customer pays exactly what
-   * the old single-figure calculation charged, and the named line carries
-   * whatever the remainder is.
-   */
-  const feePaise = roundUp(forward + rto);
-  const shippingFeePaise = Math.min(roundUp(forward), feePaise);
+  const feePaise = roundUp(forward);
+  const codFee = isCod ? Math.max(0, verdict.codFeePaise ?? 0) : 0;
+  const shippingFeePaise = Math.max(0, feePaise - Math.min(codFee, feePaise));
 
   return {
     ...shared,

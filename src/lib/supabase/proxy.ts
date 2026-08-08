@@ -110,15 +110,79 @@ async function isAdmin(
 /**
  * A 404 that is indistinguishable from a route that was never there.
  *
- * Rewriting rather than redirecting keeps the URL in the bar, and rewriting to
- * a path that cannot exist makes Next render its own not-found page with a real
- * 404 status — so the customer gets the styled page and an attacker gets
- * nothing.
+ * ## Three attempts, and why the first two were wrong
+ *
+ * Carried unfixed through two security reviews as "`/admin` answers 200", and
+ * the cause was never the document response — that has always been 404. It is
+ * the **flight** response. A `<Link href="/admin">` or a router prefetch asks
+ * for the RSC payload rather than the document, and that answered 200 while a
+ * genuinely missing path answered 404. Identical bodies, different status:
+ * exactly the one bit the guard exists to withhold.
+ *
+ * **Attempt one** branched on `RSC: 1` and `Next-Router-Prefetch: 1`. It
+ * measured *worse than useless*: the response still carried
+ * `x-middleware-rewrite: /_not-found` and still answered 200, because Next
+ * strips those headers before the proxy sees them — precisely so middleware
+ * cannot branch on them. A guard written against a header that never arrives is
+ * a guard that does not run, and it looks exactly like one that does.
+ *
+ * **Attempt two** branched on `Accept: text/html`, which does arrive. The third
+ * adversarial review broke it in one line:
+ *
+ * ```
+ * curl /admin -H 'RSC: 1' -H 'Accept: text/html'   -> 200
+ * curl /definitely-not-a-route  (same headers)     -> 404
+ * ```
+ *
+ * Next's own client never sends that pair, so the fix looked correct against
+ * every real navigation. An attacker sets headers for free. **Any
+ * classification of a request built from client-supplied headers is forgeable**,
+ * and the lesson is that the guard must not classify the request at all.
+ *
+ * ## What actually works
+ *
+ * Rewrite to a path that has **no route** — not to `/_not-found`.
+ *
+ * `/_not-found` is a route Next *knows about*, so a rewrite to it is answered
+ * with that route's own status handling, and on the flight path that is 200.
+ * `NOWHERE` matches nothing, so the request falls through to the same unmatched
+ * handling a genuinely missing URL takes. Same code path, same body, same
+ * status, for every shape — which is the property "indistinguishable from a
+ * route that was never there" actually requires, and it needs no branch and so
+ * has nothing to forge.
+ *
+ * Measured on a production build after the change:
+ *
+ * ```
+ * shape                        /admin  /definitely-not-a-route
+ * default                      404     404
+ * Accept: text/html            404     404
+ * RSC: 1                       404     404
+ * RSC: 1 + Accept: text/html   404     404
+ * + Next-Router-Prefetch: 1    404     404
+ * ```
+ *
+ * and the styled not-found page is still what a browser renders, because that
+ * is what Next renders for any unmatched path.
  */
 function notFound(request: NextRequest, carrying: NextResponse): NextResponse {
   const url = request.nextUrl.clone();
-  url.pathname = "/_not-found";
+  url.pathname = NOWHERE;
   const response = NextResponse.rewrite(url, { request });
+  // The session cookies still have to travel: a non-admin who is signed in is
+  // still signed in, and dropping a refreshed token here logs them out of the
+  // storefront for having typed the wrong URL.
   for (const cookie of carrying.cookies.getAll()) response.cookies.set(cookie);
   return response;
 }
+
+/**
+ * A path with no route, and there must never be one.
+ *
+ * Deliberately unguessable-looking rather than pretty: if somebody ever adds a
+ * route that matches this, the admin guard silently starts rewriting to a real
+ * page instead of to nothing, and the disclosure comes back for a fourth time.
+ * `npm run audit:auth` asserts the pair of status codes rather than the body,
+ * so that would fail the gate rather than pass quietly.
+ */
+const NOWHERE = "/__fv_no_such_route__";

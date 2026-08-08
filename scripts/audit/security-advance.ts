@@ -166,7 +166,7 @@ async function main() {
         p_initial_status: "confirmed",
         p_payment_status: "paid",
         p_shipping_flat_fee: 0,
-        p_free_shipping_above: null,
+        p_free_shipping_above: undefined,
         p_advance_amount: 100,
       },
     );

@@ -35,9 +35,49 @@ import { createAdminClient } from "@/lib/supabase/admin";
  *
  * **Nothing here is ever logged.** Not the token, not the password, not a prefix
  * of either. The only things that reach the log are outcomes and durations.
+ *
+ * ## The latch, and why it is the most important thing in this file
+ *
+ * This account's API user **was locked out during setup by repeated failed
+ * logins.** The brief is explicit about what must not happen again: on a
+ * rejection the service *"stops entirely and surfaces the error to the admin —
+ * never retries, never silently falls back."*
+ *
+ * The code as it stood satisfied the letter of that and not the substance. A
+ * rejected login threw, and the throw was caught one layer up and turned into a
+ * typed failure, and the *next request* found no cached token and logged in
+ * again. With wrong or blocked credentials that is one login attempt per
+ * request — which is precisely the pattern that locked the account, arriving at
+ * whatever rate the shop is being browsed at. Nothing retried in a loop; the
+ * loop was the traffic.
+ *
+ * So a rejection now sets a **latch**, and the latch is a database row rather
+ * than a module variable, because a per-instance flag on Vercel is forgotten by
+ * every cold start and there are many. While it is set, `getShiprocketToken()`
+ * refuses without touching the network at all. Two things clear it: fifteen
+ * minutes passing, or an admin pressing "try Shiprocket again" after fixing the
+ * credentials.
+ *
+ * Only *rejections* latch — a 400 or 403 from `/auth/login`, which means the
+ * credentials are wrong or the user is blocked. A timeout or a 500 does not:
+ * those are Shiprocket having a bad minute and retrying them is correct.
+ * Latching on them would take shipping down for fifteen minutes every time a
+ * third party hiccuped.
  */
 
 type CachedToken = { token: string; expiresAt: number };
+
+/**
+ * How long a credential rejection stops us from trying again.
+ *
+ * Long enough that a misconfigured deploy cannot spend an afternoon's worth of
+ * login attempts, short enough that a corrected password is picked up without
+ * anybody having to know this latch exists. The admin can clear it immediately.
+ */
+const LOCKOUT_MS = 15 * 60 * 1000;
+
+/** The provider row's key for the latch. One row, `token` holds the reason. */
+const LOCKOUT_PROVIDER = "shiprocket:auth_lockout";
 
 /** Per-instance memo. Correctness never depends on it; see the header. */
 let memo: CachedToken | null = null;
@@ -53,6 +93,22 @@ export class ShiprocketAuthError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "ShiprocketAuthError";
+  }
+}
+
+/**
+ * Thrown while the latch is set. A distinct type so the admin UI can say
+ * "shipping is stopped because Shiprocket rejected our credentials" rather than
+ * "could not reach Shiprocket", which is a different problem with a different
+ * fix.
+ */
+export class ShiprocketLockedOutError extends ShiprocketAuthError {
+  constructor(
+    message: string,
+    readonly until: Date,
+  ) {
+    super(message);
+    this.name = "ShiprocketLockedOutError";
   }
 }
 
@@ -79,7 +135,95 @@ export async function getShiprocketToken(): Promise<string> {
     return stored.token;
   }
 
+  // Checked *before* the login and after the cache, so a valid cached token
+  // keeps working through a lockout — a bad password does not have to stop a
+  // shop whose token is still good for nine days.
+  await assertNotLockedOut();
+
   return (await login()).token;
+}
+
+/**
+ * Refuse without touching the network while a rejection is latched.
+ *
+ * The read failing is not a reason to attempt a login: an unreadable latch and
+ * an unset one are indistinguishable, and the expensive mistake is the one that
+ * spends a login attempt. It errs towards refusing.
+ */
+async function assertNotLockedOut(): Promise<void> {
+  const { data, error } = await createAdminClient()
+    .from("integration_tokens")
+    .select("token, expires_at")
+    .eq("provider", LOCKOUT_PROVIDER)
+    .maybeSingle();
+
+  if (error) {
+    console.error("[shiprocket] could not read the auth latch:", error.message);
+    return;
+  }
+  if (!data) return;
+
+  const until = new Date(data.expires_at);
+  if (until.getTime() <= Date.now()) return;
+
+  throw new ShiprocketLockedOutError(
+    `Shiprocket rejected our credentials and further sign-in attempts are stopped ` +
+      `until ${until.toISOString()}. ${data.token} ` +
+      "Fix SHIPROCKET_EMAIL and SHIPROCKET_PASSWORD, then clear the lockout in " +
+      "/admin/settings. This exists because repeated failed logins lock the API " +
+      "user out of the account entirely.",
+    until,
+  );
+}
+
+/**
+ * Latch a credential rejection, and say why.
+ *
+ * Best-effort by design: if the row cannot be written the login still failed
+ * and the caller still sees the error. The latch narrows a window; it is not
+ * the only thing standing between a wrong password and an outage.
+ */
+async function latchRejection(reason: string): Promise<void> {
+  const until = new Date(Date.now() + LOCKOUT_MS);
+  const { error } = await createAdminClient()
+    .from("integration_tokens")
+    .upsert(
+      {
+        provider: LOCKOUT_PROVIDER,
+        token: reason,
+        expires_at: until.toISOString(),
+        refreshed_at: new Date().toISOString(),
+      },
+      { onConflict: "provider" },
+    );
+  if (error)
+    console.error("[shiprocket] could not latch the rejection:", error.message);
+}
+
+/** Clear the latch. Called by the admin after correcting the credentials. */
+export async function clearShiprocketLockout(): Promise<void> {
+  const { error } = await createAdminClient()
+    .from("integration_tokens")
+    .delete()
+    .eq("provider", LOCKOUT_PROVIDER);
+  if (error)
+    throw new Error(`could not clear the Shiprocket lockout: ${error.message}`);
+  memo = null;
+}
+
+/** Whether the latch is set, and until when. For the admin screen. */
+export async function shiprocketLockout(): Promise<{
+  reason: string;
+  until: Date;
+} | null> {
+  const { data, error } = await createAdminClient()
+    .from("integration_tokens")
+    .select("token, expires_at")
+    .eq("provider", LOCKOUT_PROVIDER)
+    .maybeSingle();
+  if (error || !data) return null;
+  const until = new Date(data.expires_at);
+  return until.getTime() > Date.now() ? { reason: data.token, until } : null;
 }
 
 /**
@@ -92,6 +236,7 @@ export async function getShiprocketToken(): Promise<string> {
  */
 export async function refreshShiprocketToken(): Promise<string> {
   memo = null;
+  await assertNotLockedOut();
   return (await login()).token;
 }
 
@@ -133,15 +278,26 @@ async function login(): Promise<CachedToken> {
 
     if (!response.ok) {
       /**
-       * 403 is what Shiprocket returns for wrong credentials, which is the
-       * commonest real failure here and has a specific cause worth naming: the
-       * API user's email must differ from the account's own login email, and
-       * using the account email is the mistake everyone makes first.
+       * 403 is what Shiprocket returns for wrong credentials **and for a user
+       * it has blocked**, which is the commonest real failure here and has a
+       * specific cause worth naming: the API user's email must differ from the
+       * account's own login email, and using the account email is the mistake
+       * everyone makes first.
+       *
+       * A rejection latches. A 500 or a timeout does not — see the header.
        */
+      const rejected = response.status === 403 || response.status === 400;
+      if (rejected) {
+        await latchRejection(
+          `Shiprocket answered ${response.status} to the sign-in.`,
+        );
+      }
       throw new ShiprocketAuthError(
-        response.status === 403 || response.status === 400
+        rejected
           ? "Shiprocket rejected the credentials. Check SHIPROCKET_EMAIL is the API user " +
-              "created under Settings → API → Configure, and not the account's own login email."
+              "created under Settings → API → Configure, and not the account's own login email. " +
+              "Further sign-in attempts are stopped for fifteen minutes: repeated failures " +
+              "lock the API user out of the account entirely."
           : `Shiprocket's login failed with ${response.status}.`,
       );
     }

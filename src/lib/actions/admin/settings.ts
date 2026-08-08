@@ -33,32 +33,75 @@ const rupees = (label: string) =>
     .max(10_000_000, `${label} looks wrong.`)
     .transform((value) => Math.round(value * 100));
 
+/**
+ * The seven numbers that decide whether the shop makes money.
+ *
+ * Phase 7 replaced the advance rule entirely, so `cod_advance_mode`,
+ * `cod_advance_minimum_paise` and `cod_advance_fixed_paise` are gone from this
+ * form and from `site_settings`. All three priced the deposit from what the
+ * *customer* was charged for delivery, which has no relationship to what a
+ * refusal costs the shop: under a fixed ₹99 advance against a ₹281 round trip,
+ * every refused parcel lost ₹182 and the shop found out by reconciliation. The
+ * advance is now the round trip itself and there is nothing to configure about
+ * how it is derived — only what bounds it.
+ */
 const shippingSchema = z
   .object({
     freeAboveRupees: rupees("The free-delivery threshold"),
     codEnabled: z.boolean(),
-    codAdvanceMode: z.enum(["shipping_fee", "fixed", "greater_of"]),
-    codAdvanceMinimumRupees: rupees("The minimum upfront amount"),
-    codAdvanceFixedRupees: rupees("The fixed upfront amount"),
+    codMinimumOrderRupees: rupees("The Pay-on-Delivery minimum order"),
+    codAdvanceMaximumRupees: rupees("The cap on the amount paid upfront"),
+    includeGstInAdvance: z.boolean(),
+    prepaidDiscountMode: z.enum(["flat", "percent"]),
+    prepaidDiscountValue: z
+      .number({ message: "The prepaid discount must be a number." })
+      .min(0, "The prepaid discount cannot be negative."),
+    customerDeliveryFeeMode: z.enum(["live", "flat"]),
+    customerDeliveryFlatRupees: rupees("The flat delivery charge"),
+    rtoDeductionPolicy: z.enum(["actual_freight", "flat", "none"]),
+    rtoDeductionFlatRupees: rupees("The flat return deduction"),
     fallbackPrepaidRupees: rupees("The prepaid fallback"),
     fallbackCodRupees: rupees("The Pay-on-Delivery fallback"),
   })
   .refine(
-    (value) => value.codAdvanceMinimumRupees >= MIN_CHARGEABLE_PAISE,
+    (value) =>
+      value.prepaidDiscountMode !== "percent" ||
+      value.prepaidDiscountValue <= 100,
     {
-      message:
-        "Razorpay cannot charge less than ₹1, so the minimum upfront amount cannot be lower than that.",
-      path: ["codAdvanceMinimumRupees"],
+      message: "A percentage discount cannot be more than 100%.",
+      path: ["prepaidDiscountValue"],
     },
   )
   .refine(
     (value) =>
-      value.codAdvanceMode !== "fixed" ||
-      value.codAdvanceFixedRupees >= MIN_CHARGEABLE_PAISE,
+      value.customerDeliveryFeeMode !== "flat" ||
+      value.customerDeliveryFlatRupees > 0,
     {
       message:
-        "A fixed upfront amount below ₹1 cannot be charged. Raise it or choose another rule.",
-      path: ["codAdvanceFixedRupees"],
+        "A flat delivery charge of ₹0 means free delivery on every order. " +
+        "Set an amount, or switch back to charging the live courier rate.",
+      path: ["customerDeliveryFlatRupees"],
+    },
+  )
+  .refine(
+    (value) =>
+      value.rtoDeductionPolicy !== "flat" || value.rtoDeductionFlatRupees > 0,
+    {
+      message:
+        "A flat return deduction of ₹0 is the same as refunding in full. " +
+        "Set an amount, or choose 'refund in full'.",
+      path: ["rtoDeductionFlatRupees"],
+    },
+  )
+  .refine(
+    (value) =>
+      value.codAdvanceMaximumRupees === 0 ||
+      value.codAdvanceMaximumRupees >= MIN_CHARGEABLE_PAISE,
+    {
+      message:
+        "Razorpay cannot charge less than ₹1, so a cap below that would make " +
+        "every Pay-on-Delivery order unpayable. Use ₹0 for no cap.",
+      path: ["codAdvanceMaximumRupees"],
     },
   );
 
@@ -112,9 +155,22 @@ export async function saveShippingSettings(
             ...current,
             free_above_paise: v.freeAboveRupees,
             cod_enabled: v.codEnabled,
-            cod_advance_mode: v.codAdvanceMode,
-            cod_advance_minimum_paise: v.codAdvanceMinimumRupees,
-            cod_advance_fixed_paise: v.codAdvanceFixedRupees,
+            cod_minimum_order_value_paise: v.codMinimumOrderRupees,
+            cod_advance_maximum_paise: v.codAdvanceMaximumRupees,
+            include_gst_in_advance: v.includeGstInAdvance,
+            prepaid_discount: {
+              mode: v.prepaidDiscountMode,
+              // A percentage is a percentage, not paise. `rupees()` multiplies
+              // by 100 and would turn 5% into 500%.
+              value:
+                v.prepaidDiscountMode === "percent"
+                  ? v.prepaidDiscountValue
+                  : Math.round(v.prepaidDiscountValue * 100),
+            },
+            customer_delivery_fee_mode: v.customerDeliveryFeeMode,
+            customer_delivery_flat_paise: v.customerDeliveryFlatRupees,
+            rto_deduction_policy: v.rtoDeductionPolicy,
+            rto_deduction_flat_paise: v.rtoDeductionFlatRupees,
             fallback_fee_paise: {
               razorpay: v.fallbackPrepaidRupees,
               cod: v.fallbackCodRupees,

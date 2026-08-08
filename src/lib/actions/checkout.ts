@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 
 import { saveAddress as saveAddressToBook } from "@/lib/actions/address";
 import { getCurrentUser } from "@/lib/auth";
+import { stockChanged } from "@/lib/stock-freshness";
 import { readGuestToken } from "@/lib/cart/token";
 import { sendOrderConfirmation } from "@/lib/email";
 import {
@@ -25,6 +26,7 @@ import {
   type PaymentMethod,
 } from "@/lib/payments/types";
 import { callerIdentity, consumeRateLimit } from "@/lib/rate-limit";
+import { codBlockedForCaller } from "@/lib/orders/cod-block";
 import { computeOrderTotals } from "@/lib/orders/totals";
 import { getCart } from "@/lib/queries/cart";
 import { maybeRow } from "@/lib/queries/run";
@@ -137,6 +139,43 @@ export async function placeOrder(
 
     const cart = await getCart();
     if (!cart.id || cart.lines.length === 0) {
+      /**
+       * "Empty" and "everything in it has sold out" are different sentences.
+       *
+       * `getCart()` drops a dead line rather than showing a zero, so a bag
+       * holding one sold-out pair arrives here with `lines.length === 0` and
+       * used to be answered "your bag is empty" — which is baffling to somebody
+       * looking at a bag they filled ten minutes ago, and tells them nothing
+       * about what to do. A *mixed* bag already named the item, because the
+       * out-of-stock branch further down handles it; the single-line case fell
+       * through the wrong door. G-4 in the Phase 7 adversarial review.
+       *
+       * The `gone` adjustments carry the name and the size, which is exactly
+       * what the customer needs to hear.
+       */
+      const gone = cart.adjustments.filter(
+        (adjustment) => adjustment.kind === "gone",
+      );
+      if (gone.length > 0) {
+        return {
+          ok: false,
+          reason: "out_of_stock",
+          message:
+            gone.length === 1
+              ? `${gone[0]!.name} in UK ${gone[0]!.size} sold out while it was in your bag. ` +
+                "There is nothing left to check out."
+              : `${gone.length} items sold out while they were in your bag: ` +
+                gone.map((item) => `${item.name} UK ${item.size}`).join(", ") +
+                ". There is nothing left to check out.",
+          items: gone.map((item) => ({
+            productName: item.name,
+            size: item.size,
+            requested: 1,
+            available: 0,
+          })),
+        };
+      }
+
       return {
         ok: false,
         reason: "empty_cart",
@@ -188,6 +227,10 @@ export async function placeOrder(
      */
     const units = cart.lines.reduce((total, line) => total + line.quantity, 0);
     const totals = await computeOrderTotals({
+      // Withdrawn from this customer by the owner, for refusing parcels. Read
+      // here rather than assumed false: the parameter existed and nothing
+      // passed it, so the control was a column.
+      codBlocked: await codBlockedForCaller(),
       cartId: cart.id,
       postalCode: address.postalCode,
       method,
@@ -217,19 +260,33 @@ export async function placeOrder(
     }
 
     /**
-     * Cash on delivery, only where cash can actually be collected.
+     * Pay on Delivery, only where and when it is actually on offer.
      *
-     * The hook Phase 5 §8.8 left for exactly this. Fails soft in the same
-     * direction as everything else: only an explicit "couriers serve this pin
-     * code and none of them will collect cash" declines.
+     * **Four reasons, and they need four different sentences.** Until Phase 7
+     * every refusal said "no courier will collect cash at your pin code", which
+     * is true of exactly one of them — and is a baffling thing to read when the
+     * real reason is that the basket is under the minimum, which the customer
+     * can fix by adding another pair. `codWithheldReason` carries which it is
+     * so the message can be the one that helps.
+     *
+     * Fails soft in the same direction as everything else: only an explicit
+     * "couriers serve this pin code and none of them will collect cash"
+     * declines on the courier's behalf.
      */
     if (method === "cod" && !totals.codAvailable) {
       return {
         ok: false,
         reason: "payment_unavailable",
         message:
-          `No courier will collect cash at ${address.postalCode}. ` +
-          "Pay online instead and we will send it to the same address.",
+          totals.codWithheldReason === "below_minimum"
+            ? "Pay on Delivery is not available on an order this size — the " +
+              "delivery charge would be most of it. Paying online works, and " +
+              "it comes to the same address."
+            : totals.codWithheldReason === "courier"
+              ? `No courier will collect cash at ${address.postalCode}. ` +
+                "Pay online instead and we will send it to the same address."
+              : "Pay on Delivery is not available on this order. Paying online " +
+                "works, and it comes to the same address.",
       };
     }
 
@@ -262,13 +319,36 @@ export async function placeOrder(
         // told there is no threshold left to apply. Passing both would let the
         // database silently zero a COD fee that deliberately has no free tier.
         p_shipping_flat_fee: totals.shippingFee,
-        p_free_shipping_above: null,
+        // Omitted, not zero. The parameter defaults to null, which means "no
+        // threshold left to apply"; a zero would mean "free above ₹0", which is
+        // free delivery on everything.
+        p_free_shipping_above: undefined,
         // The advance is passed; the balance is *derived* inside the function
         // as grand_total - advance. Two independently-supplied numbers would
         // break the check constraint the moment a price moved under the row
         // lock, and take the checkout down with an opaque error.
         p_advance_amount: totals.advanceAmount,
         p_cod_handling_fee: totals.codHandlingFee,
+        // The prepaid discount. Passed rather than assumed zero: the function
+        // recomputes the subtotal under the row lock, so a discount applied
+        // only in TypeScript would write a grand total higher than the one the
+        // customer was shown and charge them the difference.
+        p_discount_total: totals.discountTotal,
+        /*
+          The quote, frozen with the order.
+
+          Both freight legs come from **one courier entry** — the brief's rule,
+          and under a round-trip advance a mismatched pair prices a journey no
+          parcel takes. `quote_source` records whether this was a live rate or
+          the fallback, so a fallback can never be read back later as though
+          Shiprocket had quoted it.
+        */
+        p_quoted_courier_name: totals.courierName ?? undefined,
+        p_quoted_courier_id: totals.courierId ?? undefined,
+        p_quoted_forward_paise: totals.quotedForwardPaise ?? undefined,
+        p_quoted_rto_paise: totals.quotedRtoPaise ?? undefined,
+        p_quoted_cod_fee_paise: totals.quotedCodFeePaise ?? undefined,
+        p_quote_source: totals.basis,
         p_user_id: user?.id,
         p_guest_token: guestToken ?? undefined,
         p_contact_email: data.contactEmail ?? user?.email ?? undefined,
@@ -317,6 +397,12 @@ export async function placeOrder(
       console.error("[checkout] create_order_with_stock returned no row");
       return { ok: false, reason: "error", message: GENERIC };
     }
+
+    // The units are claimed. Said here rather than after the payment, because
+    // the decrement has already happened and an unpaid order still holds the
+    // stock until the sweep reclaims it — a size run that goes on offering it
+    // for the rest of the hour is the bug this phase opened with.
+    stockChanged();
 
     const grandTotal = assertPaise("checkout.grandTotal", order.grand_total);
 
@@ -676,6 +762,8 @@ async function cancelWithRestock(
     );
     return "error";
   }
+  // The units are back. Same statement as the claim above, for the same reason.
+  stockChanged();
   return data ?? "error";
 }
 

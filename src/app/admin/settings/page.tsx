@@ -41,7 +41,10 @@ export default async function AdminSettingsPage() {
     unknown
   >;
 
-  const mode = shipping.cod_advance_mode;
+  const prepaidDiscount = (shipping.prepaid_discount ?? {}) as {
+    mode?: string;
+    value?: unknown;
+  };
 
   return (
     <AdminPage>
@@ -59,17 +62,38 @@ export default async function AdminSettingsPage() {
             initial={{
               freeAboveRupees: paiseToRupees(shipping.free_above_paise, 2499),
               codEnabled: shipping.cod_enabled !== false,
-              codAdvanceMode:
-                mode === "fixed" || mode === "shipping_fee"
-                  ? mode
-                  : "greater_of",
-              codAdvanceMinimumRupees: paiseToRupees(
-                shipping.cod_advance_minimum_paise,
-                99,
+              codMinimumOrderRupees: paiseToRupees(
+                shipping.cod_minimum_order_value_paise,
+                999,
               ),
-              codAdvanceFixedRupees: paiseToRupees(
-                shipping.cod_advance_fixed_paise,
-                99,
+              codAdvanceMaximumRupees: paiseToRupees(
+                shipping.cod_advance_maximum_paise,
+                500,
+              ),
+              includeGstInAdvance: shipping.include_gst_in_advance === true,
+              prepaidDiscountMode:
+                prepaidDiscount.mode === "percent" ? "percent" : "flat",
+              // A percentage is stored as a percentage and a flat amount as
+              // paise, so only one of them is divided by a hundred. Dividing
+              // both would render 5% as 0.05%.
+              prepaidDiscountValue:
+                prepaidDiscount.mode === "percent"
+                  ? Number(prepaidDiscount.value ?? 0)
+                  : paiseToRupees(prepaidDiscount.value, 0),
+              customerDeliveryFeeMode:
+                shipping.customer_delivery_fee_mode === "flat" ? "flat" : "live",
+              customerDeliveryFlatRupees: paiseToRupees(
+                shipping.customer_delivery_flat_paise,
+                0,
+              ),
+              rtoDeductionPolicy:
+                shipping.rto_deduction_policy === "flat" ||
+                shipping.rto_deduction_policy === "none"
+                  ? shipping.rto_deduction_policy
+                  : "actual_freight",
+              rtoDeductionFlatRupees: paiseToRupees(
+                shipping.rto_deduction_flat_paise,
+                0,
               ),
               fallbackPrepaidRupees: paiseToRupees(fallback.razorpay, 199),
               fallbackCodRupees: paiseToRupees(fallback.cod, 349),

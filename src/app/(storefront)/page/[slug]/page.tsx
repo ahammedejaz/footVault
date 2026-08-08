@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
 import { Breadcrumbs } from "@/components/storefront/breadcrumbs";
+import { contentTokens, fillTokens } from "@/lib/content-tokens";
 import { cachedPage } from "@/lib/queries/cached";
 import { listPageSlugs } from "@/lib/queries/content";
 import { staticParamsOr } from "@/lib/static-params";
@@ -46,7 +47,16 @@ export default async function CmsPage({
   const page = await cachedPage(slug);
   if (!page) notFound();
 
-  const paragraphs = (page.body ?? "")
+  /**
+   * Policy numbers are substituted here rather than typed into the body.
+   *
+   * `/page/shipping` used to say "free on orders of ₹2,499 or more" while
+   * `site_settings.shipping.free_above_paise` said ₹6,499 — a promise on the
+   * storefront the till does not keep, and the customer is the one who is
+   * right. The owner writes the sentence; the number comes from the setting
+   * they change in `/admin/settings`. See `src/lib/content-tokens.ts`.
+   */
+  const paragraphs = fillTokens(page.body ?? "", await contentTokens())
     .split(/\n{2,}/)
     .map((block) => block.trim())
     .filter(Boolean);

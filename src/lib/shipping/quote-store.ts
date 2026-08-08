@@ -3,7 +3,7 @@ import "server-only";
 import type { PaymentMethod } from "@/lib/payments/types";
 import { maybeRow } from "@/lib/queries/run";
 import { deliveryFee, type DeliveryFee } from "@/lib/shipping/fee";
-import { quoteDelivery, shippingDefaults } from "@/lib/shipping/quote";
+import { parcelWeightKg, quoteDelivery, shippingDefaults } from "@/lib/shipping/quote";
 import { shippingSettings } from "@/lib/shipping/settings";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -47,6 +47,22 @@ export async function quoteFor(input: {
   method: PaymentMethod;
   subtotalPaise: number;
   units: number;
+  /**
+   * The bag's lines, each with its own parcel weight.
+   *
+   * **Weight comes from the product, not from a default.** Until Phase 7 this
+   * function multiplied `shipping_defaults.weight_grams` — 900g, one number for
+   * the whole catalogue — by the number of pairs, so a bag of boots and a bag
+   * of flip-flops quoted the same freight. Rate bands are per half-kilogram on
+   * this account (`min_weight: 0.5`), so that is not a rounding error: it
+   * under-recovers on every heavy order and over-quotes every light one.
+   *
+   * Optional, because one caller genuinely does not have the lines — the
+   * product page's "do you deliver to me?" check, which is asking about a
+   * single pair before there is a bag. It falls back to the default, which is
+   * what that question deserves.
+   */
+  lines?: { quantity: number; weightGrams: number | null }[];
 }): Promise<StoredQuote> {
   const existing = await readQuote(input);
   if (existing) return { ...existing, fresh: false };
@@ -54,10 +70,9 @@ export async function quoteFor(input: {
   const defaults = await shippingDefaults();
   const verdict = await quoteDelivery({
     deliveryPostcode: input.postalCode,
-    // The default parcel weight times the number of pairs. Serviceability and
-    // rate bands barely move within a kilogram, and the alternative is a second
-    // query on the checkout path to refine a number that will not change.
-    weightKg: Math.max(0.1, (defaults.weight_grams * input.units) / 1000),
+    weightKg: input.lines?.length
+      ? parcelWeightKg(input.lines, defaults)
+      : Math.max(0.1, (defaults.weight_grams * input.units) / 1000),
     valuePaise: input.subtotalPaise,
   });
 
@@ -70,6 +85,37 @@ export async function quoteFor(input: {
     // than inside `deliveryFee` so that function stays pure and testable.
     settings: await shippingSettings(),
   });
+
+  /**
+   * **Which one served this quote, said out loud.**
+   *
+   * The brief: *"Log which one served each quote — a fallback must never be
+   * presented silently as a live rate."* A fallback is a settings number the
+   * owner typed when a courier could not be reached; it looks exactly like a
+   * live rate on the page and in the database, and the only difference is this
+   * line and the `quote_source` column it is written to.
+   *
+   * `warn` for a fallback rather than `info`, because a shop quietly running on
+   * fallback rates all afternoon is the shop mispricing every order, and it
+   * should be visible in a log filtered to problems.
+   */
+  if (fee.basis === "fallback") {
+    console.warn("[shipping] quote served from the FALLBACK, not a live rate", {
+      postcode: input.postalCode,
+      method: input.method,
+      reason: verdict.reason ?? "unknown",
+      feePaise: fee.feePaise,
+    });
+  } else {
+    console.info("[shipping] quote served live", {
+      postcode: input.postalCode,
+      method: input.method,
+      courier: fee.courierName,
+      feePaise: fee.feePaise,
+      forwardPaise: fee.costForwardPaise,
+      rtoPaise: fee.costRtoPaise,
+    });
+  }
 
   await storeQuote(input, fee);
   return { ...fee, fresh: true };
@@ -89,6 +135,7 @@ export async function chargeableFee(input: {
   method: PaymentMethod;
   subtotalPaise: number;
   units: number;
+  lines?: { quantity: number; weightGrams: number | null }[];
 }): Promise<StoredQuote> {
   return quoteFor(input);
 }
@@ -109,6 +156,7 @@ async function readQuote(input: {
     courier_name: string | null;
     cost_forward_paise: number | null;
     cost_rto_paise: number | null;
+    courier_id: number | null;
     subtotal_paise: number;
     source: string;
     quoted_at: string;
@@ -119,7 +167,7 @@ async function readQuote(input: {
       .select(
         `fee_paise, shipping_fee_paise, cod_handling_paise, deliverable,
          cod_available, estimated_days, courier_name,
-         cost_forward_paise, cost_rto_paise, subtotal_paise, source, quoted_at`,
+         cost_forward_paise, cost_rto_paise, courier_id, subtotal_paise, source, quoted_at`,
       )
       .eq("cart_id", input.cartId)
       .eq("postal_code", input.postalCode)
@@ -144,6 +192,7 @@ async function readQuote(input: {
     courierName: row.courier_name,
     costForwardPaise: row.cost_forward_paise,
     costRtoPaise: row.cost_rto_paise,
+    courierId: row.courier_id,
     basis:
       row.source === "free" || row.source === "fallback"
         ? row.source
@@ -175,6 +224,9 @@ async function storeQuote(
       courier_name: fee.courierName,
       cost_forward_paise: fee.costForwardPaise,
       cost_rto_paise: fee.costRtoPaise,
+      courier_id: fee.courierId,
+      freight_paise: fee.costForwardPaise,
+      cod_fee_paise: fee.codHandlingPaise,
       source: fee.basis,
     },
     { onConflict: "cart_id,postal_code,payment_method" },

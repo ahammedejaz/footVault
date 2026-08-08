@@ -24,6 +24,14 @@ import { cn } from "@/lib/utils";
  * you did not mean, and the fix belongs next to the thing that just happened.
  * Undo restores the previous quantity rather than emptying the line, so adding
  * a fourth pair and undoing leaves the three that were already there.
+ *
+ * **There is no sold-out state here any more.** It used to take a `soldOut`
+ * prop and render itself disabled, which is the thing Phase 7's brief rules
+ * out: *"with the add-to-bag control replaced rather than merely disabled"*. A
+ * greyed-out button is still an add-to-bag button — it looks like the control
+ * that is about to work and answers a press with nothing. The caller now
+ * renders something else entirely, and this component only ever exists when
+ * there is something to add.
  */
 export function AddToBag({
   variantId,
@@ -31,7 +39,6 @@ export function AddToBag({
   size = "lg",
   className,
   onNeedSize,
-  soldOut,
 }: {
   /** Null when no size is chosen yet, or when the chosen size has no variant. */
   variantId: string | null;
@@ -40,7 +47,6 @@ export function AddToBag({
   className?: string;
   /** Focus and mark the size run. Called instead of complaining. */
   onNeedSize?: () => void;
-  soldOut?: boolean;
 }) {
   const [pending, startTransition] = useTransition();
   const refreshBag = useBagUi((state) => state.refresh);
@@ -49,7 +55,7 @@ export function AddToBag({
     <Button
       size={size}
       className={cn(className)}
-      disabled={pending || soldOut}
+      disabled={pending}
       // Not `disabled` when a size is missing: a disabled button cannot be
       // focused, cannot be pressed, and so can never explain itself. It stays
       // live and answers the press by pointing at what is missing.
@@ -92,7 +98,7 @@ export function AddToBag({
         });
       }}
     >
-      {pending ? "Adding…" : soldOut ? "Sold out" : label}
+      {pending ? "Adding…" : label}
     </Button>
   );
 }
