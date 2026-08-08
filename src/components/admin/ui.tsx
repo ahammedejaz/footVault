@@ -177,10 +177,23 @@ export function EmptyState({
   );
 }
 
+/**
+ * Chip colours, measured rather than eyeballed.
+ *
+ * A tinted background eats the contrast the text token was chosen for. The
+ * orange ink is documented at 5.20:1 — but that is against paper, and behind a
+ * 22% orange fill it measured 4.36:1, under AA for a 12px label. Green was
+ * worse at 4.13:1, because `--fv-green` was serving as both the fill and the
+ * text and cannot do both.
+ *
+ * Now: green gets its own ink (5.28:1 on its own tint) and the orange fill
+ * drops to 14% (4.65:1). Both verified by `npm run audit:admin-pages`, which
+ * runs axe over every admin screen and is what caught this.
+ */
 const CHIP_TONES = {
   neutral: "bg-muted text-foreground",
-  good: "bg-[color-mix(in_srgb,var(--fv-green)_16%,transparent)] text-[var(--fv-green)]",
-  warn: "bg-[color-mix(in_srgb,var(--fv-orange)_22%,transparent)] text-orange-ink",
+  good: "bg-[color-mix(in_srgb,var(--fv-green)_16%,transparent)] text-[var(--fv-green-ink)]",
+  warn: "bg-[color-mix(in_srgb,var(--fv-orange)_14%,transparent)] text-orange-ink",
   bad: "bg-destructive/12 text-destructive",
 } as const;
 

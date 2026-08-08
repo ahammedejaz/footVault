@@ -470,14 +470,6 @@ export function CheckoutFlow({
     setAttempted(true);
     setProblem(null);
 
-    /**
-     * The button is `aria-disabled` rather than `disabled` in these states, so
-     * it can still be pressed. The reason is already on screen and wired to the
-     * button through `aria-describedby`, so this refuses quietly rather than
-     * raising a second copy of a message the customer is already being shown.
-     */
-    if (blockedReason) return;
-
     const parsed = checkoutSchema({ requireContactEmail: !signedIn }).safeParse(
       buildInput(),
     );
@@ -502,6 +494,23 @@ export function CheckoutFlow({
     }
 
     setErrors({});
+
+    /**
+     * Only now, after the form has had its say.
+     *
+     * The button is `aria-disabled` rather than `disabled` in these states, so
+     * it can still be pressed — and the order matters. Refusing *before*
+     * validation meant somebody who pressed pay on an empty form was told
+     * "add a delivery address so we can price delivery" and shown no field
+     * errors at all, when what they needed was the six boxes highlighted. The
+     * form answers first; the quote gate is the last thing between a complete
+     * form and an order.
+     *
+     * It refuses quietly because the reason is already on screen under the
+     * button and wired to it through `aria-describedby`; a second copy would
+     * just be noise.
+     */
+    if (blockedReason) return;
 
     /**
      * `line2` goes over the wire as `""`, never as `null`, and that is not a

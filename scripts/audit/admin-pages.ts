@@ -26,6 +26,7 @@ for (const line of readFileSync(".env.local", "utf8").split("\n")) {
   if (match && !process.env[match[1]]) process.env[match[1]] = match[2];
 }
 
+import { ADMIN_NAV } from "../../src/components/admin/nav";
 import { adminClient, createAccount, sessionCookies } from "./fixtures";
 import { BASE_URL } from "./routes";
 
@@ -167,7 +168,65 @@ async function main() {
       );
     }
 
-    /* ═══ 2 · settings ══════════════════════════════════════════════════════ */
+    /* ═══ 1b · every admin route renders ═══════════════════════════════════ */
+  section("1b · Every screen in the panel opens");
+
+  /**
+   * A page that type-checks and builds can still throw at render — a
+   * `server-only` module reaching a Client Component, a nullable column read
+   * without a guard, a function prop crossing the RSC boundary. Only a request
+   * catches those, and until this suite existed nothing made one behind the
+   * admin guard.
+   *
+   * Checked at 768px, which is the tablet the owner will actually hold.
+   */
+  const { data: someProduct, error: productError } = await admin
+    .from("products")
+    .select("id")
+    .limit(1)
+    .maybeSingle();
+  check(
+    "a product exists to open an edit page for",
+    productError === null && someProduct !== null,
+    productError?.message ?? "none found",
+  );
+
+  const routes = [
+    ...ADMIN_NAV.map((item) => item.href),
+    "/admin/products/new",
+    ...(someProduct ? [`/admin/products/${someProduct.id}`] : []),
+  ];
+
+  await page.setViewportSize({ width: 768, height: 1024 });
+  for (const route of routes) {
+    const before = pageErrors.length;
+    const response = await page.goto(`${BASE_URL}${route}`, {
+      waitUntil: "load",
+    });
+    const text = await page.locator("body").innerText();
+    const broke =
+      /Application error|could not be found|This page could not/i.test(text);
+    const overflow = await page.evaluate(
+      () =>
+        document.documentElement.scrollWidth >
+        document.documentElement.clientWidth + 1,
+    );
+    check(
+      `${route} renders`,
+      response?.status() === 200 && !broke && pageErrors.length === before,
+      `status ${response?.status()} ${broke ? "· error page" : ""} ${pageErrors.slice(before).join("; ")}`,
+    );
+    check(`${route} does not overflow a tablet`, !overflow);
+    const routeViolations = await axe(page);
+    check(
+      `${route} is axe clean`,
+      routeViolations.length === 0,
+      routeViolations.join("; "),
+    );
+  }
+  await page.setViewportSize({ width: 1280, height: 900 });
+
+  /* ═══ 2 · settings ══════════════════════════════════════════════════════ */
     section("2 · /admin/settings reads and writes");
 
     await page.goto(`${BASE_URL}/admin/settings`, { waitUntil: "load" });

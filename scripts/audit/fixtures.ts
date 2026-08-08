@@ -180,41 +180,115 @@ export async function addToBag(
  * an order, which is the only way the confirmation and history states get built
  * out of something a customer could have produced.
  */
+/**
+ * Turn this bag into a placed order.
+ *
+ * **Written through the database, not through the checkout UI, and that is a
+ * consequence of Part 0 rather than a shortcut.** Both payment methods now
+ * settle through Razorpay — Pay on Delivery takes an advance before the order
+ * is confirmed — so pressing the pay button opens a provider modal and no
+ * headless run can complete it. A fixture that tried would be a fixture that
+ * depended on a third party's iframe.
+ *
+ * What the states actually need from this is an order that exists, belongs to
+ * the right identity, and renders at `/order/<number>`. Calling the same
+ * function checkout calls gives exactly that, with real prices recomputed under
+ * the same row lock, real stock decremented, and a real ledger row written.
+ *
+ * The advance is set to the whole delivery charge, which is what the default
+ * `greater_of` rule produces for a real order, so the confirmation page the
+ * fixtures screenshot shows the same three figures a customer would see.
+ */
 export async function placeCodOrder(
   page: Page,
-  options: { guest: boolean },
+  options: { guest: true } | { guest: false; userId: string },
 ): Promise<string> {
-  await page.goto(`${BASE_URL}/checkout`, { waitUntil: "load" });
-  await page
-    .locator("h1")
-    .first()
-    .waitFor({ state: "visible", timeout: 15_000 });
+  const admin = adminClient();
+  const jar = await page.context().cookies();
+  const token = guestToken(jar);
 
-  // A saved address preselects itself and hides the form; only type when the
-  // form is the thing on screen.
-  if ((await page.locator("#checkout-recipientName").count()) > 0) {
-    await page.fill("#checkout-recipientName", QA_ADDRESS.recipientName);
-    await page.fill("#checkout-phone", QA_ADDRESS.phone);
-    await page.fill("#checkout-line1", QA_ADDRESS.line1);
-    await page.fill("#checkout-city", QA_ADDRESS.city);
-    await page.fill("#checkout-postalCode", QA_ADDRESS.postalCode);
-    await page.selectOption("#checkout-state", QA_ADDRESS.state);
-  }
-  if (options.guest) {
-    await page.fill(
-      "#checkout-contactEmail",
-      `${QA_EMAIL_PREFIX}guest@example.com`,
-    );
+  if (options.guest && !token) {
+    throw new Error("the guest context carries no fv_guest cookie");
   }
 
-  await page.locator('input[name="paymentMethod"][value="cod"]').check();
-  await page.getByRole("button", { name: /place order/i }).click();
+  const cart = await maybeRowOrThrow<{ id: string }>(
+    admin
+      .from("carts")
+      .select("id")
+      .eq("status", "active")
+      .eq(
+        options.guest ? "guest_token" : "user_id",
+        options.guest ? (token as string) : options.userId,
+      )
+      .maybeSingle(),
+    "no active cart to convert",
+  );
 
-  await page.waitForURL(/\/order\/FV-/, { timeout: 45_000 });
-  const number = /\/order\/(FV-[0-9-]+)/.exec(page.url())?.[1];
-  if (!number)
-    throw new Error(`checkout did not land on an order page: ${page.url()}`);
+  const SHIPPING = 34_900;
+  const { data, error } = await admin.rpc("create_order_with_stock", {
+    p_cart_id: cart.id,
+    p_shipping_address: { ...QA_ADDRESS, line2: null, country: "IN" },
+    p_payment_method: "cod",
+    // Confirmed and paid: the advance has captured, which is the state a
+    // customer is looking at when they reach the confirmation page.
+    p_initial_status: "confirmed",
+    p_payment_status: "paid",
+    p_shipping_flat_fee: SHIPPING,
+    p_free_shipping_above: null,
+    p_advance_amount: SHIPPING,
+    p_cod_handling_fee: 15_000,
+    p_guest_token: options.guest ? (token as string) : undefined,
+    p_user_id: options.guest ? undefined : options.userId,
+    p_contact_email: options.guest
+      ? `${QA_EMAIL_PREFIX}guest@example.com`
+      : undefined,
+    p_contact_phone: QA_ADDRESS.phone,
+  });
+  if (error) throw new Error(`could not place the fixture order: ${error.message}`);
+
+  const number = data?.[0]?.order_number;
+  if (!number) throw new Error("create_order_with_stock returned no order");
+
+  /**
+   * Save the address to the account's book, which the UI path used to do.
+   *
+   * `placeOrder` writes it when "save this address" is ticked, and the
+   * signed-in checkout states depend on the result: with no saved address there
+   * is no address *choice*, so `checkout-new-address` has no radio to select
+   * and the state cannot be reached. Placing the order server-side skipped
+   * that side effect, and the harness found it.
+   */
+  if (!options.guest) {
+    const { error: addressError } = await admin.from("addresses").insert({
+      user_id: options.userId,
+      recipient_name: QA_ADDRESS.recipientName,
+      phone: QA_ADDRESS.phone,
+      line1: QA_ADDRESS.line1,
+      line2: null,
+      city: QA_ADDRESS.city,
+      state: QA_ADDRESS.state,
+      postal_code: QA_ADDRESS.postalCode,
+      country: "IN",
+      is_default: true,
+    });
+    if (addressError) {
+      throw new Error(`could not save the fixture address: ${addressError.message}`);
+    }
+  }
+
+  await page.goto(`${BASE_URL}/order/${number}`, { waitUntil: "load" });
   return number;
+}
+
+/** `maybeSingle` with the error checked, because a silent null here is a lie. */
+async function maybeRowOrThrow<T>(
+  query: PromiseLike<{ data: unknown; error: { message: string } | null }>,
+  whenMissing: string,
+): Promise<T> {
+  const { data, error } = await query;
+  if (error) throw new Error(error.message);
+  if (!data) throw new Error(whenMissing);
+  return data as T;
 }
 
 /* ------------------------------------------------------ the failing bag ---- */
@@ -359,7 +433,10 @@ export async function buildFixture(browser: Browser): Promise<QaFixture> {
   const accountPage = await accountContext.newPage();
   accountPage.setDefaultNavigationTimeout(60_000);
   await addToBag(accountPage, FIXTURE_SLUGS[0]);
-  const accountOrderNumber = await placeCodOrder(accountPage, { guest: false });
+  const accountOrderNumber = await placeCodOrder(accountPage, {
+    guest: false,
+    userId: account.userId,
+  });
   // The order converted that cart. A second bag on top is what makes the
   // signed-in /checkout state — saved address plus lines — reachable at all.
   let accountLines = 0;

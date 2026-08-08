@@ -19,7 +19,17 @@
   --fv-paper: #fbfcfd; /* page base */
   --fv-orange: #fe9301; /* logo orange, exact. CTA fills, active states */
   --fv-orange-ink: #a85400; /* orange for TEXT on light. 5.20:1 */
-  --fv-green: #1f7a55; /* admin status chips ONLY */
+  --fv-green: #1f7a55; /* admin status chips ONLY — the FILL, not the text */
+  /*
+   * Green for TEXT sitting on a green-tinted chip. 5.28:1 there, 6.73:1 on
+   * paper.
+   *
+   * `--fv-green` was doing both jobs and could not: at 16% tint the fill lifts
+   * the background to #d8e7e2, and the same green on top of it measures 4.13:1
+   * — under AA for the 12px chip label. The orange pair already had this split
+   * for exactly this reason; green did not, and axe found it.
+   */
+  --fv-green-ink: #1a6849;
   /* Struck-through sold-out sizes, and every "there is nothing here" count in
      the filter panel. Was #98a1ae, which measured 2.54:1 on paper and 2.30:1
      on fog — both well under the 4.5:1 floor for 12px text, and this is text
@@ -108,6 +118,7 @@
   --color-orange: var(--fv-orange);
   --color-orange-ink: var(--fv-orange-ink);
   --color-brand-green: var(--fv-green);
+  --color-brand-green-ink: var(--fv-green-ink);
   --color-dim: var(--fv-dim);
 
   /* --- shadcn semantic colors -------------------------------------------- */
