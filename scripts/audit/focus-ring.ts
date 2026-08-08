@@ -222,9 +222,29 @@ async function main() {
     );
 
     await checkout.goto(`${BASE_URL}/checkout`, { waitUntil: "load" });
+    /**
+     * Waited for by *role*, not by name — and that is a fix, not a loosening.
+     *
+     * This waited for `/place order|^pay /i`, which the submit button cannot say
+     * until a delivery quote exists, which needs a postcode. The fixture is a
+     * **guest with a bag and no address**, so the label is "Enter a delivery
+     * address" and the wait could only ever time out. Measured on a fresh guest
+     * checkout, on this branch and on `main`:
+     *
+     *     submit buttons: ["", "Enter a delivery address"]
+     *
+     * A pre-existing failure rather than a Phase 7 regression —
+     * `checkout-flow.tsx` is byte-identical to `main` — but it means
+     * `npm run audit` has not completed for some time, because `audit:focus` is
+     * in that chain. What this assertion is actually for is that a `ui/button`
+     * paints the composite ring; the button's *copy* is the keyboard-checkout
+     * suite's business, and it asserts the pay label there with an address
+     * filled in.
+     */
     await checkout
-      .getByRole("button", { name: /place order|^pay /i })
-      .waitFor();
+      .locator('button[data-slot="button"][type="submit"]')
+      .first()
+      .waitFor({ state: "visible" });
     assertRing(
       "ui/button",
       await tabToRing(checkout, 'button[data-slot="button"]'),

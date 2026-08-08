@@ -463,17 +463,49 @@ invented numbers let a rounding rule pass that a real rate breaks.
 |---|---|
 | 1 · `advance + balance = goods + delivery`, across a range | `audit:totals` §2 — **450 combinations** of value × freight × RTO × GST × cap |
 | 2 · `balance ≥ 0`; below the minimum, POD is not offered | `audit:totals` §3 |
-| 3 · Shiprocket's COD collectable equals `balance` | `audit:shipping` (pre-existing, still asserted) |
+| 3 · Shiprocket's COD collectable equals `balance` | `audit:shipping` §6, and the balance now lands on a whole rupee so nothing rounds at the boundary |
 | 4 · a refused POD order leaves the shop at net zero | `audit:totals` §1 |
 | 5 · prepaid RTO refunds total − freight; shop error refunds in full | `audit:totals` §8 — the refund table, row by row |
 | 6 · a refund webhook replayed ten times produces one refund | **not built** — §7. `refunds.razorpay_refund_id` is unique, which is the floor, but nothing exercises it |
 | 7 · a refund cannot exceed the captured amount | `audit:totals` §8 — every branch × every cause |
 | 8 · stock returns on physical receipt, not on the tracking event | schema and state machine only — §7 |
-| 9 · courier and both legs stored on the order match the quote | schema and write path built; **not asserted** — §7 |
+| 9 · courier and both legs stored on the order match the quote | **proven on a live order** — see below |
 
 Guard rails that *are* built and measured: the COD minimum (method withdrawn,
 not advance clamped), the deposit cap, cap-then-total ordering, Razorpay's
 100-paise floor, the GST toggle, and the prepaid discount's clamps.
+
+### The model, proven end to end on a real order
+
+`npm run audit:keyboard-checkout` places a real Pay-on-Delivery order through
+the real checkout path, by keyboard. `FV-2026-00591`, against the live
+Shiprocket account:
+
+| Column | Value | |
+|---|---|---|
+| `quoted_courier_name` / `_id` | Delhivery Surface / 43 | the courier that quoted |
+| `quoted_forward_paise` | 13,936 | ₹139.36 — the freight leg |
+| `quoted_rto_paise` | 14,200 | ₹142.00 — the return leg, **same courier entry** |
+| `quoted_cod_fee_paise` | 21,434 | 3% of a ₹6,495 basket |
+| `quote_source` | `shiprocket` | a live rate, not the fallback |
+| `advance_amount` | 28,200 | ₹282 — the round trip, ₹281.36, to the next whole rupee |
+| `balance_due_on_delivery` | 657,300 | **a whole rupee**, so nothing rounds on the way to the courier |
+| `grand_total` | 685,500 | `28,200 + 657,300` ✓ |
+
+The order sits `pending` / `unpaid` until the webhook, and the button read
+**"Pay ₹282 now"** — the last thing the customer sees before pressing it is the
+amount about to leave their account.
+
+That closes assertion 9, which the adversarial pass correctly recorded as
+code-correct but unproven: at review time all eight orders in the database
+predated Phase 7 and carried null quote columns.
+
+**One caveat on the fixture orders.** `scripts/audit/fixtures.ts` calls
+`create_order_with_stock` **directly**, with hardcoded amounts, so the orders it
+leaves behind (`FV-2026-00582` and friends) carry null quote columns and the old
+advance shape. That is the fixture's job — it builds a *page state*, not a money
+path — but it means those rows are not evidence of anything about this model,
+and reading them as such would be a mistake.
 
 ### Weight, which was quietly wrong
 
@@ -675,17 +707,40 @@ sql   20260808140000_quote_freeze_columns.sql
 green. Measured on this branch:
 
 ```
-npm run typecheck         pass
-npm run lint              pass, 0 errors 0 warnings
-npm run shapes            16 cached shapes unchanged at v3
-npm run audit:totals      43 passed, 0 failed
-npm run audit:literals    135 files, 7 CMS pages, the announcement — clean
-npm run audit:shipping    57 passed, 0 failed   (against the mock)
-npm run audit:admin       23 held, 0 holes
-npm run audit:actions     77 passed, 0 failed   (34 admin actions, forged over HTTP)
-npm run audit:zero-stock  10 passed, 0 failed
-reconcile_inventory()     0 drifting variants
+npm run typecheck              pass
+npm run lint                   pass, 0 errors 0 warnings
+npm run shapes                 16 cached shapes unchanged at v3
+npm run audit:totals           43 passed, 0 failed
+npm run audit:literals         135 files, 7 CMS pages, the announcement — clean
+npm run audit:shipping         57 passed, 0 failed   (against the mock)
+npm run audit:admin            23 held, 0 holes
+npm run audit:actions          77 passed, 0 failed   (34 admin actions, forged over HTTP)
+npm run audit:zero-stock       10 passed, 0 failed
+npm run audit:overflow         22 routes + 15 states × 6 widths, 9,161 elements — clean
+npm run audit:a11y             no WCAG 2.2 A/AA violations, 22 routes + 15 states, 390 & 1440
+npm run audit:keyboard         clean
+npm run audit:keyboard-checkout  placed FV-2026-00591 by keyboard, advance ₹282
+npm run audit:focus            the indicator paints on every primitive
+npm run audit:hydration        console clean
+npm run audit:gallery          clean
+npm run audit:interactions     clean
+npm run audit:links            122 pages, 1,833 links — none broken
+reconcile_inventory()          0 drifting variants
 ```
+
+**`npm run audit:focus` was failing before this branch, and had been.** Its last
+assertion waited for a submit button named `/place order|^pay /i`, which the
+page cannot say until a delivery quote exists — and the fixture is a guest with
+a bag and **no address**, so the label is "Enter a delivery address". Measured
+on this branch and on `main`: `["", "Enter a delivery address"]`.
+`checkout-flow.tsx` is byte-identical to `main`, so this is not a Phase 7
+regression — but `audit:focus` is in the `npm run audit` chain, which means that
+chain has not completed for some time. The assertion now waits by role; the
+button's *copy* is `audit:keyboard-checkout`'s business and it asserts it there
+with an address filled in.
+
+**Not run:** `audit:lighthouse` against the Vercel preview, and the real tablet.
+Both need the branch deployed, which needs the PR. §7.
 
 Supabase's security advisors were run after the migrations. **Nothing new is
 flagged.** `refunds` does not appear — its RLS and its grants are correct — and
