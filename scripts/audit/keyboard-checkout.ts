@@ -25,7 +25,12 @@
  */
 import { chromium, type Page } from "playwright";
 
-import { createAccount, QA_ADDRESS, sessionCookies } from "./fixtures";
+import {
+  adminClient,
+  createAccount,
+  QA_ADDRESS,
+  sessionCookies,
+} from "./fixtures";
 import { BASE_URL } from "./routes";
 
 let failures = 0;
@@ -178,13 +183,60 @@ async function drawerFilled(page: Page) {
  * whose state refuses the press.
  */
 async function deliveryPriced(page: Page) {
+  /**
+   * Poll the *pay* button, not "any submit button that is not disabled".
+   *
+   * The header search is also a submit button, so
+   * `button[type=submit]:not([aria-disabled=true])` matched it and resolved
+   * instantly — the wait never waited, and every assertion after it read a
+   * checkout that had not been priced yet. The page has exactly one pay button
+   * and it is the last one.
+   */
   await page
-    .locator('button[type="submit"]:not([aria-disabled="true"])')
-    .last()
-    .waitFor({ state: "visible", timeout: 25_000 })
+    .waitForFunction(
+      () => {
+        const buttons = [
+          ...document.querySelectorAll('button[type="submit"]'),
+        ];
+        const pay = buttons[buttons.length - 1];
+        return pay ? pay.getAttribute("aria-disabled") !== "true" : false;
+      },
+      undefined,
+      { timeout: 25_000 },
+    )
     .catch(() => {
       problems.push("checkout never settled on a delivery price");
     });
+}
+
+/**
+ * The order the keypress just created, once the server has written it.
+ *
+ * Polled rather than awaited on a navigation, because there is no navigation:
+ * the Razorpay modal opens over the checkout. The row appears within a second
+ * or two of the press, so a short poll is honest and a long one would hide a
+ * real failure to place.
+ */
+async function waitForPlacedOrder(userId: string) {
+  const admin = adminClient();
+  for (let attempt = 0; attempt < 20; attempt++) {
+    const { data, error } = await admin
+      .from("orders")
+      .select(
+        "order_number, status, payment_status, grand_total, advance_amount, balance_due_on_delivery",
+      )
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error) {
+      problems.push(`could not read the placed order: ${error.message}`);
+      return null;
+    }
+    if (data) return data;
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  return null;
 }
 
 /** Type into whatever holds focus. Asserts it landed where it was aimed. */
@@ -397,27 +449,49 @@ async function main() {
     "checkout → Place order",
   );
   await page.keyboard.press("Enter");
-  await page.waitForURL(/\/order\/FV-/, { timeout: 60_000 });
-  const orderNumber = /\/order\/(FV-[0-9-]+)/.exec(page.url())?.[1] ?? "";
+
+  /**
+   * **Pressing pay no longer lands on the receipt, and that is the feature.**
+   *
+   * Pay on Delivery takes an advance through Razorpay before the order is
+   * confirmed, so the button opens a provider modal. The order itself is
+   * written first — `pending` and `unpaid`, holding its stock — and only the
+   * webhook confirms it. A headless run cannot complete a payment inside
+   * Razorpay's iframe, so what is asserted here is the half this shop owns:
+   * that the keypress created a real order with the right money on it.
+   */
+  const placed = await waitForPlacedOrder(account.userId);
   check(
-    "Enter on Place order placed a COD order",
-    orderNumber !== "",
-    orderNumber || page.url(),
+    "Enter on the pay button placed a Pay-on-Delivery order",
+    placed !== null,
+    placed?.order_number ?? "no order appeared",
   );
+  const orderNumber = placed?.order_number ?? "";
+  if (placed) {
+    check(
+      "it waits for the advance rather than confirming itself",
+      placed.status === "pending" && placed.payment_status === "unpaid",
+      `${placed.status}/${placed.payment_status}`,
+    );
+    check(
+      "the advance and the balance sum to the total",
+      placed.advance_amount + placed.balance_due_on_delivery ===
+        placed.grand_total,
+      `${placed.advance_amount} + ${placed.balance_due_on_delivery} = ${placed.grand_total}`,
+    );
+    check(
+      "the courier is left something to collect",
+      placed.balance_due_on_delivery > 0,
+      String(placed.balance_due_on_delivery),
+    );
+  }
 
   /* 9 ── find it in the history ───────────────────────────────────────────── */
-  await page.locator("h1").first().waitFor({ state: "visible" });
-  await tabTo(
-    page,
-    (s) => s.href === "/account/orders",
-    "receipt → See all your orders",
-  );
-  await page.keyboard.press("Enter");
-  await page.waitForURL("**/account/orders");
+  await page.goto(`${BASE_URL}/account/orders`, { waitUntil: "load" });
   await page.locator("h1").first().waitFor({ state: "visible" });
   check(
     "the order is in the account history",
-    (await page.getByText(orderNumber).count()) > 0,
+    orderNumber !== "" && (await page.getByText(orderNumber).count()) > 0,
     orderNumber,
   );
 
@@ -436,6 +510,7 @@ async function main() {
   check("tabbing off the end of the order history is possible", reachedEnd);
 
   await browser.close();
+  await releaseOrder(orderNumber);
 
   for (const problem of [...new Set(problems)]) {
     failures++;
@@ -450,6 +525,38 @@ async function main() {
   );
   console.log(`  (account left behind: ${account.email})\n`);
   process.exit(failures === 0 ? 0 : 1);
+}
+
+/**
+ * Give the stock back.
+ *
+ * This suite now places a real order, and a Pay-on-Delivery order holds its
+ * units from the moment it is written until the advance captures or the sweep
+ * cancels it thirty minutes later. Run the suite a few times in a row without
+ * this and the fixture product sells out — which is exactly what happened, and
+ * the next run failed at "an in-stock size is selectable" with no clue why.
+ */
+async function releaseOrder(orderNumber: string): Promise<void> {
+  if (!orderNumber) return;
+  const admin = adminClient();
+  const { data, error } = await admin
+    .from("orders")
+    .select("id, status")
+    .eq("order_number", orderNumber)
+    .maybeSingle();
+  if (error || !data || data.status !== "pending") return;
+
+  const { error: cancelError } = await admin.rpc("cancel_order_with_restock", {
+    p_order_id: data.id,
+    p_reason: "Audit fixture cleanup: releasing stock held by a test order",
+    p_require_unpaid: true,
+    p_release_cart: true,
+  });
+  if (cancelError) {
+    console.error(
+      `  !! ${orderNumber} still holds its stock: ${cancelError.message}`,
+    );
+  }
 }
 
 main().catch((error) => {

@@ -226,18 +226,29 @@ export function CheckoutFlow({
   useEffect(() => {
     if (!/^\d{6}$/.test(pin) || !method) return;
 
-    let cancelled = false;
-    // Debounced: a pin code is typed a digit at a time and only the sixth
-    // keystroke is worth a round trip. `setQuoting` lives inside the timer so
-    // nothing writes state synchronously from the effect body.
+    /**
+     * Debounced: a pin code is typed a digit at a time and only the sixth
+     * keystroke is worth a round trip. `setQuoting` lives inside the timer so
+     * nothing writes state synchronously from the effect body.
+     *
+     * **An answer that arrives is never thrown away.** This used to abandon the
+     * response when the effect had been cleaned up in the meantime, which meant
+     * a re-run could leave `quoting` stuck true and no quote at all — and once
+     * the Place Order button started gating on a quote, that stopped being
+     * cosmetic and became a checkout nobody could complete.
+     *
+     * Staleness is already handled where it belongs: the answer is stored under
+     * the `(pin, method)` it was fetched for, and the render only shows it when
+     * that key still matches what the customer is looking at. So a late reply
+     * for a previous address costs a map entry and is never displayed, and a
+     * reply for the *current* one is kept whatever the effect did in between.
+     */
     const timer = setTimeout(async () => {
-      if (cancelled) return;
       setQuoting(true);
       const result = await quoteShipping({
         postalCode: pin,
         paymentMethod: method,
       });
-      if (cancelled) return;
       setQuoting(false);
       setQuoteFailed(!result.ok);
       // A failed quote leaves whatever is on screen alone. `placeOrder` prices
@@ -260,10 +271,7 @@ export function CheckoutFlow({
       }
     }, 400);
 
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
+    return () => clearTimeout(timer);
   }, [pin, method]);
 
   /**
