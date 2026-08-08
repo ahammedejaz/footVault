@@ -48,7 +48,9 @@ export async function listAddresses(): Promise<SavedAddress[]> {
     "listAddresses",
     supabase
       .from("addresses")
-      .select("id, label, is_default, recipient_name, phone, line1, line2, city, state, postal_code")
+      .select(
+        "id, label, is_default, recipient_name, phone, line1, line2, city, state, postal_code",
+      )
       .eq("user_id", user.id)
       .order("is_default", { ascending: false })
       .order("created_at", { ascending: false }),

@@ -22,7 +22,12 @@ export type OrderConfirmationInput = {
   to: string;
   customerName: string;
   paymentMethod: PaymentMethod;
-  lines: { productName: string; size: string; quantity: number; lineTotal: number }[];
+  lines: {
+    productName: string;
+    size: string;
+    quantity: number;
+    lineTotal: number;
+  }[];
   totals: OrderTotals;
   shippingAddress: ShippingAddress;
 };
@@ -54,7 +59,9 @@ function escapeHtml(value: string): string {
     .replace(/"/g, "&quot;");
 }
 
-export function buildOrderConfirmationEmail(input: OrderConfirmationInput): EmailMessage {
+export function buildOrderConfirmationEmail(
+  input: OrderConfirmationInput,
+): EmailMessage {
   const orderUrl = `${SITE_URL}/order/${encodeURIComponent(input.orderNumber)}`;
   const address = addressLines(input.shippingAddress);
 

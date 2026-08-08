@@ -19,7 +19,11 @@ import type { CartAdjustment } from "@/lib/cart-types";
  * the stored quantities and price snapshots up to date so the notice does not
  * follow them around afterwards.
  */
-export function CartNotices({ adjustments }: { adjustments: CartAdjustment[] }) {
+export function CartNotices({
+  adjustments,
+}: {
+  adjustments: CartAdjustment[];
+}) {
   const [dismissed, setDismissed] = useState(false);
   const [pending, startTransition] = useTransition();
 
@@ -39,7 +43,9 @@ export function CartNotices({ adjustments }: { adjustments: CartAdjustment[] }) 
       </p>
       <ul className="mt-2 space-y-1.5 text-sm">
         {adjustments.map((adjustment, index) => (
-          <li key={`${adjustment.kind}-${adjustment.name}-${adjustment.size}-${index}`}>
+          <li
+            key={`${adjustment.kind}-${adjustment.name}-${adjustment.size}-${index}`}
+          >
             {sentence(adjustment)}
           </li>
         ))}
@@ -70,7 +76,8 @@ function sentence(adjustment: CartAdjustment): string {
 
   switch (adjustment.kind) {
     case "price": {
-      const direction = adjustment.to > adjustment.from ? "went up" : "came down";
+      const direction =
+        adjustment.to > adjustment.from ? "went up" : "came down";
       return `${item} ${direction} from ${formatPaise(adjustment.from)} to ${formatPaise(adjustment.to)}.`;
     }
     case "stock":

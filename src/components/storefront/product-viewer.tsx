@@ -75,32 +75,40 @@ export function ProductViewer({
   // for.
   const [needsSize, setNeedsSize] = React.useState(false);
 
-  const active = colourways.find((c) => c.name === colourway) ?? colourways[0] ?? null;
+  const active =
+    colourways.find((c) => c.name === colourway) ?? colourways[0] ?? null;
 
   // The size run narrows to the chosen colourway when there is one; the card's
   // run is the union across colourways, and this is where that resolves.
-  const sizes = active && active.sizes.length > 0 ? active.sizes : product.sizes;
-  const images = active && active.images.length > 0 ? active.images : product.images;
+  const sizes =
+    active && active.sizes.length > 0 ? active.sizes : product.sizes;
+  const images =
+    active && active.images.length > 0 ? active.images : product.images;
 
   const available = sizes.filter((entry) => entry.available);
   const selected = size ?? (available.length === 1 ? available[0]!.size : null);
-  const selectedEntry = selected ? sizes.find((entry) => entry.size === selected) : undefined;
+  const selectedEntry = selected
+    ? sizes.find((entry) => entry.size === selected)
+    : undefined;
   const inStock = available.length > 0;
 
   /* --- write it back ------------------------------------------------------ */
-  const syncUrl = React.useCallback((next: { color?: string | null; size?: string | null }) => {
-    const params = new URLSearchParams(window.location.search);
-    for (const [key, value] of Object.entries(next)) {
-      if (value) params.set(key, value);
-      else params.delete(key);
-    }
-    const query = params.toString();
-    window.history.replaceState(
-      null,
-      "",
-      `${window.location.pathname}${query ? `?${query}` : ""}`,
-    );
-  }, []);
+  const syncUrl = React.useCallback(
+    (next: { color?: string | null; size?: string | null }) => {
+      const params = new URLSearchParams(window.location.search);
+      for (const [key, value] of Object.entries(next)) {
+        if (value) params.set(key, value);
+        else params.delete(key);
+      }
+      const query = params.toString();
+      window.history.replaceState(
+        null,
+        "",
+        `${window.location.pathname}${query ? `?${query}` : ""}`,
+      );
+    },
+    [],
+  );
 
   const chooseColour = (name: string) => {
     setColourway(name);
@@ -177,12 +185,18 @@ export function ProductViewer({
             size="lg"
             className="mt-4"
           />
-          <p className="text-muted-foreground mt-1 text-sm">Inclusive of all taxes</p>
+          <p className="text-muted-foreground mt-1 text-sm">
+            Inclusive of all taxes
+          </p>
 
           {colourways.length > 1 ? (
             <div className="mt-8">
-              <h2 id="colour-label" className="font-mono text-xs tracking-[0.06em] uppercase">
-                Colour · <span className="text-muted-foreground">{active?.name}</span>
+              <h2
+                id="colour-label"
+                className="font-mono text-xs tracking-[0.06em] uppercase"
+              >
+                Colour ·{" "}
+                <span className="text-muted-foreground">{active?.name}</span>
               </h2>
               <div
                 role="radiogroup"
@@ -191,7 +205,9 @@ export function ProductViewer({
               >
                 {colourways.map((colour) => {
                   const isActive = colour.name === active?.name;
-                  const soldOut = !colour.sizes.some((entry) => entry.available);
+                  const soldOut = !colour.sizes.some(
+                    (entry) => entry.available,
+                  );
                   return (
                     <button
                       key={colour.name}
@@ -213,13 +229,17 @@ export function ProductViewer({
                         style={{
                           backgroundColor:
                             colour.hex ??
-                            (colour.family ? COLOR_FAMILY_SWATCH[colour.family] : undefined) ??
+                            (colour.family
+                              ? COLOR_FAMILY_SWATCH[colour.family]
+                              : undefined) ??
                             "transparent",
                         }}
                       />
                       {colour.name}
                       {soldOut ? (
-                        <span className="text-dim font-mono text-xs">— sold out</span>
+                        <span className="text-dim font-mono text-xs">
+                          — sold out
+                        </span>
                       ) : null}
                     </button>
                   );
@@ -230,7 +250,10 @@ export function ProductViewer({
 
           <div className="mt-8">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 id="size-label" className="font-mono text-xs tracking-[0.06em] uppercase">
+              <h2
+                id="size-label"
+                className="font-mono text-xs tracking-[0.06em] uppercase"
+              >
                 Size · UK
               </h2>
               <SizeGuide gender={product.gender} highlight={selected} />
@@ -244,7 +267,8 @@ export function ProductViewer({
                 // and recolouring them to say "look here" would overwrite it.
                 // `ring-state-low` was a cut token, so this ring never drew:
                 // "choose a size first" pointed at nothing.
-                needsSize && "ring-destructive/60 ring-2 ring-offset-4 ring-offset-background",
+                needsSize &&
+                  "ring-destructive/60 ring-2 ring-offset-4 ring-offset-background",
               )}
             >
               <SizeSelector
@@ -260,16 +284,24 @@ export function ProductViewer({
               its own. A reserved two lines, so the panel does not jump when the
               sentence changes length.
             */}
-            <p className="mt-4 min-h-10 text-sm" aria-live="polite" aria-atomic="true">
+            <p
+              className="mt-4 min-h-10 text-sm"
+              aria-live="polite"
+              aria-atomic="true"
+            >
               {!inStock ? (
                 <span className="text-muted-foreground">
-                  Sold out in every size{colourways.length > 1 ? " in this colour" : ""}. The
-                  run above is the full run — nothing is hidden.
+                  Sold out in every size
+                  {colourways.length > 1 ? " in this colour" : ""}. The run
+                  above is the full run — nothing is hidden.
                 </span>
               ) : selectedEntry && !selectedEntry.available ? (
                 <span className="text-muted-foreground">
-                  <span className="text-foreground font-medium">UK {selectedEntry.size}</span>{" "}
-                  is sold out. Sizes without a line through them are on the shelf.
+                  <span className="text-foreground font-medium">
+                    UK {selectedEntry.size}
+                  </span>{" "}
+                  is sold out. Sizes without a line through them are on the
+                  shelf.
                 </span>
               ) : selectedEntry && selectedEntry.stock <= 3 ? (
                 <span className="text-muted-foreground">
@@ -293,7 +325,11 @@ export function ProductViewer({
 
           <div ref={ctaRef} className="mt-6 flex flex-col gap-3 sm:flex-row">
             <AddToBag
-              variantId={selectedEntry?.available ? (selectedEntry.variantId ?? null) : null}
+              variantId={
+                selectedEntry?.available
+                  ? (selectedEntry.variantId ?? null)
+                  : null
+              }
               className="sm:flex-1"
               soldOut={!inStock}
               onNeedSize={askForSize}
@@ -315,7 +351,9 @@ export function ProductViewer({
               needsSize ? "text-destructive" : "text-muted-foreground",
             )}
           >
-            {inStock ? "Choose a size to add it to your bag" : "Sold out in every size"}
+            {inStock
+              ? "Choose a size to add it to your bag"
+              : "Sold out in every size"}
           </p>
 
           {children}
@@ -347,7 +385,11 @@ export function ProductViewer({
             </p>
           </div>
           <AddToBag
-            variantId={selectedEntry?.available ? (selectedEntry.variantId ?? null) : null}
+            variantId={
+              selectedEntry?.available
+                ? (selectedEntry.variantId ?? null)
+                : null
+            }
             soldOut={!inStock}
             onNeedSize={askForSize}
             className="shrink-0"

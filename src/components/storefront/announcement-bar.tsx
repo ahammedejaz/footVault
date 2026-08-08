@@ -39,7 +39,9 @@ export async function AnnouncementBar() {
   if (cookieStore.get(ANNOUNCEMENT_COOKIE)?.value === key) return null;
 
   const content = (
-    <span className="font-mono text-xs tracking-[0.06em]">{announcement.text}</span>
+    <span className="font-mono text-xs tracking-[0.06em]">
+      {announcement.text}
+    </span>
   );
 
   return (

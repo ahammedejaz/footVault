@@ -31,7 +31,9 @@ import { BASE_URL } from "./routes";
 let failures = 0;
 function check(name: string, passed: boolean, detail = "") {
   if (!passed) failures++;
-  console.log(`  ${passed ? "PASS" : "FAIL"}  ${name}${detail ? `  — ${detail}` : ""}`);
+  console.log(
+    `  ${passed ? "PASS" : "FAIL"}  ${name}${detail ? `  — ${detail}` : ""}`,
+  );
 }
 
 type Stop = {
@@ -59,15 +61,22 @@ async function focused(page: Page): Promise<Stop | null> {
     const hostStyle = getComputedStyle(host);
     return {
       tag: el.tagName.toLowerCase(),
-      name: (el.getAttribute("aria-label") || el.textContent || el.getAttribute("name") || "")
+      name: (
+        el.getAttribute("aria-label") ||
+        el.textContent ||
+        el.getAttribute("name") ||
+        ""
+      )
         .trim()
         .slice(0, 44),
       href: el.getAttribute("href"),
       role: el.getAttribute("role"),
       visible: box.width > 0 && box.height > 0 && style.visibility !== "hidden",
       outline:
-        (style.outlineStyle !== "none" && Number.parseFloat(style.outlineWidth) > 0) ||
-        (hostStyle.outlineStyle !== "none" && Number.parseFloat(hostStyle.outlineWidth) > 0),
+        (style.outlineStyle !== "none" &&
+          Number.parseFloat(style.outlineWidth) > 0) ||
+        (hostStyle.outlineStyle !== "none" &&
+          Number.parseFloat(hostStyle.outlineWidth) > 0),
       halo: style.boxShadow !== "none" || hostStyle.boxShadow !== "none",
       inDialog: Boolean(el.closest('[role="dialog"]')),
       // Identity, not a name. Three cart lines each carry a "Remove" button
@@ -113,9 +122,14 @@ async function tabTo(
     const stop = await focused(page);
     if (!stop) continue;
     if (stop.revisits === 1) distinct++;
-    if (!stop.visible) problems.push(`${label}: focus landed on an invisible ${stop.tag} "${stop.name}"`);
-    if (!stop.outline) problems.push(`${label}: no outline on ${stop.tag} "${stop.name}"`);
-    if (!stop.halo) problems.push(`${label}: no focus halo on ${stop.tag} "${stop.name}"`);
+    if (!stop.visible)
+      problems.push(
+        `${label}: focus landed on an invisible ${stop.tag} "${stop.name}"`,
+      );
+    if (!stop.outline)
+      problems.push(`${label}: no outline on ${stop.tag} "${stop.name}"`);
+    if (!stop.halo)
+      problems.push(`${label}: no focus halo on ${stop.tag} "${stop.name}"`);
     if (match(stop)) return stop;
   }
   problems.push(
@@ -126,21 +140,31 @@ async function tabTo(
 
 /** Type into whatever holds focus. Asserts it landed where it was aimed. */
 async function typeInto(page: Page, id: string, value: string, label: string) {
-  const stop = await tabTo(page, (s) => s.tag === "input" || s.tag === "textarea", `${label} field`);
+  const stop = await tabTo(
+    page,
+    (s) => s.tag === "input" || s.tag === "textarea",
+    `${label} field`,
+  );
   const actualId = await page.evaluate(() => document.activeElement?.id ?? "");
   if (actualId !== id) {
-    problems.push(`${label}: Tab reached #${actualId || stop?.tag} rather than #${id}`);
+    problems.push(
+      `${label}: Tab reached #${actualId || stop?.tag} rather than #${id}`,
+    );
     return;
   }
   await page.keyboard.type(value);
 }
 
 async function main() {
-  console.log("\nBrowse → bag → checkout → COD order → order history, by keyboard only\n");
+  console.log(
+    "\nBrowse → bag → checkout → COD order → order history, by keyboard only\n",
+  );
 
   const account = await createAccount("keyboard");
   const browser = await chromium.launch();
-  const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const context = await browser.newContext({
+    viewport: { width: 1440, height: 900 },
+  });
   await context.addCookies(await sessionCookies(account.session));
   const page = await context.newPage();
   page.setDefaultNavigationTimeout(60_000);
@@ -152,13 +176,19 @@ async function main() {
   await page.waitForURL("**/shop/men");
   await page.locator("h1").first().waitFor({ state: "visible" });
 
-  await tabTo(page, (s) => Boolean(s.href?.startsWith("/product/")), "listing → a product");
+  await tabTo(
+    page,
+    (s) => Boolean(s.href?.startsWith("/product/")),
+    "listing → a product",
+  );
   await page.keyboard.press("Enter");
   await page.waitForURL("**/product/**");
   await page.locator("h1").first().waitFor({ state: "visible" });
 
   /* 2 ── a size, with the arrow keys ──────────────────────────────────────── */
-  const group = page.locator('[role="radiogroup"][aria-labelledby="size-label"]');
+  const group = page.locator(
+    '[role="radiogroup"][aria-labelledby="size-label"]',
+  );
   await group.waitFor({ state: "visible" });
   await tabTo(page, (s) => s.role === "radio", "product → the size run");
 
@@ -175,7 +205,11 @@ async function main() {
     }
     await page.keyboard.press("ArrowRight");
   }
-  check("an in-stock size is selectable with the arrow keys", chosen !== "", chosen || "none found");
+  check(
+    "an in-stock size is selectable with the arrow keys",
+    chosen !== "",
+    chosen || "none found",
+  );
   await page.waitForTimeout(600);
 
   /* 3 ── add to bag ───────────────────────────────────────────────────────── */
@@ -200,7 +234,11 @@ async function main() {
     const stop = await focused(page);
     if (stop && !stop.inDialog) escaped++;
   }
-  check("focus stays inside the open drawer", escaped === 0, `${escaped} of 25 stops outside it`);
+  check(
+    "focus stays inside the open drawer",
+    escaped === 0,
+    `${escaped} of 25 stops outside it`,
+  );
 
   await page.keyboard.press("Escape");
   await drawer.waitFor({ state: "hidden", timeout: 10_000 });
@@ -208,7 +246,9 @@ async function main() {
   check(
     "Escape closes the drawer and returns focus to the header bag",
     returned?.href === "/cart",
-    returned ? `${returned.tag} "${returned.name}"` : "focus was lost to the body",
+    returned
+      ? `${returned.tag} "${returned.name}"`
+      : "focus was lost to the body",
   );
 
   /* 5 ── the bag page → checkout ──────────────────────────────────────────── */
@@ -219,7 +259,12 @@ async function main() {
   await page.locator('a[href="/cart"]').first().focus();
   await page.keyboard.press("Enter");
   await drawer.waitFor({ state: "visible", timeout: 15_000 });
-  await tabTo(page, (s) => /go to your bag/i.test(s.name), "drawer → Go to your bag", 40);
+  await tabTo(
+    page,
+    (s) => /go to your bag/i.test(s.name),
+    "drawer → Go to your bag",
+    40,
+  );
   await page.keyboard.press("Enter");
   await page.waitForURL("**/cart");
   await page.locator("h1").first().waitFor({ state: "visible" });
@@ -227,25 +272,44 @@ async function main() {
   await tabTo(page, (s) => s.href === "/checkout", "bag → Checkout");
   await page.keyboard.press("Enter");
   await page.waitForURL("**/checkout");
-  await page.locator("#checkout-recipientName").waitFor({ state: "visible", timeout: 20_000 });
+  await page
+    .locator("#checkout-recipientName")
+    .waitFor({ state: "visible", timeout: 20_000 });
   check("checkout is reachable by keyboard from the bag", true, page.url());
 
   /* 6 ── the address ──────────────────────────────────────────────────────── */
   await page.locator("h1").first().focus();
-  await typeInto(page, "checkout-recipientName", QA_ADDRESS.recipientName, "recipient");
+  await typeInto(
+    page,
+    "checkout-recipientName",
+    QA_ADDRESS.recipientName,
+    "recipient",
+  );
   await typeInto(page, "checkout-phone", QA_ADDRESS.phone, "phone");
   await typeInto(page, "checkout-line1", QA_ADDRESS.line1, "line 1");
   await typeInto(page, "checkout-line2", "", "line 2");
   await typeInto(page, "checkout-city", QA_ADDRESS.city, "city");
-  await typeInto(page, "checkout-postalCode", QA_ADDRESS.postalCode, "PIN code");
+  await typeInto(
+    page,
+    "checkout-postalCode",
+    QA_ADDRESS.postalCode,
+    "PIN code",
+  );
 
   // The state field is a native <select> precisely so the keyboard already
   // works: focus it and type the name.
   const state = await tabTo(page, (s) => s.tag === "select", "address → State");
   await page.keyboard.type(QA_ADDRESS.state);
   const stateValue = await page.locator("#checkout-state").inputValue();
-  check("the state select takes a typed value", stateValue === QA_ADDRESS.state, stateValue || "empty");
-  check("the state select shows a focus indicator", Boolean(state?.outline && state?.halo));
+  check(
+    "the state select takes a typed value",
+    stateValue === QA_ADDRESS.state,
+    stateValue || "empty",
+  );
+  check(
+    "the state select shows a focus indicator",
+    Boolean(state?.outline && state?.halo),
+  );
 
   /* 7 ── the payment method ───────────────────────────────────────────────── */
   const radio = await tabTo(
@@ -253,20 +317,37 @@ async function main() {
     (s) => s.tag === "input" && s.name === "paymentMethod",
     "checkout → payment method",
   );
-  check("the payment choice shows a focus indicator on its card", Boolean(radio?.outline));
-  const codChecked = await page.locator('input[name="paymentMethod"][value="cod"]').isChecked();
+  check(
+    "the payment choice shows a focus indicator on its card",
+    Boolean(radio?.outline),
+  );
+  const codChecked = await page
+    .locator('input[name="paymentMethod"][value="cod"]')
+    .isChecked();
   check("cash on delivery is the reachable default", codChecked);
 
   /* 8 ── place it ─────────────────────────────────────────────────────────── */
-  await tabTo(page, (s) => /place order|^pay /i.test(s.name), "checkout → Place order");
+  await tabTo(
+    page,
+    (s) => /place order|^pay /i.test(s.name),
+    "checkout → Place order",
+  );
   await page.keyboard.press("Enter");
   await page.waitForURL(/\/order\/FV-/, { timeout: 60_000 });
   const orderNumber = /\/order\/(FV-[0-9-]+)/.exec(page.url())?.[1] ?? "";
-  check("Enter on Place order placed a COD order", orderNumber !== "", orderNumber || page.url());
+  check(
+    "Enter on Place order placed a COD order",
+    orderNumber !== "",
+    orderNumber || page.url(),
+  );
 
   /* 9 ── find it in the history ───────────────────────────────────────────── */
   await page.locator("h1").first().waitFor({ state: "visible" });
-  await tabTo(page, (s) => s.href === "/account/orders", "receipt → See all your orders");
+  await tabTo(
+    page,
+    (s) => s.href === "/account/orders",
+    "receipt → See all your orders",
+  );
   await page.keyboard.press("Enter");
   await page.waitForURL("**/account/orders");
   await page.locator("h1").first().waitFor({ state: "visible" });
@@ -310,7 +391,11 @@ async function main() {
 main().catch((error) => {
   // The findings so far are the point of the run; losing them because a later
   // step could not proceed is how one defect hides the six checks behind it.
-  for (const problem of [...new Set(problems)]) console.log(`  FAIL  ${problem}`);
-  console.error("\nHarness stopped early:", (error as Error).message.split("\n")[0]);
+  for (const problem of [...new Set(problems)])
+    console.log(`  FAIL  ${problem}`);
+  console.error(
+    "\nHarness stopped early:",
+    (error as Error).message.split("\n")[0],
+  );
   process.exit(1);
 });

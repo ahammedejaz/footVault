@@ -42,7 +42,9 @@ export default async function CheckoutPage() {
   const addresses = user ? await listAddresses() : [];
   const methods = availablePaymentMethods();
 
-  const shippingFee = cart.freeShipping.qualified ? 0 : cart.freeShipping.feePaise;
+  const shippingFee = cart.freeShipping.qualified
+    ? 0
+    : cart.freeShipping.feePaise;
 
   /**
    * Tax is zero on the line, not absent from the price.

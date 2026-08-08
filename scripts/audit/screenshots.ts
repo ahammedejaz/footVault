@@ -12,7 +12,9 @@ import { AUDIT_ROUTES, AUDIT_WIDTHS, BASE_URL } from "./routes";
 
 const OUT = process.argv[2] ?? "screenshots";
 const ONLY = process.env.ROUTES?.split(",");
-const WIDTHS = process.env.WIDTHS ? process.env.WIDTHS.split(",").map(Number) : AUDIT_WIDTHS;
+const WIDTHS = process.env.WIDTHS
+  ? process.env.WIDTHS.split(",").map(Number)
+  : AUDIT_WIDTHS;
 
 async function main() {
   mkdirSync(OUT, { recursive: true });
@@ -41,16 +43,27 @@ async function main() {
 
     for (const route of AUDIT_ROUTES) {
       if (ONLY && !ONLY.includes(route.name)) continue;
-      await page.goto(`${BASE_URL}${route.path}`, { waitUntil: "domcontentloaded" });
-      await page.locator("h1").first().waitFor({ state: "visible" }).catch(() => {});
+      await page.goto(`${BASE_URL}${route.path}`, {
+        waitUntil: "domcontentloaded",
+      });
+      await page
+        .locator("h1")
+        .first()
+        .waitFor({ state: "visible" })
+        .catch(() => {});
       await page.waitForTimeout(400);
-      await page.screenshot({ path: `${OUT}/${route.name}-${width}.png`, fullPage: true });
+      await page.screenshot({
+        path: `${OUT}/${route.name}-${width}.png`,
+        fullPage: true,
+      });
     }
     await context.close();
   }
 
   await browser.close();
-  console.log(`Wrote ${OUT}/ — ${AUDIT_ROUTES.length} routes × ${WIDTHS.length} widths.`);
+  console.log(
+    `Wrote ${OUT}/ — ${AUDIT_ROUTES.length} routes × ${WIDTHS.length} widths.`,
+  );
 }
 
 void main();

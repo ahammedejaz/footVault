@@ -42,7 +42,9 @@ const addressIdSchema = z.uuid();
  * or not — a book of one with nothing preselected makes checkout ask a question
  * that has only one answer.
  */
-export async function saveAddress(input: unknown): Promise<ActionResult<{ id: string }>> {
+export async function saveAddress(
+  input: unknown,
+): Promise<ActionResult<{ id: string }>> {
   const parsed = addressBookSchema.safeParse(input);
   if (!parsed.success) {
     return { ok: false, message: parsed.error.issues[0]?.message ?? GENERIC };
@@ -57,7 +59,12 @@ export async function saveAddress(input: unknown): Promise<ActionResult<{ id: st
 
     const existing = await maybeRow<{ id: string }>(
       "saveAddress.existing",
-      supabase.from("addresses").select("id").eq("user_id", user.id).limit(1).maybeSingle(),
+      supabase
+        .from("addresses")
+        .select("id")
+        .eq("user_id", user.id)
+        .limit(1)
+        .maybeSingle(),
     );
     const isDefault = address.isDefault || !existing;
 
@@ -106,7 +113,9 @@ export async function saveAddress(input: unknown): Promise<ActionResult<{ id: st
  * with no default would make the next checkout preselect nothing, which reads
  * as the shop having forgotten where the customer lives.
  */
-export async function deleteAddress(id: string): Promise<ActionResult<undefined>> {
+export async function deleteAddress(
+  id: string,
+): Promise<ActionResult<undefined>> {
   const parsed = addressIdSchema.safeParse(id);
   if (!parsed.success) return { ok: false, message: GENERIC };
 
@@ -131,10 +140,16 @@ export async function deleteAddress(id: string): Promise<ActionResult<undefined>
       return { ok: true, data: undefined };
     }
 
-    const { error } = await supabase.from("addresses").delete().eq("id", target.id);
+    const { error } = await supabase
+      .from("addresses")
+      .delete()
+      .eq("id", target.id);
     if (error) {
       console.error("[address] delete failed:", error.message);
-      return { ok: false, message: "That address could not be removed. Try again." };
+      return {
+        ok: false,
+        message: "That address could not be removed. Try again.",
+      };
     }
 
     if (target.is_default) {
@@ -157,7 +172,10 @@ export async function deleteAddress(id: string): Promise<ActionResult<undefined>
         // default is a smaller problem than telling the customer the removal
         // failed when it did not.
         if (promoteError) {
-          console.error("[address] promoting an heir failed:", promoteError.message);
+          console.error(
+            "[address] promoting an heir failed:",
+            promoteError.message,
+          );
         }
       }
     }
@@ -173,7 +191,9 @@ export async function deleteAddress(id: string): Promise<ActionResult<undefined>
 /* ---------------------------------------------------------------- default -- */
 
 /** Make one entry the default. Demote first: the unique index allows only one. */
-export async function setDefaultAddress(id: string): Promise<ActionResult<undefined>> {
+export async function setDefaultAddress(
+  id: string,
+): Promise<ActionResult<undefined>> {
   const parsed = addressIdSchema.safeParse(id);
   if (!parsed.success) return { ok: false, message: GENERIC };
 
@@ -192,7 +212,8 @@ export async function setDefaultAddress(id: string): Promise<ActionResult<undefi
         .eq("user_id", user.id)
         .maybeSingle(),
     );
-    if (!target) return { ok: false, message: "That address is no longer saved." };
+    if (!target)
+      return { ok: false, message: "That address is no longer saved." };
     if (target.is_default) return { ok: true, data: undefined };
 
     const cleared = await clearDefault(user.id);

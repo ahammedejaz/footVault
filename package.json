@@ -19,7 +19,7 @@
     "audit:links": "tsx scripts/audit/links.ts",
     "audit:keyboard": "tsx scripts/audit/keyboard.ts",
     "audit:shots": "tsx scripts/audit/screenshots.ts",
-    "audit": "npm run audit:overflow && npm run audit:a11y && npm run audit:keyboard && npm run audit:keyboard-checkout && npm run audit:focus && npm run audit:gallery && npm run audit:hydration && npm run audit:interactions && npm run audit:links && npm run audit:auth && npm run audit:cart && npm run audit:bag && npm run audit:signedin && npm run audit:checkout",
+    "audit": "npm run audit:overflow && npm run audit:a11y && npm run audit:keyboard && npm run audit:keyboard-checkout && npm run audit:focus && npm run audit:gallery && npm run audit:hydration && npm run audit:interactions && npm run audit:links && npm run audit:auth && npm run audit:cart && npm run audit:bag && npm run audit:signedin && npm run audit:checkout && npm run audit:admin && npm run audit:shipping",
     "audit:interactions": "tsx scripts/audit/interactions.ts",
     "audit:auth": "tsx scripts/audit/auth-rls.ts",
     "audit:cart": "tsx scripts/audit/cart-merge.ts",
@@ -32,7 +32,9 @@
     "audit:hydration": "tsx scripts/audit/hydration.ts",
     "audit:gallery": "tsx scripts/audit/gallery.ts",
     "audit:lighthouse": "tsx scripts/audit/lighthouse.ts",
-    "audit:teardown": "tsx scripts/audit/teardown.ts"
+    "audit:teardown": "tsx scripts/audit/teardown.ts",
+    "audit:shipping": "NODE_OPTIONS=--conditions=react-server tsx scripts/audit/shipping.ts",
+    "audit:admin": "tsx scripts/audit/admin-security.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.7.1",

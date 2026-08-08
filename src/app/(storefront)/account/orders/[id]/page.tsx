@@ -54,7 +54,8 @@ export default async function AccountOrderPage({
       </div>
 
       <p className="text-muted-foreground mt-2 text-sm">
-        Placed on <time dateTime={order.placedAt}>{formatOrderDate(order.placedAt)}</time>
+        Placed on{" "}
+        <time dateTime={order.placedAt}>{formatOrderDate(order.placedAt)}</time>
       </p>
 
       <OrderDetail order={order} />

@@ -32,7 +32,12 @@ import { tmpdir } from "node:os";
 
 import { BASE_URL } from "./routes";
 
-const CATEGORIES = ["performance", "accessibility", "best-practices", "seo"] as const;
+const CATEGORIES = [
+  "performance",
+  "accessibility",
+  "best-practices",
+  "seo",
+] as const;
 type Category = (typeof CATEGORIES)[number];
 
 /** The five routes the gate names. */
@@ -49,12 +54,15 @@ const THRESHOLD = 90;
 /** Only the slice of the report this reads. Everything else is ignored. */
 type Report = {
   categories: Record<Category, { score: number | null }>;
-  audits: Record<string, {
-    numericValue?: number;
-    displayValue?: string;
-    score?: number | null;
-    errorMessage?: string;
-  }>;
+  audits: Record<
+    string,
+    {
+      numericValue?: number;
+      displayValue?: string;
+      score?: number | null;
+      errorMessage?: string;
+    }
+  >;
 };
 
 function chromePath(): string | undefined {
@@ -92,7 +100,10 @@ function run(url: string, outDir: string, name: string): Report {
 
   execFileSync("npx", args, {
     stdio: ["ignore", "ignore", "pipe"],
-    env: { ...process.env, ...(chromePath() ? { CHROME_PATH: chromePath() } : {}) },
+    env: {
+      ...process.env,
+      ...(chromePath() ? { CHROME_PATH: chromePath() } : {}),
+    },
     timeout: 240_000,
   });
   return JSON.parse(readFileSync(out, "utf8")) as Report;
@@ -118,7 +129,9 @@ function unscoredReason(report: Report, category: Category): string {
   const broken = Object.entries(report.audits).find(
     ([, audit]) => audit.score === null && audit.errorMessage,
   );
-  return broken ? `${broken[0]}: ${broken[1].errorMessage ?? ""}`.slice(0, 120) : `${category} unscored`;
+  return broken
+    ? `${broken[0]}: ${broken[1].errorMessage ?? ""}`.slice(0, 120)
+    : `${category} unscored`;
 }
 
 function main() {
@@ -146,7 +159,9 @@ function main() {
     try {
       report = run(`${base}${route.path}`, outDir, route.name);
     } catch (error) {
-      console.log(`  ${route.name.padEnd(10)}  run failed: ${(error as Error).message.split("\n")[0]}`);
+      console.log(
+        `  ${route.name.padEnd(10)}  run failed: ${(error as Error).message.split("\n")[0]}`,
+      );
       failures++;
       continue;
     }
@@ -158,7 +173,9 @@ function main() {
 
     console.log(
       `  ${route.name.padEnd(10)}` +
-        scores.map((value) => (value === null ? "—" : String(value)).padStart(6)).join("") +
+        scores
+          .map((value) => (value === null ? "—" : String(value)).padStart(6))
+          .join("") +
         `${`${(lcp / 1000).toFixed(2)}s`.padStart(9)}` +
         `${cls.toFixed(3).padStart(8)}` +
         `${`${Math.round(tbt)}ms`.padStart(8)}`,
@@ -167,7 +184,9 @@ function main() {
     for (const [index, value] of scores.entries()) {
       if (value === null) {
         unscored++;
-        console.log(`      ${CATEGORIES[index]} unscored — ${unscoredReason(report, CATEGORIES[index])}`);
+        console.log(
+          `      ${CATEGORIES[index]} unscored — ${unscoredReason(report, CATEGORIES[index])}`,
+        );
         continue;
       }
       if (value < THRESHOLD) {
@@ -180,7 +199,9 @@ function main() {
   rmSync(outDir, { recursive: true, force: true });
 
   if (failures === 0 && unscored === 0) {
-    console.log(`\n  All four categories ≥ ${THRESHOLD} on all ${GATE.length} routes.\n`);
+    console.log(
+      `\n  All four categories ≥ ${THRESHOLD} on all ${GATE.length} routes.\n`,
+    );
     return;
   }
   console.log(

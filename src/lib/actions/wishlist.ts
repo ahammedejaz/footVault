@@ -26,9 +26,12 @@ const productIdSchema = z.uuid();
 
 export type SaveResult = { saved: boolean } | { needsSignIn: true };
 
-export async function toggleSaved(productId: string): Promise<ActionResult<SaveResult>> {
+export async function toggleSaved(
+  productId: string,
+): Promise<ActionResult<SaveResult>> {
   const parsed = productIdSchema.safeParse(productId);
-  if (!parsed.success) return { ok: false, message: "That product could not be saved." };
+  if (!parsed.success)
+    return { ok: false, message: "That product could not be saved." };
 
   const user = await getCurrentUser();
   if (!user) return { ok: true, data: { needsSignIn: true } };
@@ -49,7 +52,10 @@ export async function toggleSaved(productId: string): Promise<ActionResult<SaveR
     }
 
     if (existing) {
-      const { error } = await supabase.from("wishlist_items").delete().eq("id", existing.id);
+      const { error } = await supabase
+        .from("wishlist_items")
+        .delete()
+        .eq("id", existing.id);
       if (error) {
         console.error("[wishlist] delete failed:", error.message);
         return { ok: false, message: "That did not save. Try again." };

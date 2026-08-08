@@ -1,4 +1,8 @@
-import type { CatalogFacets, ProductFilters, SortKey } from "@/lib/queries/catalog";
+import type {
+  CatalogFacets,
+  ProductFilters,
+  SortKey,
+} from "@/lib/queries/catalog";
 import type { Database } from "@/lib/database.types";
 
 type Gender = Database["public"]["Enums"]["gender_group"];
@@ -43,7 +47,9 @@ export function toArray(value: string | string[] | undefined): string[] {
   return values.map((v) => v.trim()).filter(Boolean);
 }
 
-export function first(value: string | string[] | undefined): string | undefined {
+export function first(
+  value: string | string[] | undefined,
+): string | undefined {
   return Array.isArray(value) ? value[0] : value;
 }
 
@@ -240,7 +246,11 @@ export function activeFilterChips(
         : min !== undefined
           ? `Over ${formatPrice(min)}`
           : `Under ${formatPrice(max!)}`;
-    chips.push({ key: "price", label, href: dropParams(params, ["min", "max"], pathname) });
+    chips.push({
+      key: "price",
+      label,
+      href: dropParams(params, ["min", "max"], pathname),
+    });
   }
 
   if (first(params.in_stock) === "true") {

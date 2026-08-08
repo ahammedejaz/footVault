@@ -6,11 +6,12 @@ import { Breadcrumbs } from "@/components/storefront/breadcrumbs";
 import { ProductCard } from "@/components/storefront/product-card";
 import { ProductViewer } from "@/components/storefront/product-viewer";
 import { Rail } from "@/components/storefront/rail";
+import { listProductSlugs, type ProductDetail } from "@/lib/queries/catalog";
 import {
-  listProductSlugs,
-  type ProductDetail,
-} from "@/lib/queries/catalog";
-import { cachedProduct, cachedRelatedProducts, cachedSiteSettings } from "@/lib/queries/cached";
+  cachedProduct,
+  cachedRelatedProducts,
+  cachedSiteSettings,
+} from "@/lib/queries/cached";
 import { getSavedProductIds } from "@/lib/queries/wishlist";
 import { setting, type ShippingSettings } from "@/lib/queries/content";
 import { formatPaise } from "@/lib/format";
@@ -71,11 +72,14 @@ export default async function ProductPage({
   if (!product) notFound();
 
   // Read alongside the cached product, never into it: this one is per-customer.
-  const [settings, savedIds] = await Promise.all([cachedSiteSettings(), getSavedProductIds()]);
+  const [settings, savedIds] = await Promise.all([
+    cachedSiteSettings(),
+    getSavedProductIds(),
+  ]);
   const saved = savedIds.has(product.id);
   const shipping = setting<ShippingSettings>(settings, "shipping", {
-    flat_fee_paise: 9900,
-    free_above_paise: 199900,
+    flat_fee_paise: 19900,
+    free_above_paise: 249900,
     currency: "INR",
     regions: ["IN"],
   });
@@ -97,10 +101,14 @@ export default async function ProductPage({
     name: product.name,
     description: product.description ?? undefined,
     sku: product.variants[0]?.sku,
-    brand: product.brandName ? { "@type": "Brand", name: product.brandName } : undefined,
+    brand: product.brandName
+      ? { "@type": "Brand", name: product.brandName }
+      : undefined,
     category: product.categoryName ?? undefined,
     material: product.material ?? undefined,
-    image: product.images.map((image) => new URL(image.url, SITE_URL).toString()),
+    image: product.images.map((image) =>
+      new URL(image.url, SITE_URL).toString(),
+    ),
     offers: {
       "@type": "AggregateOffer",
       priceCurrency: "INR",
@@ -135,7 +143,12 @@ export default async function ProductPage({
             { label: "Home", href: "/" },
             { label: "Shop", href: "/shop" },
             ...(product.categorySlug && product.categoryName
-              ? [{ label: product.categoryName, href: `/shop/${product.categorySlug}` }]
+              ? [
+                  {
+                    label: product.categoryName,
+                    href: `/shop/${product.categorySlug}`,
+                  },
+                ]
               : []),
             { label: product.name },
           ]}
@@ -170,8 +183,8 @@ export default async function ProductPage({
               />
               <dt className="font-medium">Returns</dt>
               <dd className="text-muted-foreground col-start-2">
-                Free returns and size exchanges within {returnDays} days, unworn and in
-                the box.
+                Free returns and size exchanges within {returnDays} days, unworn
+                and in the box.
               </dd>
             </div>
             {product.material ? (
@@ -181,14 +194,18 @@ export default async function ProductPage({
                   aria-hidden
                 />
                 <dt className="font-medium">Made of</dt>
-                <dd className="text-muted-foreground col-start-2">{product.material}</dd>
+                <dd className="text-muted-foreground col-start-2">
+                  {product.material}
+                </dd>
               </div>
             ) : null}
           </dl>
 
           {product.description ? (
             <div className="border-border mt-8 border-t pt-6">
-              <h2 className="font-mono text-xs tracking-[0.06em] uppercase">Details</h2>
+              <h2 className="font-mono text-xs tracking-[0.06em] uppercase">
+                Details
+              </h2>
               <p className="text-muted-foreground mt-3 text-base whitespace-pre-line">
                 {product.description}
               </p>

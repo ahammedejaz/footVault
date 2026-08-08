@@ -31,7 +31,11 @@ import { cn } from "@/lib/utils";
  * the platform arrow would have drawn before `appearance-none` removed it, not
  * a control of its own.
  */
-function Select({ className, children, ...props }: React.ComponentProps<"select">) {
+function Select({
+  className,
+  children,
+  ...props
+}: React.ComponentProps<"select">) {
   return (
     <div className="relative">
       <select

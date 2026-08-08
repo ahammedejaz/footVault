@@ -28,7 +28,10 @@ export const PAYMENT_METHODS = ["cod", "razorpay"] as const;
 export type PaymentMethod = (typeof PAYMENT_METHODS)[number];
 
 export function isPaymentMethod(value: unknown): value is PaymentMethod {
-  return typeof value === "string" && (PAYMENT_METHODS as readonly string[]).includes(value);
+  return (
+    typeof value === "string" &&
+    (PAYMENT_METHODS as readonly string[]).includes(value)
+  );
 }
 
 /**
@@ -146,7 +149,11 @@ export type ClientCallbackClaim = {
 
 export type VerificationResult =
   | { ok: true; outcome: PaymentOutcome }
-  | { ok: false; reason: "bad_signature" | "unknown_order" | "provider_error"; message: string };
+  | {
+      ok: false;
+      reason: "bad_signature" | "unknown_order" | "provider_error";
+      message: string;
+    };
 
 /* -------------------------------------------------------------- webhooks -- */
 
@@ -168,7 +175,11 @@ export type VerifiedWebhookEvent = {
 
 export type WebhookParseResult =
   | { ok: true; event: VerifiedWebhookEvent }
-  | { ok: false; reason: "bad_signature" | "malformed" | "unhandled"; message: string };
+  | {
+      ok: false;
+      reason: "bad_signature" | "malformed" | "unhandled";
+      message: string;
+    };
 
 /* --------------------------------------------------------------- adapter -- */
 
@@ -215,5 +226,8 @@ export interface PaymentAdapter {
    * exact bytes, and `JSON.parse` followed by `JSON.stringify` does not
    * reproduce them.
    */
-  parseWebhook(rawBody: string, signatureHeader: string | null): WebhookParseResult;
+  parseWebhook(
+    rawBody: string,
+    signatureHeader: string | null,
+  ): WebhookParseResult;
 }

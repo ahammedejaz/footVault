@@ -20,7 +20,6 @@ import { buildFixture, type QaFixture } from "./fixtures";
 import { AUDIT_ROUTES, BASE_URL } from "./routes";
 import { auditStates, jarFor, type AuditState } from "./states";
 
-
 /**
  * Wait for the real page, not its skeleton.
  *
@@ -45,7 +44,9 @@ import { auditStates, jarFor, type AuditState } from "./states";
 async function visit(page: Page, path: string) {
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      return await page.goto(`${BASE_URL}${path}`, { waitUntil: "domcontentloaded" });
+      return await page.goto(`${BASE_URL}${path}`, {
+        waitUntil: "domcontentloaded",
+      });
     } catch (error) {
       if (attempt === 1) throw error;
       await page.goto("about:blank");
@@ -60,7 +61,9 @@ async function waitForReady(page: Page, path: string) {
     .first()
     .waitFor({ state: "visible", timeout: 15_000 })
     .catch(() => {
-      throw new Error(`${path}: no visible <h1> after 15s — is the page rendering?`);
+      throw new Error(
+        `${path}: no visible <h1> after 15s — is the page rendering?`,
+      );
     });
   // Let images settle into their reserved boxes before measuring.
   await page.waitForTimeout(250);
@@ -93,12 +96,22 @@ async function settleAnimations(page: Page) {
   });
 }
 
-const TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa", "best-practice"];
+const TAGS = [
+  "wcag2a",
+  "wcag2aa",
+  "wcag21a",
+  "wcag21aa",
+  "wcag22aa",
+  "best-practice",
+];
 
 /** Surfaces that only exist once something is opened. */
 async function openOverlays(page: Page, path: string) {
   if (path.startsWith("/product/")) {
-    await page.getByRole("button", { name: /size guide/i }).click().catch(() => {});
+    await page
+      .getByRole("button", { name: /size guide/i })
+      .click()
+      .catch(() => {});
     await page.waitForTimeout(200);
     return;
   }
@@ -108,12 +121,20 @@ async function openOverlays(page: Page, path: string) {
   // unscanned. Both are opened from the header, which is on every route, so
   // /wishlist stands in for "anywhere".
   if (path === "/wishlist") {
-    await page.locator('a[href="/cart"]').first().click().catch(() => {});
+    await page
+      .locator('a[href="/cart"]')
+      .first()
+      .click()
+      .catch(() => {});
     await page.waitForTimeout(600);
     await page.keyboard.press("Escape").catch(() => {});
     await page.waitForTimeout(200);
     // The account button is above `sm`; below it, sign-in lives in the drawer.
-    await page.getByRole("button", { name: "Sign in" }).first().click().catch(() => {});
+    await page
+      .getByRole("button", { name: "Sign in" })
+      .first()
+      .click()
+      .catch(() => {});
     await page.waitForTimeout(400);
   }
 }
@@ -121,7 +142,9 @@ async function openOverlays(page: Page, path: string) {
 /** Report a scan's violations once each, and say how many were new. */
 function report(
   label: string,
-  results: { violations: Awaited<ReturnType<AxeBuilder["analyze"]>>["violations"] }[],
+  results: {
+    violations: Awaited<ReturnType<AxeBuilder["analyze"]>>["violations"];
+  }[],
 ): number {
   const seen = new Set<string>();
   let count = 0;
@@ -129,10 +152,13 @@ function report(
     if (seen.has(violation.id)) continue;
     seen.add(violation.id);
     count++;
-    console.log(`\n${label}\n  ${violation.id} (${violation.impact}) — ${violation.help}`);
+    console.log(
+      `\n${label}\n  ${violation.id} (${violation.impact}) — ${violation.help}`,
+    );
     for (const node of violation.nodes.slice(0, 3)) {
       console.log(`    ${node.html.replace(/\s+/g, " ").slice(0, 150)}`);
-      const reason = node.failureSummary?.split("\n").slice(1, 2).join(" ") ?? "";
+      const reason =
+        node.failureSummary?.split("\n").slice(1, 2).join(" ") ?? "";
       if (reason) console.log(`      ${reason.trim().slice(0, 200)}`);
     }
     if (violation.nodes.length > 3) {
@@ -156,7 +182,9 @@ async function scanStates(
   fixture: QaFixture,
   width: number,
 ): Promise<number> {
-  const states = auditStates(fixture).filter((state) => !state.once || width === 390);
+  const states = auditStates(fixture).filter(
+    (state) => !state.once || width === 390,
+  );
   const byJar = new Map<AuditState["as"], AuditState[]>();
   for (const state of states) {
     byJar.set(state.as, [...(byJar.get(state.as) ?? []), state]);
@@ -230,7 +258,9 @@ async function main() {
         // outside itself `aria-hidden`, so scanning only after opening one checks
         // the dialog and nothing else — which is how a broken <dl> on the product
         // page survived a "clean" run of this script.
-        const passes = [await new AxeBuilder({ page }).withTags(TAGS).analyze()];
+        const passes = [
+          await new AxeBuilder({ page }).withTags(TAGS).analyze(),
+        ];
         await openOverlays(page, route.path);
         if (route.path.startsWith("/product/")) {
           passes.push(await new AxeBuilder({ page }).withTags(TAGS).analyze());
@@ -255,7 +285,9 @@ async function main() {
     console.log(`\n${violations} violation groups.`);
     process.exitCode = 1;
   }
-  console.log(`  (left behind: ${fixture.ledger.emails.join(", ")}, orders ${fixture.ledger.orderNumbers.join(", ")})`);
+  console.log(
+    `  (left behind: ${fixture.ledger.emails.join(", ")}, orders ${fixture.ledger.orderNumbers.join(", ")})`,
+  );
 }
 
 void main();

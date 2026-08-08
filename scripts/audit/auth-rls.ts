@@ -48,7 +48,9 @@ const SERVICE = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const APP = process.env.AUDIT_BASE_URL ?? "http://localhost:3210";
 
 if (!URL_ || !ANON) {
-  console.error("Missing Supabase env. Needs NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.");
+  console.error(
+    "Missing Supabase env. Needs NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.",
+  );
   process.exit(1);
 }
 
@@ -69,7 +71,6 @@ const admin = ELEVATED
   ? createClient(URL_, SERVICE, { auth: { persistSession: false } })
   : null;
 
-
 /*
  * Reads go through the app's own run/rows/maybeRow helpers rather than
  * destructuring by hand.
@@ -88,7 +89,9 @@ let failures = 0;
 let skipped = 0;
 function check(name: string, passed: boolean, detail = "") {
   if (!passed) failures++;
-  console.log(`${passed ? "  PASS" : "  FAIL"}  ${name}${detail ? `  — ${detail}` : ""}`);
+  console.log(
+    `${passed ? "  PASS" : "  FAIL"}  ${name}${detail ? `  — ${detail}` : ""}`,
+  );
 }
 function skip(name: string, why: string) {
   skipped++;
@@ -121,7 +124,9 @@ async function makeUser(
     options: { data: metadata },
   });
   if (error || !data.session || !data.user) {
-    throw new Error(`signUp(${email}): ${error?.message ?? "no session returned"}`);
+    throw new Error(
+      `signUp(${email}): ${error?.message ?? "no session returned"}`,
+    );
   }
   return { id: data.user.id, session: data.session };
 }
@@ -139,13 +144,19 @@ async function sessionCookies(session: Session): Promise<string> {
     access_token: session.access_token,
     refresh_token: session.refresh_token,
   });
-  return [...jar].map(([name, value]) => `${name}=${encodeURIComponent(value)}`).join("; ");
+  return [...jar]
+    .map(([name, value]) => `${name}=${encodeURIComponent(value)}`)
+    .join("; ");
 }
 
 async function signIn(email: string): Promise<Session> {
   const client = createClient(URL_, ANON, { auth: { persistSession: false } });
-  const { data, error } = await client.auth.signInWithPassword({ email, password: PASSWORD });
-  if (error || !data.session) throw new Error(`signIn(${email}): ${error?.message}`);
+  const { data, error } = await client.auth.signInWithPassword({
+    email,
+    password: PASSWORD,
+  });
+  if (error || !data.session)
+    throw new Error(`signIn(${email}): ${error?.message}`);
   return data.session;
 }
 
@@ -168,10 +179,16 @@ async function main() {
 
   const asCustomer = createClient(URL_, ANON, {
     auth: { persistSession: false },
-    global: { headers: { Authorization: `Bearer ${customer.session.access_token}` } },
+    global: {
+      headers: { Authorization: `Bearer ${customer.session.access_token}` },
+    },
   });
 
-  const ownRow = await maybeRow<{ id: string; role: string; full_name: string | null }>(
+  const ownRow = await maybeRow<{
+    id: string;
+    role: string;
+    full_name: string | null;
+  }>(
     "read own profile",
     asCustomer
       .from("profiles")
@@ -200,12 +217,18 @@ async function main() {
   check(
     "customer cannot set their own role over PostgREST",
     Boolean(escalation),
-    escalation ? `${escalation.code}: ${escalation.message}` : "UPDATE SUCCEEDED — ESCALATION",
+    escalation
+      ? `${escalation.code}: ${escalation.message}`
+      : "UPDATE SUCCEEDED — ESCALATION",
   );
 
   const afterAttempt = await maybeRow<{ role: string }>(
     "re-read own profile",
-    asCustomer.from("profiles").select("role").eq("id", customer.id).maybeSingle(),
+    asCustomer
+      .from("profiles")
+      .select("role")
+      .eq("id", customer.id)
+      .maybeSingle(),
   );
   check(
     "their role is still customer afterwards",
@@ -237,16 +260,26 @@ async function main() {
 
   // 5 ── /admin is a 404 unless you are an admin ------------------------------
   const anonAdmin = await fetch(`${APP}/admin`, { redirect: "manual" });
-  check("/admin is 404 for an anonymous visitor", anonAdmin.status === 404, `HTTP ${anonAdmin.status}`);
+  check(
+    "/admin is 404 for an anonymous visitor",
+    anonAdmin.status === 404,
+    `HTTP ${anonAdmin.status}`,
+  );
 
   const customerAdmin = await fetch(`${APP}/admin`, {
     headers: { cookie: await sessionCookies(customer.session) },
     redirect: "manual",
   });
-  check("/admin is 404 for a signed-in customer", customerAdmin.status === 404, `HTTP ${customerAdmin.status}`);
+  check(
+    "/admin is 404 for a signed-in customer",
+    customerAdmin.status === 404,
+    `HTTP ${customerAdmin.status}`,
+  );
   check(
     "/admin does not redirect, which would reveal that it exists",
-    customerAdmin.status !== 302 && customerAdmin.status !== 307 && customerAdmin.status !== 308,
+    customerAdmin.status !== 302 &&
+      customerAdmin.status !== 307 &&
+      customerAdmin.status !== 308,
     `HTTP ${customerAdmin.status}`,
   );
 
@@ -276,20 +309,32 @@ async function main() {
     const ownerSession = await signIn(ADMIN);
     const asAdmin = createClient(URL_, ANON, {
       auth: { persistSession: false },
-      global: { headers: { Authorization: `Bearer ${ownerSession.access_token}` } },
+      global: {
+        headers: { Authorization: `Bearer ${ownerSession.access_token}` },
+      },
     });
     // The rpc builder's `data` is typed `any` rather than `T | null`, which run()
     // will not accept, so this one is destructured directly — the rule is happy
     // as long as `error` is read, which it is.
-    const { data: isAdminTrue, error: adminRpcError } = await asAdmin.rpc("is_admin");
-    if (adminRpcError) throw new Error(`is_admin() as admin: ${adminRpcError.message}`);
-    check("is_admin() returns true for an admin", isAdminTrue === true, `returned ${isAdminTrue}`);
+    const { data: isAdminTrue, error: adminRpcError } =
+      await asAdmin.rpc("is_admin");
+    if (adminRpcError)
+      throw new Error(`is_admin() as admin: ${adminRpcError.message}`);
+    check(
+      "is_admin() returns true for an admin",
+      isAdminTrue === true,
+      `returned ${isAdminTrue}`,
+    );
 
     const adminAdmin = await fetch(`${APP}/admin`, {
       headers: { cookie: await sessionCookies(ownerSession) },
       redirect: "manual",
     });
-    check("/admin is 200 for an admin", adminAdmin.status === 200, `HTTP ${adminAdmin.status}`);
+    check(
+      "/admin is 200 for an admin",
+      adminAdmin.status === 200,
+      `HTTP ${adminAdmin.status}`,
+    );
 
     for (const id of [customer.id, other.id, owner.id]) {
       await admin.auth.admin.deleteUser(id);

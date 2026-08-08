@@ -84,54 +84,56 @@ export function ProductGallery({
         }}
         onMouseLeave={() => setOrigin("50% 50%")}
       >
-      <ul
-        ref={scroller}
-        // A scroll container with nothing focusable inside it can be scrolled
-        // with a finger and with a wheel and by nothing else. Making the region
-        // itself focusable is what gives it to the keyboard, and the arrow keys
-        // then move a whole frame at a time rather than a few pixels.
-        tabIndex={0}
-        // No `role="group"` here: it would override the list role and orphan
-        // every <li> inside it. A labelled list is already the right thing.
-        aria-label={`${productName} images`}
-        onKeyDown={(event) => {
-          if (event.key === "ArrowRight" || event.key === "ArrowLeft") {
-            event.preventDefault();
-            const next = index + (event.key === "ArrowRight" ? 1 : -1);
-            if (next >= 0 && next < images.length) scrollTo(next);
-          }
-        }}
-        onScroll={(event) => {
-          const el = event.currentTarget;
-          const next = Math.round(el.scrollLeft / el.clientWidth);
-          setActive((prev) => (prev === next ? prev : next));
-        }}
-        className="rail bg-fog -mx-4 flex snap-x snap-mandatory overflow-x-auto sm:mx-0 sm:rounded-lg lg:cursor-zoom-in"
-      >
-        {images.map((image, i) => (
-          <li key={image.url} className="relative aspect-4/5 w-full shrink-0 snap-start">
-            <Image
-              src={image.url}
-              // The first frame names the product; the rest are the same shoe
-              // from another angle, and a screen reader reading four near
-              // identical sentences is worse than reading one.
-              alt={i === 0 ? image.alt : ""}
-              aria-hidden={i === 0 ? undefined : true}
-              fill
-              priority={i === 0}
-              loading={i === 0 ? "eager" : "lazy"}
-              fetchPriority={i === 0 ? "high" : "auto"}
-              sizes="(max-width: 1024px) 100vw, 640px"
-              style={i === index ? { transformOrigin: origin } : undefined}
-              className={cn(
-                "object-cover transition-transform duration-300",
-                i === index && "lg:group-hover:scale-[2]",
-              )}
-            />
-          </li>
-        ))}
-
-      </ul>
+        <ul
+          ref={scroller}
+          // A scroll container with nothing focusable inside it can be scrolled
+          // with a finger and with a wheel and by nothing else. Making the region
+          // itself focusable is what gives it to the keyboard, and the arrow keys
+          // then move a whole frame at a time rather than a few pixels.
+          tabIndex={0}
+          // No `role="group"` here: it would override the list role and orphan
+          // every <li> inside it. A labelled list is already the right thing.
+          aria-label={`${productName} images`}
+          onKeyDown={(event) => {
+            if (event.key === "ArrowRight" || event.key === "ArrowLeft") {
+              event.preventDefault();
+              const next = index + (event.key === "ArrowRight" ? 1 : -1);
+              if (next >= 0 && next < images.length) scrollTo(next);
+            }
+          }}
+          onScroll={(event) => {
+            const el = event.currentTarget;
+            const next = Math.round(el.scrollLeft / el.clientWidth);
+            setActive((prev) => (prev === next ? prev : next));
+          }}
+          className="rail bg-fog -mx-4 flex snap-x snap-mandatory overflow-x-auto sm:mx-0 sm:rounded-lg lg:cursor-zoom-in"
+        >
+          {images.map((image, i) => (
+            <li
+              key={image.url}
+              className="relative aspect-4/5 w-full shrink-0 snap-start"
+            >
+              <Image
+                src={image.url}
+                // The first frame names the product; the rest are the same shoe
+                // from another angle, and a screen reader reading four near
+                // identical sentences is worse than reading one.
+                alt={i === 0 ? image.alt : ""}
+                aria-hidden={i === 0 ? undefined : true}
+                fill
+                priority={i === 0}
+                loading={i === 0 ? "eager" : "lazy"}
+                fetchPriority={i === 0 ? "high" : "auto"}
+                sizes="(max-width: 1024px) 100vw, 640px"
+                style={i === index ? { transformOrigin: origin } : undefined}
+                className={cn(
+                  "object-cover transition-transform duration-300",
+                  i === index && "lg:group-hover:scale-[2]",
+                )}
+              />
+            </li>
+          ))}
+        </ul>
 
         <button
           type="button"
@@ -207,7 +209,9 @@ export function ProductGallery({
           <Dialog.Overlay className="data-open:animate-in data-open:fade-in-0 fixed inset-0 z-50 bg-black/80" />
           <Dialog.Content className="fixed inset-0 z-50 flex items-center justify-center p-6">
             <Dialog.Title className="sr-only">{productName}</Dialog.Title>
-            <Dialog.Description className="sr-only">{current.alt}</Dialog.Description>
+            <Dialog.Description className="sr-only">
+              {current.alt}
+            </Dialog.Description>
             <div className="relative aspect-4/5 h-full max-h-[88vh]">
               <Image
                 src={current.url}

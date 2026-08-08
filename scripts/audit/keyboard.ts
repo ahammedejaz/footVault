@@ -26,7 +26,9 @@ async function focused(page: Page) {
     const style = getComputedStyle(el);
     return {
       tag: el.tagName.toLowerCase(),
-      name: (el.getAttribute("aria-label") || el.textContent || "").trim().slice(0, 40),
+      name: (el.getAttribute("aria-label") || el.textContent || "")
+        .trim()
+        .slice(0, 40),
       href: el.getAttribute("href"),
       visible: box.width > 0 && box.height > 0 && style.visibility !== "hidden",
       // The indicator is `outline: 2px solid` plus a box-shadow halo. Either
@@ -37,17 +39,27 @@ async function focused(page: Page) {
 }
 
 /** Tab until `match` is focused, or give up. Returns how many stops it took. */
-async function tabTo(page: Page, match: (f: NonNullable<Awaited<ReturnType<typeof focused>>>) => boolean, label: string) {
+async function tabTo(
+  page: Page,
+  match: (f: NonNullable<Awaited<ReturnType<typeof focused>>>) => boolean,
+  label: string,
+) {
   const seen: string[] = [];
   for (let i = 0; i < 120; i++) {
     await page.keyboard.press("Tab");
     const f = await focused(page);
     if (!f) continue;
-    if (!f.visible) problems.push(`${label}: focus landed on an invisible ${f.tag} "${f.name}"`);
-    if (!f.ring) problems.push(`${label}: no focus indicator on ${f.tag} "${f.name}"`);
+    if (!f.visible)
+      problems.push(
+        `${label}: focus landed on an invisible ${f.tag} "${f.name}"`,
+      );
+    if (!f.ring)
+      problems.push(`${label}: no focus indicator on ${f.tag} "${f.name}"`);
     const key = `${f.tag}:${f.name}:${f.href ?? ""}`;
     if (seen.includes(key) && seen.length > 4) {
-      problems.push(`${label}: tab order returned to "${f.name}" after ${i} stops — possible trap`);
+      problems.push(
+        `${label}: tab order returned to "${f.name}" after ${i} stops — possible trap`,
+      );
       return i;
     }
     seen.push(key);
@@ -59,7 +71,9 @@ async function tabTo(page: Page, match: (f: NonNullable<Awaited<ReturnType<typeo
 
 async function main() {
   const browser = await chromium.launch();
-  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const page = await browser.newPage({
+    viewport: { width: 1440, height: 900 },
+  });
 
   // 1. Home → a department.
   await page.goto(`${BASE_URL}/`, { waitUntil: "domcontentloaded" });
@@ -69,29 +83,52 @@ async function main() {
 
   // 2. Category → apply a size filter.
   await page.locator("h1").first().waitFor({ state: "visible" });
-  await tabTo(page, (f) => Boolean(f.href?.includes("size=")), "category → a size facet");
+  await tabTo(
+    page,
+    (f) => Boolean(f.href?.includes("size=")),
+    "category → a size facet",
+  );
   await page.keyboard.press("Enter");
   await page.waitForURL("**size=**");
   await page.locator("h1").first().waitFor({ state: "visible" });
-  if (!page.url().includes("size=")) problems.push("the size filter did not reach the URL");
+  if (!page.url().includes("size="))
+    problems.push("the size filter did not reach the URL");
 
   // 3. Filtered listing → a product.
-  await tabTo(page, (f) => Boolean(f.href?.startsWith("/product/")), "listing → a product");
+  await tabTo(
+    page,
+    (f) => Boolean(f.href?.startsWith("/product/")),
+    "listing → a product",
+  );
   await page.keyboard.press("Enter");
   await page.waitForURL("**/product/**");
   await page.locator("h1").first().waitFor({ state: "visible" });
 
   // 4. Product → the size run, then move with the arrow keys.
-  await tabTo(page, (f) => f.tag === "button" && /^UK /.test(f.name || "") === false && Boolean(f.name), "product → first control");
-  const group = page.locator('[role="radiogroup"][aria-labelledby="size-label"]');
+  await tabTo(
+    page,
+    (f) =>
+      f.tag === "button" &&
+      /^UK /.test(f.name || "") === false &&
+      Boolean(f.name),
+    "product → first control",
+  );
+  const group = page.locator(
+    '[role="radiogroup"][aria-labelledby="size-label"]',
+  );
   await group.waitFor({ state: "visible" });
   await group.getByRole("radio").first().focus();
   await page.keyboard.press("ArrowRight");
   await page.keyboard.press("ArrowRight");
   // Scoped to the size group: the colourway swatches are radios too, and
   // counting both made a passing page look like it had two sizes selected.
-  const checked = await group.locator('[role="radio"][aria-checked="true"]').count();
-  if (checked !== 1) problems.push(`arrow keys left ${checked} sizes selected, expected exactly 1`);
+  const checked = await group
+    .locator('[role="radio"][aria-checked="true"]')
+    .count();
+  if (checked !== 1)
+    problems.push(
+      `arrow keys left ${checked} sizes selected, expected exactly 1`,
+    );
   const url = new URL(page.url());
   if (!url.searchParams.get("size")) {
     problems.push("selecting a size with the keyboard did not update the URL");
@@ -104,7 +141,9 @@ async function main() {
   await page.getByRole("dialog").waitFor({ state: "hidden" });
   const back = await focused(page);
   if (!/size guide/i.test(back?.name ?? "")) {
-    problems.push(`Escape did not return focus to the size-guide trigger (went to "${back?.name}")`);
+    problems.push(
+      `Escape did not return focus to the size-guide trigger (went to "${back?.name}")`,
+    );
   }
 
   await browser.close();

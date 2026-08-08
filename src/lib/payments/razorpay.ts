@@ -155,8 +155,11 @@ async function razorpayRequest<T>(
       signal: AbortSignal.timeout(RAZORPAY_TIMEOUT_MS),
     });
   } catch (error) {
-    const description = error instanceof Error ? error.message : "network error";
-    console.error(`[razorpay] ${label}: request failed before a response`, { description });
+    const description =
+      error instanceof Error ? error.message : "network error";
+    console.error(`[razorpay] ${label}: request failed before a response`, {
+      description,
+    });
     return { ok: false, status: 0, code: null, description, unknownId: false };
   }
 
@@ -164,14 +167,19 @@ async function razorpayRequest<T>(
 
   if (!response.ok) {
     const parsedError = razorpayErrorSchema.safeParse(safeJson(text));
-    const code = parsedError.success ? (parsedError.data.error.code ?? null) : null;
+    const code = parsedError.success
+      ? (parsedError.data.error.code ?? null)
+      : null;
     const description = parsedError.success
       ? (parsedError.data.error.description ?? "Razorpay rejected the request.")
       : "Razorpay rejected the request.";
     // Never the body: an error response can echo the request, and the request
     // to /orders carries the customer's order number. Code and description are
     // Razorpay's own words and are safe to keep.
-    console.error(`[razorpay] ${label}: HTTP ${response.status}`, { code, description });
+    console.error(`[razorpay] ${label}: HTTP ${response.status}`, {
+      code,
+      description,
+    });
     return {
       ok: false,
       status: response.status,
@@ -187,9 +195,14 @@ async function razorpayRequest<T>(
 
   const parsed = schema.safeParse(safeJson(text));
   if (!parsed.success) {
-    console.error(`[razorpay] ${label}: response did not match the expected shape`, {
-      issues: parsed.error.issues.map((issue) => `${issue.path.join(".")}: ${issue.code}`),
-    });
+    console.error(
+      `[razorpay] ${label}: response did not match the expected shape`,
+      {
+        issues: parsed.error.issues.map(
+          (issue) => `${issue.path.join(".")}: ${issue.code}`,
+        ),
+      },
+    );
     return {
       ok: false,
       status: response.status,
@@ -237,15 +250,22 @@ function mapPaymentStatus(rawStatus: string): PaymentOutcomeStatus {
     case "authorized":
       return "pending";
     default:
-      console.warn("[razorpay] unrecognised payment status, treating as pending", { rawStatus });
+      console.warn(
+        "[razorpay] unrecognised payment status, treating as pending",
+        { rawStatus },
+      );
       return "pending";
   }
 }
 
 /** Razorpay's failure text is written for the payer and is short. Ours is the fallback. */
-function customerMessage(payment: RazorpayPayment, status: PaymentOutcomeStatus): string {
+function customerMessage(
+  payment: RazorpayPayment,
+  status: PaymentOutcomeStatus,
+): string {
   if (status === "captured") return "Payment received.";
-  if (status === "pending") return "Your bank is still confirming this payment.";
+  if (status === "pending")
+    return "Your bank is still confirming this payment.";
 
   const provided = payment.error_description?.trim();
   const detail = provided && provided.length <= 140 ? ` ${provided}` : "";
@@ -275,14 +295,22 @@ function customerMessage(payment: RazorpayPayment, status: PaymentOutcomeStatus)
  * otherwise compared against a rupee total as though the units matched, and
  * 199900 yen would settle a ₹1,999 order.
  */
-function inrPaiseOrNull(label: string, amount: number, currency: string): number | null {
+function inrPaiseOrNull(
+  label: string,
+  amount: number,
+  currency: string,
+): number | null {
   if (currency !== "INR") return null;
   return assertPaise(label, amount);
 }
 
 /** Null when the payment is not in rupees. See `inrPaiseOrNull`. */
 function outcomeFromPayment(payment: RazorpayPayment): PaymentOutcome | null {
-  const amountPaise = inrPaiseOrNull("razorpay.outcome.amount", payment.amount, payment.currency);
+  const amountPaise = inrPaiseOrNull(
+    "razorpay.outcome.amount",
+    payment.amount,
+    payment.currency,
+  );
   if (amountPaise === null) {
     console.error("[razorpay] payment dropped: unexpected currency", {
       paymentId: payment.id,
@@ -335,11 +363,14 @@ function outcomeFromPaidOrder(
   }
 
   if (payment && payment.currency !== order.currency) {
-    console.error("[razorpay] order.paid dropped: entities disagree about currency", {
-      orderId: order.id,
-      orderCurrency: order.currency,
-      paymentCurrency: payment.currency,
-    });
+    console.error(
+      "[razorpay] order.paid dropped: entities disagree about currency",
+      {
+        orderId: order.id,
+        orderCurrency: order.currency,
+        paymentCurrency: payment.currency,
+      },
+    );
     return null;
   }
 
@@ -370,7 +401,8 @@ export const razorpayAdapter: PaymentAdapter = {
   copy: {
     method: "razorpay",
     label: "Pay online",
-    description: "UPI, cards, net banking or a wallet. You pay now and we ship on confirmation.",
+    description:
+      "UPI, cards, net banking or a wallet. You pay now and we ship on confirmation.",
     note: "You will be taken to Razorpay's secure window. We never see your card details.",
   },
 
@@ -393,7 +425,10 @@ export const razorpayAdapter: PaymentAdapter = {
    * order, and orders are not this module's business.
    */
   async initiate(context: InitiateContext): Promise<PaymentInitiation> {
-    const amountPaise = assertPaise("razorpay.initiate.amount", context.amountPaise);
+    const amountPaise = assertPaise(
+      "razorpay.initiate.amount",
+      context.amountPaise,
+    );
     if (amountPaise < MIN_CHARGEABLE_PAISE) {
       throw new Error(
         `razorpay.initiate: ${amountPaise} paise is below Razorpay's ${MIN_CHARGEABLE_PAISE} paise floor.`,
@@ -401,26 +436,32 @@ export const razorpayAdapter: PaymentAdapter = {
     }
 
     const keyId = razorpayKeyId();
-    if (!keyId) throw new Error("razorpay.initiate: RAZORPAY_KEY_ID is not set.");
+    if (!keyId)
+      throw new Error("razorpay.initiate: RAZORPAY_KEY_ID is not set.");
 
-    const result = await razorpayRequest("createOrder", "/orders", razorpayOrderSchema, {
-      method: "POST",
-      body: {
-        amount: amountPaise,
-        currency: "INR",
-        // Max 40 characters at Razorpay. `FV-2026-00147` is thirteen, and it is
-        // the string a customer quotes to support, so it is the one that should
-        // appear in the Razorpay dashboard's own column.
-        receipt: context.orderNumber,
-        // Notes survive into every export and refund screen. The uuid is here
-        // because the order number is the human key and the id is the one that
-        // joins to anything.
-        notes: {
-          order_number: context.orderNumber,
-          order_id: context.orderId,
+    const result = await razorpayRequest(
+      "createOrder",
+      "/orders",
+      razorpayOrderSchema,
+      {
+        method: "POST",
+        body: {
+          amount: amountPaise,
+          currency: "INR",
+          // Max 40 characters at Razorpay. `FV-2026-00147` is thirteen, and it is
+          // the string a customer quotes to support, so it is the one that should
+          // appear in the Razorpay dashboard's own column.
+          receipt: context.orderNumber,
+          // Notes survive into every export and refund screen. The uuid is here
+          // because the order number is the human key and the id is the one that
+          // joins to anything.
+          notes: {
+            order_number: context.orderNumber,
+            order_id: context.orderId,
+          },
         },
       },
-    });
+    );
 
     if (!result.ok) {
       throw new Error(
@@ -441,7 +482,9 @@ export const razorpayAdapter: PaymentAdapter = {
       );
     }
     if (order.currency !== "INR") {
-      throw new Error(`razorpay.initiate: expected INR, Razorpay created ${order.currency}.`);
+      throw new Error(
+        `razorpay.initiate: expected INR, Razorpay created ${order.currency}.`,
+      );
     }
 
     return {
@@ -476,7 +519,9 @@ export const razorpayAdapter: PaymentAdapter = {
    * fired, therefore captured" is the bug that makes a shop confirm orders that
    * were never settled.
    */
-  async verifyClientCallback(claim: ClientCallbackClaim): Promise<VerificationResult> {
+  async verifyClientCallback(
+    claim: ClientCallbackClaim,
+  ): Promise<VerificationResult> {
     if (!isRazorpayConfigured()) {
       return {
         ok: false,
@@ -485,8 +530,13 @@ export const razorpayAdapter: PaymentAdapter = {
       };
     }
 
-    if (!PROVIDER_ID.test(claim.providerOrderId) || !PROVIDER_ID.test(claim.providerPaymentId)) {
-      console.warn("[razorpay] client callback rejected: malformed provider id");
+    if (
+      !PROVIDER_ID.test(claim.providerOrderId) ||
+      !PROVIDER_ID.test(claim.providerPaymentId)
+    ) {
+      console.warn(
+        "[razorpay] client callback rejected: malformed provider id",
+      );
       return {
         ok: false,
         reason: "bad_signature",
@@ -507,7 +557,8 @@ export const razorpayAdapter: PaymentAdapter = {
       return {
         ok: false,
         reason: "bad_signature",
-        message: "We could not verify that payment. If you were charged, it will be confirmed shortly.",
+        message:
+          "We could not verify that payment. If you were charged, it will be confirmed shortly.",
       };
     }
 
@@ -528,7 +579,8 @@ export const razorpayAdapter: PaymentAdapter = {
       return {
         ok: false,
         reason: "provider_error",
-        message: "We could not reach the payment provider. Your order status will update shortly.",
+        message:
+          "We could not reach the payment provider. Your order status will update shortly.",
       };
     }
 
@@ -538,10 +590,13 @@ export const razorpayAdapter: PaymentAdapter = {
     // key secret is compromised or Razorpay changed something fundamental.
     // Either way it is not a payment for this order.
     if (payment.order_id !== claim.providerOrderId) {
-      console.error("[razorpay] client callback: payment belongs to a different order", {
-        claimed: claim.providerOrderId,
-        actual: payment.order_id,
-      });
+      console.error(
+        "[razorpay] client callback: payment belongs to a different order",
+        {
+          claimed: claim.providerOrderId,
+          actual: payment.order_id,
+        },
+      );
       return {
         ok: false,
         reason: "unknown_order",
@@ -558,7 +613,8 @@ export const razorpayAdapter: PaymentAdapter = {
       return {
         ok: false,
         reason: "provider_error",
-        message: "We could not confirm that payment. Please contact us before paying again.",
+        message:
+          "We could not confirm that payment. Please contact us before paying again.",
       };
     }
 
@@ -578,7 +634,10 @@ export const razorpayAdapter: PaymentAdapter = {
    *  3. Verification comes before parsing, and certainly before the database.
    *     A payload is not data until it is proved.
    */
-  parseWebhook(rawBody: string, signatureHeader: string | null): WebhookParseResult {
+  parseWebhook(
+    rawBody: string,
+    signatureHeader: string | null,
+  ): WebhookParseResult {
     const secret = razorpayWebhookSecret();
     if (!secret) {
       // Fail closed. With no secret configured there is no way to tell a real
@@ -606,15 +665,25 @@ export const razorpayAdapter: PaymentAdapter = {
         bodyBytes: Buffer.byteLength(rawBody, "utf8"),
         signaturePresent: signatureHeader !== null,
       });
-      return { ok: false, reason: "bad_signature", message: "Signature mismatch." };
+      return {
+        ok: false,
+        reason: "bad_signature",
+        message: "Signature mismatch.",
+      };
     }
 
     const parsed = razorpayWebhookSchema.safeParse(safeJson(rawBody));
     if (!parsed.success) {
       console.error("[razorpay] webhook verified but unreadable", {
-        issues: parsed.error.issues.map((issue) => `${issue.path.join(".")}: ${issue.code}`),
+        issues: parsed.error.issues.map(
+          (issue) => `${issue.path.join(".")}: ${issue.code}`,
+        ),
       });
-      return { ok: false, reason: "malformed", message: "Verified, but not a shape we know." };
+      return {
+        ok: false,
+        reason: "malformed",
+        message: "Verified, but not a shape we know.",
+      };
     }
 
     const { event, payload } = parsed.data;
@@ -637,11 +706,19 @@ export const razorpayAdapter: PaymentAdapter = {
       case "payment.failed":
       case "payment.authorized": {
         if (!payment) {
-          return { ok: false, reason: "malformed", message: `${event} carried no payment entity.` };
+          return {
+            ok: false,
+            reason: "malformed",
+            message: `${event} carried no payment entity.`,
+          };
         }
         const outcome = outcomeFromPayment(payment);
         if (!outcome) {
-          return { ok: false, reason: "malformed", message: "Unexpected currency." };
+          return {
+            ok: false,
+            reason: "malformed",
+            message: "Unexpected currency.",
+          };
         }
         return {
           ok: true,
@@ -656,11 +733,19 @@ export const razorpayAdapter: PaymentAdapter = {
 
       case "order.paid": {
         if (!order) {
-          return { ok: false, reason: "malformed", message: "order.paid carried no order entity." };
+          return {
+            ok: false,
+            reason: "malformed",
+            message: "order.paid carried no order entity.",
+          };
         }
         const outcome = outcomeFromPaidOrder(order, payment);
         if (!outcome) {
-          return { ok: false, reason: "malformed", message: "Unexpected currency." };
+          return {
+            ok: false,
+            reason: "malformed",
+            message: "Unexpected currency.",
+          };
         }
         return {
           ok: true,
@@ -678,7 +763,11 @@ export const razorpayAdapter: PaymentAdapter = {
         // asks for, plus events added after we wrote this, and a 400 on an
         // event we simply do not care about would make Razorpay retry it for
         // hours and eventually disable the endpoint.
-        return { ok: false, reason: "unhandled", message: `No handler for ${event}.` };
+        return {
+          ok: false,
+          reason: "unhandled",
+          message: `No handler for ${event}.`,
+        };
     }
   },
 };

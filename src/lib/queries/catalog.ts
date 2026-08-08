@@ -102,7 +102,9 @@ export type RawProduct = {
 /** Primary first, then the owner's order. Used for the gallery and the card. */
 function orderImages(images: RawProduct["images"]) {
   return [...images].sort(
-    (a, b) => Number(b.is_primary) - Number(a.is_primary) || a.sort_order - b.sort_order,
+    (a, b) =>
+      Number(b.is_primary) - Number(a.is_primary) ||
+      a.sort_order - b.sort_order,
   );
 }
 
@@ -161,7 +163,10 @@ export function toSummary(row: RawProduct): ProductSummary {
       sizes: toSizes(row.variants, variant.color),
       // A colourway with no photography of its own falls back to the shared
       // set, so a half-uploaded product still renders a gallery.
-      images: (own.length > 0 ? own : images.filter((i) => i.color === null)).map(toImage),
+      images: (own.length > 0
+        ? own
+        : images.filter((i) => i.color === null)
+      ).map(toImage),
     });
   }
 
@@ -199,7 +204,10 @@ function toDetail(row: RawProduct): ProductDetail {
     })),
     variants: row.variants
       .filter((v) => v.is_active)
-      .sort((a, b) => compareSizes(a.size, b.size) || a.color.localeCompare(b.color))
+      .sort(
+        (a, b) =>
+          compareSizes(a.size, b.size) || a.color.localeCompare(b.color),
+      )
       .map((v) => ({
         id: v.id,
         size: v.size,
@@ -276,7 +284,9 @@ const GENDER_LABEL: Record<string, string> = {
   kids: "Kids",
 };
 
-export async function listProducts(filters: ProductFilters = {}): Promise<ProductPage> {
+export async function listProducts(
+  filters: ProductFilters = {},
+): Promise<ProductPage> {
   const supabase = db();
   const perPage = filters.perPage ?? PRODUCTS_PER_PAGE;
   const page = Math.max(1, filters.page ?? 1);
@@ -334,12 +344,22 @@ export async function listProducts(filters: ProductFilters = {}): Promise<Produc
   };
 
   if (result.ids.length === 0) {
-    return { products: [], total: result.total, page, perPage, pageCount: 0, facets };
+    return {
+      products: [],
+      total: result.total,
+      page,
+      perPage,
+      pageCount: 0,
+      facets,
+    };
   }
 
   const products = await rows<RawProduct>(
     "listProducts rows",
-    supabase.from("products").select(PRODUCT_FIELDS).in("id", result.ids) as never,
+    supabase
+      .from("products")
+      .select(PRODUCT_FIELDS)
+      .in("id", result.ids) as never,
   );
 
   // PostgREST returns `in` results in its own order; the sort the customer
@@ -379,7 +399,11 @@ export async function getProduct(slug: string): Promise<ProductDetail | null> {
 export async function listProductSlugs(): Promise<string[]> {
   const data = await rows<{ slug: string }>(
     "listProductSlugs",
-    db().from("products").select("slug").eq("is_active", true).is("deleted_at", null),
+    db()
+      .from("products")
+      .select("slug")
+      .eq("is_active", true)
+      .is("deleted_at", null),
   );
   return data.map((row) => row.slug);
 }
@@ -512,7 +536,9 @@ export type CategoryTile = {
  * per tile — three tiles, three paginated catalog queries, on the busiest page
  * on the site.
  */
-export async function getCategoryTiles(slugs: string[]): Promise<CategoryTile[]> {
+export async function getCategoryTiles(
+  slugs: string[],
+): Promise<CategoryTile[]> {
   const supabase = db();
 
   const [categories, live] = await Promise.all([
@@ -543,7 +569,10 @@ export async function getCategoryTiles(slugs: string[]): Promise<CategoryTile[]>
   const directCount = new Map<string, number>();
   for (const row of live) {
     if (!row.category_id) continue;
-    directCount.set(row.category_id, (directCount.get(row.category_id) ?? 0) + 1);
+    directCount.set(
+      row.category_id,
+      (directCount.get(row.category_id) ?? 0) + 1,
+    );
   }
 
   const bySlug = new Map(categories.map((c) => [c.slug, c]));
@@ -557,7 +586,10 @@ export async function getCategoryTiles(slugs: string[]): Promise<CategoryTile[]>
       const children = categories.filter((c) => c.parent_id === category.id);
       const productCount =
         (directCount.get(category.id) ?? 0) +
-        children.reduce((sum, child) => sum + (directCount.get(child.id) ?? 0), 0);
+        children.reduce(
+          (sum, child) => sum + (directCount.get(child.id) ?? 0),
+          0,
+        );
 
       return {
         name: category.name,
@@ -571,7 +603,9 @@ export async function getCategoryTiles(slugs: string[]): Promise<CategoryTile[]>
 }
 
 /** The featured products the hero collages. */
-export async function getFeaturedProducts(limit = 3): Promise<ProductSummary[]> {
+export async function getFeaturedProducts(
+  limit = 3,
+): Promise<ProductSummary[]> {
   const data = await rows<RawProduct>(
     "getFeaturedProducts",
     db()

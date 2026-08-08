@@ -70,7 +70,11 @@ const code = (value: string, length: number) =>
  * index on product_variants.sku caught it, which is the point of having it —
  * assertUniqueSkus() below now catches it before the database has to.
  */
-export function skuFor(product: SeedProduct, colorName: string, size: string): string {
+export function skuFor(
+  product: SeedProduct,
+  colorName: string,
+  size: string,
+): string {
   const model = product.slug.startsWith(`${product.brand}-`)
     ? product.slug.slice(product.brand.length + 1)
     : product.slug;
@@ -86,7 +90,8 @@ export function skuFor(product: SeedProduct, colorName: string, size: string): s
 export function stockOverrides(product: SeedProduct): Record<string, number> {
   const out: Record<string, number> = {};
   for (const size of product.soldOut ?? []) out[size] = 0;
-  for (const [size, qty] of Object.entries(product.lowStock ?? {})) out[size] = qty;
+  for (const [size, qty] of Object.entries(product.lowStock ?? {}))
+    out[size] = qty;
   return out;
 }
 
@@ -219,10 +224,12 @@ function buildSql(): string {
     "insert into public.products (name, slug, description, category_id, brand_id, gender, footwear_type, material, base_price, sale_price, is_featured, meta_title, meta_description, search_keywords) values",
     products
       .map((p) => {
-        const metaTitle = `${p.name} — ${brands.find((b) => b.slug === p.brand)?.name ?? ""}`.trim();
+        const metaTitle =
+          `${p.name} — ${brands.find((b) => b.slug === p.brand)?.name ?? ""}`.trim();
         // First sentence. Descriptions that are a single sentence already carry
         // their full stop, so strip before re-adding rather than emit "tap..".
-        const metaDescription = p.description.split(". ")[0]!.replace(/\.$/, "") + ".";
+        const metaDescription =
+          p.description.split(". ")[0]!.replace(/\.$/, "") + ".";
         const keywords = SEARCH_KEYWORDS[p.footwearType] ?? [];
         return `  (${q(p.name)}, ${q(p.slug)}, ${q(p.description)}, (select id from public.categories where slug = ${q(p.category)}), (select id from public.brands where slug = ${q(p.brand)}), ${q(p.gender)}, ${q(p.footwearType)}, ${q(p.material)}, ${p.basePrice}, ${p.salePrice ?? "NULL"}, ${p.featured ? "true" : "false"}, ${q(metaTitle)}, ${q(metaDescription)}, array[${keywords.map(q).join(", ")}]::text[])`;
       })
@@ -293,7 +300,9 @@ function buildSql(): string {
     "),",
     "colorway (product_slug, color, hex) as (values",
     products
-      .flatMap((p) => p.colors.map((c) => `  (${q(p.slug)}, ${q(c.name)}, ${q(c.hex)})`))
+      .flatMap((p) =>
+        p.colors.map((c) => `  (${q(p.slug)}, ${q(c.name)}, ${q(c.hex)})`),
+      )
       .join(",\n"),
     "),",
     "override (product_slug, size, qty) as (values",
@@ -334,7 +343,10 @@ function buildSql(): string {
     "-- --- collections ----------------------------------------------------------",
     "insert into public.collections (name, slug, description, sort_order) values",
     collections
-      .map((c) => `  (${q(c.name)}, ${q(c.slug)}, ${q(c.description)}, ${c.sortOrder})`)
+      .map(
+        (c) =>
+          `  (${q(c.name)}, ${q(c.slug)}, ${q(c.description)}, ${c.sortOrder})`,
+      )
       .join(",\n") +
       "\non conflict (slug) do update set name = excluded.name, description = excluded.description, sort_order = excluded.sort_order;",
     "insert into public.collection_products (collection_id, product_id, sort_order) values",
@@ -345,7 +357,8 @@ function buildSql(): string {
             `  ((select id from public.collections where slug = ${q(c.slug)}), (select id from public.products where slug = ${q(slug)}), ${i})`,
         ),
       )
-      .join(",\n") + "\non conflict (collection_id, product_id) do update set sort_order = excluded.sort_order;",
+      .join(",\n") +
+      "\non conflict (collection_id, product_id) do update set sort_order = excluded.sort_order;",
   );
 
   push(
@@ -353,7 +366,9 @@ function buildSql(): string {
     "-- Two crops of one scene. A 16:9 hero cropped to a 390px phone loses the",
     "-- shoe; a phone-shaped hero stretched across a desktop loses the point.",
     "-- placement is the natural key: one hero per placement, replaced on reseed.",
-    "delete from public.banners where placement = " + q(heroBanner.placement) + ";",
+    "delete from public.banners where placement = " +
+      q(heroBanner.placement) +
+      ";",
     "insert into public.banners (placement, image_url, mobile_image_url, headline, subtext, cta_label, cta_href, sort_order)",
     `values (${q(heroBanner.placement)}, ${q(heroBanner.imageUrl)}, ${q(heroBanner.mobileImageUrl)}, ${q(heroBanner.headline)}, ${q(heroBanner.subtext)}, ${q(heroBanner.ctaLabel)}, ${q(heroBanner.ctaHref)}, 0);`,
   );
@@ -373,7 +388,9 @@ function buildSql(): string {
   push(
     "-- --- settings -------------------------------------------------------------",
     "insert into public.site_settings (key, value, description) values",
-    siteSettings.map((s) => `  (${q(s.key)}, ${j(s.value)}, ${q(s.description)})`).join(",\n") +
+    siteSettings
+      .map((s) => `  (${q(s.key)}, ${j(s.value)}, ${q(s.description)})`)
+      .join(",\n") +
       "\non conflict (key) do update set value = excluded.value, description = excluded.description;",
   );
 
@@ -416,27 +433,45 @@ async function seedViaSupabase() {
   // The service role bypasses RLS. This script is the only place outside
   // src/lib/supabase/admin.ts that is allowed to hold this key, and it never
   // runs in the browser.
-  const db = createClient(url, serviceRoleKey, { auth: { persistSession: false } });
+  const db = createClient(url, serviceRoleKey, {
+    auth: { persistSession: false },
+  });
 
   const fail = (step: string, error: { message: string } | null) => {
     if (!error) return;
     throw new Error(`${step}: ${error.message}`);
   };
 
-  fail("brands", (await db.from("brands").upsert(brands.map((b) => ({ name: b.name, slug: b.slug })), { onConflict: "slug" })).error);
+  fail(
+    "brands",
+    (
+      await db.from("brands").upsert(
+        brands.map((b) => ({ name: b.name, slug: b.slug })),
+        { onConflict: "slug" },
+      )
+    ).error,
+  );
 
   const parents = categories.filter((c) => !c.parent);
   fail(
     "categories (top level)",
     (
       await db.from("categories").upsert(
-        parents.map((c) => ({ name: c.name, slug: c.slug, description: c.description ?? null, sort_order: c.sortOrder, image_url: c.imageUrl ?? null })),
+        parents.map((c) => ({
+          name: c.name,
+          slug: c.slug,
+          description: c.description ?? null,
+          sort_order: c.sortOrder,
+          image_url: c.imageUrl ?? null,
+        })),
         { onConflict: "slug" },
       )
     ).error,
   );
 
-  const { data: parentRows, error: parentError } = await db.from("categories").select("id, slug");
+  const { data: parentRows, error: parentError } = await db
+    .from("categories")
+    .select("id, slug");
   fail("categories (read back)", parentError);
   const categoryId = new Map((parentRows ?? []).map((r) => [r.slug, r.id]));
 
@@ -484,8 +519,10 @@ async function seedViaSupabase() {
           base_price: p.basePrice,
           sale_price: p.salePrice ?? null,
           is_featured: p.featured ?? false,
-          meta_title: `${p.name} — ${brands.find((b) => b.slug === p.brand)?.name ?? ""}`.trim(),
-          meta_description: p.description.split(". ")[0]!.replace(/\.$/, "") + ".",
+          meta_title:
+            `${p.name} — ${brands.find((b) => b.slug === p.brand)?.name ?? ""}`.trim(),
+          meta_description:
+            p.description.split(". ")[0]!.replace(/\.$/, "") + ".",
           search_keywords: SEARCH_KEYWORDS[p.footwearType] ?? [],
         })),
         { onConflict: "slug" },
@@ -502,7 +539,10 @@ async function seedViaSupabase() {
 
   // Cleared first: the partial unique index on (product_id) where is_primary
   // rejects a second primary before the old one is gone.
-  fail("product_images (clear)", (await db.from("product_images").delete().in("product_id", ids)).error);
+  fail(
+    "product_images (clear)",
+    (await db.from("product_images").delete().in("product_id", ids)).error,
+  );
   fail(
     "product_images",
     (
@@ -544,14 +584,20 @@ async function seedViaSupabase() {
     "collections",
     (
       await db.from("collections").upsert(
-        collections.map((c) => ({ name: c.name, slug: c.slug, description: c.description, sort_order: c.sortOrder })),
+        collections.map((c) => ({
+          name: c.name,
+          slug: c.slug,
+          description: c.description,
+          sort_order: c.sortOrder,
+        })),
         { onConflict: "slug" },
       )
     ).error,
   );
   fail(
     "banners (clear)",
-    (await db.from("banners").delete().eq("placement", heroBanner.placement)).error,
+    (await db.from("banners").delete().eq("placement", heroBanner.placement))
+      .error,
   );
   fail(
     "banners",
@@ -573,7 +619,9 @@ async function seedViaSupabase() {
     .from("collections")
     .select("id, slug");
   fail("collections (read back)", collectionReadError);
-  const collectionId = new Map((collectionRows ?? []).map((r) => [r.slug, r.id]));
+  const collectionId = new Map(
+    (collectionRows ?? []).map((r) => [r.slug, r.id]),
+  );
   fail(
     "collection_products",
     (
@@ -610,13 +658,20 @@ async function seedViaSupabase() {
     "site_settings",
     (
       await db.from("site_settings").upsert(
-        siteSettings.map((s) => ({ key: s.key, value: s.value, description: s.description })),
+        siteSettings.map((s) => ({
+          key: s.key,
+          value: s.value,
+          description: s.description,
+        })),
         { onConflict: "key" },
       )
     ).error,
   );
 
-  fail("homepage_sections (clear)", (await db.from("homepage_sections").delete().gte("sort_order", 0)).error);
+  fail(
+    "homepage_sections (clear)",
+    (await db.from("homepage_sections").delete().gte("sort_order", 0)).error,
+  );
   fail(
     "homepage_sections",
     (
@@ -664,7 +719,10 @@ async function main() {
   if (process.argv.includes("--sql")) {
     const target = join(process.cwd(), "supabase", "seed.sql");
     writeFileSync(target, buildSql() + "\n");
-    const variantCount = products.reduce((n, p) => n + variantsFor(p).length, 0);
+    const variantCount = products.reduce(
+      (n, p) => n + variantsFor(p).length,
+      0,
+    );
     const imageCount = products.reduce((n, p) => n + imagesFor(p).length, 0);
     console.log(
       `Wrote supabase/seed.sql — ${products.length} products, ${variantCount} variants, ` +
@@ -677,6 +735,9 @@ async function main() {
 
 // Only when run as a script. variantsFor(), imagesFor() and skuFor() are
 // importable helpers, and importing this file should not start seeding.
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (
+  process.argv[1] &&
+  import.meta.url === pathToFileURL(process.argv[1]).href
+) {
   void main();
 }

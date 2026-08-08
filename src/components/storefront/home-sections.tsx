@@ -27,12 +27,18 @@ import type { HomepageSection } from "@/lib/queries/content";
  * that has not been built yet.
  */
 
-function payloadString(payload: Record<string, unknown>, key: string): string | null {
+function payloadString(
+  payload: Record<string, unknown>,
+  key: string,
+): string | null {
   const value = payload[key];
   return typeof value === "string" && value.length > 0 ? value : null;
 }
 
-function payloadStringArray(payload: Record<string, unknown>, key: string): string[] {
+function payloadStringArray(
+  payload: Record<string, unknown>,
+  key: string,
+): string[] {
   const value = payload[key];
   return Array.isArray(value)
     ? value.filter((v): v is string => typeof v === "string")
@@ -63,8 +69,11 @@ async function Hero({ section }: { section: HomepageSection }) {
   const subtitle = section.subtitle ?? banner?.subtext;
   const eyebrow = payloadString(section.payload, "eyebrow") ?? "Foot Vault";
   const ctaLabel =
-    payloadString(section.payload, "cta_label") ?? banner?.ctaLabel ?? "Shop all footwear";
-  const ctaHref = payloadString(section.payload, "cta_href") ?? banner?.ctaHref ?? "/shop";
+    payloadString(section.payload, "cta_label") ??
+    banner?.ctaLabel ??
+    "Shop all footwear";
+  const ctaHref =
+    payloadString(section.payload, "cta_href") ?? banner?.ctaHref ?? "/shop";
   const secondaryLabel = payloadString(section.payload, "secondary_cta_label");
   const secondaryHref = payloadString(section.payload, "secondary_cta_href");
 
@@ -114,7 +123,11 @@ async function Hero({ section }: { section: HomepageSection }) {
       <div className="relative aspect-5/4 w-full sm:aspect-video md:absolute md:inset-0 md:aspect-auto md:h-full">
         {mobileProps && desktopProps ? (
           <picture>
-            <source media="(min-width: 768px)" srcSet={desktopProps.srcSet} sizes="100vw" />
+            <source
+              media="(min-width: 768px)"
+              srcSet={desktopProps.srcSet}
+              sizes="100vw"
+            />
             {/* A bare <img> on purpose: getImageProps is the documented way to
                 art-direct next/image. <Image> cannot emit a <source media>, and
                 two <Image> elements make the browser fetch both crops. */}
@@ -126,7 +139,10 @@ async function Hero({ section }: { section: HomepageSection }) {
             />
           </picture>
         ) : (
-          <div className="tread-texture pointer-events-none absolute inset-0" aria-hidden />
+          <div
+            className="tread-texture pointer-events-none absolute inset-0"
+            aria-hidden
+          />
         )}
 
         {/* Mobile: a short fade into the copy below, so the seam is not a line.
@@ -210,7 +226,8 @@ async function CategoryGrid({ section }: { section: HomepageSection }) {
                   {tile.name}
                 </span>
                 <span className="text-paper/85 mt-1 block font-mono text-xs tracking-[0.06em]">
-                  {tile.productCount} {tile.productCount === 1 ? "style" : "styles"}
+                  {tile.productCount}{" "}
+                  {tile.productCount === 1 ? "style" : "styles"}
                 </span>
               </span>
             </Link>
@@ -237,7 +254,8 @@ async function ProductRail({ section }: { section: HomepageSection }) {
   ]);
   if (!collection || page.products.length === 0) return null;
 
-  const ctaHref = payloadString(section.payload, "cta_href") ?? `/collection/${slug}`;
+  const ctaHref =
+    payloadString(section.payload, "cta_href") ?? `/collection/${slug}`;
   const title = section.title ?? collection.name;
 
   return (
@@ -283,13 +301,20 @@ function PromoStrip({ section }: { section: HomepageSection }) {
   if (items.length === 0) return null;
 
   return (
-    <section className="bg-fog border-border border-y" aria-label="What we promise">
+    <section
+      className="bg-fog border-border border-y"
+      aria-label="What we promise"
+    >
       <ul className="mx-auto grid max-w-7xl gap-x-8 gap-y-6 px-4 py-10 sm:grid-cols-2 sm:px-6 lg:grid-cols-4">
         {items.map((item) => (
           <li key={item.label} className="reveal">
-            <p className="font-mono text-xs tracking-[0.06em] uppercase">{item.label}</p>
+            <p className="font-mono text-xs tracking-[0.06em] uppercase">
+              {item.label}
+            </p>
             {item.detail ? (
-              <p className="text-muted-foreground mt-1.5 text-sm">{item.detail}</p>
+              <p className="text-muted-foreground mt-1.5 text-sm">
+                {item.detail}
+              </p>
             ) : null}
           </li>
         ))}
@@ -312,7 +337,10 @@ function Banner({ section }: { section: HomepageSection }) {
         data-surface="ink"
         className="relative isolate overflow-hidden rounded-lg px-6 py-12 sm:px-10 sm:py-14"
       >
-        <div className="tread-texture pointer-events-none absolute inset-0" aria-hidden />
+        <div
+          className="tread-texture pointer-events-none absolute inset-0"
+          aria-hidden
+        />
         <div className="relative flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 className="font-display text-2xl font-bold tracking-[-0.02em] uppercase sm:text-4xl">

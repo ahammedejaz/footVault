@@ -48,7 +48,10 @@ export function SizeSelector({
     refs.current.get(size)?.focus();
   };
 
-  const onKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>, index: number) => {
+  const onKeyDown = (
+    event: React.KeyboardEvent<HTMLButtonElement>,
+    index: number,
+  ) => {
     switch (event.key) {
       case "ArrowRight":
       case "ArrowDown":
@@ -73,7 +76,11 @@ export function SizeSelector({
   };
 
   return (
-    <div role="radiogroup" aria-labelledby={labelledBy} className="flex flex-wrap gap-2">
+    <div
+      role="radiogroup"
+      aria-labelledby={labelledBy}
+      className="flex flex-wrap gap-2"
+    >
       {sizes.map((entry, index) => {
         const isSelected = entry.size === selected;
         return (
@@ -88,8 +95,16 @@ export function SizeSelector({
             aria-checked={isSelected}
             // The strikethrough is the whole message and it is invisible to a
             // screen reader, so the name carries it instead.
-            aria-label={entry.available ? `UK ${entry.size}` : `UK ${entry.size}, sold out`}
-            tabIndex={isSelected || (selected === null && entry.size === fallback) ? 0 : -1}
+            aria-label={
+              entry.available
+                ? `UK ${entry.size}`
+                : `UK ${entry.size}, sold out`
+            }
+            tabIndex={
+              isSelected || (selected === null && entry.size === fallback)
+                ? 0
+                : -1
+            }
             onKeyDown={(event) => onKeyDown(event, index)}
             onClick={() => onSelect(entry.size)}
             className={cn(

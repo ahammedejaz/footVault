@@ -24,7 +24,9 @@ const VARIANTS_PER_PATH = 3;
 
 async function main() {
   const browser = await chromium.launch();
-  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const page = await browser.newPage({
+    viewport: { width: 1440, height: 900 },
+  });
   // 60s rather than the 30s default: the first pass after a cold
   // `.next/cache/images` has to generate every optimised image on demand, and
   // a product page asking for four at once can sit well past 30s. Nothing
@@ -42,22 +44,30 @@ async function main() {
     const path = queue.shift()!;
     crawled++;
 
-    const response = await page.goto(`${BASE_URL}${path}`, { waitUntil: "domcontentloaded" });
+    const response = await page.goto(`${BASE_URL}${path}`, {
+      waitUntil: "domcontentloaded",
+    });
     const status = response?.status() ?? 0;
     if (status >= 400) {
       problems.push(`${path} — HTTP ${status}`);
       continue;
     }
-    await page.locator("h1").first().waitFor({ state: "visible", timeout: 8000 }).catch(() => {
-      problems.push(`${path} — no visible <h1>`);
-    });
+    await page
+      .locator("h1")
+      .first()
+      .waitFor({ state: "visible", timeout: 8000 })
+      .catch(() => {
+        problems.push(`${path} — no visible <h1>`);
+      });
 
     const found = await page.evaluate(() => {
       const canonical = document
         .querySelector<HTMLLinkElement>('link[rel="canonical"]')
         ?.getAttribute("href");
       const jsonLd = Array.from(
-        document.querySelectorAll<HTMLScriptElement>('script[type="application/ld+json"]'),
+        document.querySelectorAll<HTMLScriptElement>(
+          'script[type="application/ld+json"]',
+        ),
       ).map((node) => node.textContent ?? "");
       const links = Array.from(document.querySelectorAll("a[href]"))
         .map((a) => a.getAttribute("href") ?? "")
@@ -99,7 +109,9 @@ async function main() {
       `${seen.size} unique internal links seen.`,
   );
   if (queue.length > 0) {
-    console.log(`Stopped at the ${MAX_PAGES}-page cap with ${queue.length} still queued.`);
+    console.log(
+      `Stopped at the ${MAX_PAGES}-page cap with ${queue.length} still queued.`,
+    );
   }
   if (problems.length === 0) {
     console.log("No broken links, no missing titles, no malformed JSON-LD.");

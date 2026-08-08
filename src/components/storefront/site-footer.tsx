@@ -50,7 +50,9 @@ export async function SiteFooter() {
     address: "",
   });
   const social = setting<SocialSettings>(settings, "social", {});
-  const socialLinks = Object.entries(social).filter(([, href]) => Boolean(href));
+  const socialLinks = Object.entries(social).filter(([, href]) =>
+    Boolean(href),
+  );
 
   return (
     <footer data-surface="ink" className="mt-auto">
@@ -85,7 +87,9 @@ export async function SiteFooter() {
                   </p>
                 ) : null}
                 {contact.address ? (
-                  <p className="text-muted-foreground max-w-xs">{contact.address}</p>
+                  <p className="text-muted-foreground max-w-xs">
+                    {contact.address}
+                  </p>
                 ) : null}
               </address>
             ) : null}
@@ -104,7 +108,8 @@ export async function SiteFooter() {
                       >
                         {Icon ? <Icon className="size-4" aria-hidden /> : null}
                         <span className="sr-only">
-                          Foot Vault on {name.charAt(0).toUpperCase() + name.slice(1)}
+                          Foot Vault on{" "}
+                          {name.charAt(0).toUpperCase() + name.slice(1)}
                         </span>
                       </a>
                     </li>

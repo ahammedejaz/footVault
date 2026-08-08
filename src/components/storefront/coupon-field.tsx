@@ -17,7 +17,10 @@ import { Label } from "@/components/ui/label";
 export function CouponField() {
   return (
     <div>
-      <Label htmlFor="coupon" className="font-mono text-xs tracking-[0.06em] uppercase">
+      <Label
+        htmlFor="coupon"
+        className="font-mono text-xs tracking-[0.06em] uppercase"
+      >
         Coupon code
       </Label>
       <div className="mt-2 flex gap-2">
@@ -30,9 +33,12 @@ export function CouponField() {
           className="font-mono"
         />
       </div>
-      <p id="coupon-status" className="text-muted-foreground mt-2 text-xs text-pretty">
-        Codes are not being accepted yet. This opens with the next release — nothing
-        you type here would apply today.
+      <p
+        id="coupon-status"
+        className="text-muted-foreground mt-2 text-xs text-pretty"
+      >
+        Codes are not being accepted yet. This opens with the next release —
+        nothing you type here would apply today.
       </p>
     </div>
   );

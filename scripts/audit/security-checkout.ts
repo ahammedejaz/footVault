@@ -53,7 +53,10 @@ const SERVICE = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 // nothing is listening on turns thirteen HTTP checks into SKIPs, and a SKIP is
 // only honest if somebody reads it — the harness counts them as failures for
 // exactly that reason, but the right fix is to point at a port that exists.
-const BASE = (process.env.FV_BASE_URL ?? "http://localhost:3210").replace(/\/$/, "");
+const BASE = (process.env.FV_BASE_URL ?? "http://localhost:3210").replace(
+  /\/$/,
+  "",
+);
 const WEBHOOK_SECRET = (process.env.RAZORPAY_WEBHOOK_SECRET ?? "").trim();
 const PASSWORD = "correct-horse-battery-staple-42";
 const GUEST_COOKIE = "fv_guest";
@@ -74,7 +77,9 @@ let skipped = 0;
 
 function check(name: string, passed: boolean, detail = "") {
   if (!passed) failures++;
-  console.log(`${passed ? "  PASS" : "  FAIL"}  ${name}${detail ? `  — ${detail}` : ""}`);
+  console.log(
+    `${passed ? "  PASS" : "  FAIL"}  ${name}${detail ? `  — ${detail}` : ""}`,
+  );
 }
 
 /** A check that could not run. Counts against the suite, loudly. */
@@ -106,7 +111,9 @@ function bearerClient(accessToken: string): SupabaseClient<Database> {
 
 /** Razorpay signs the exact bytes it sends. So does this. */
 function sign(rawBody: string): string {
-  return createHmac("sha256", WEBHOOK_SECRET).update(rawBody, "utf8").digest("hex");
+  return createHmac("sha256", WEBHOOK_SECRET)
+    .update(rawBody, "utf8")
+    .digest("hex");
 }
 
 type WebhookReply = { status: number; body: string };
@@ -116,7 +123,10 @@ async function postWebhook(
   signature: string | null,
   extraHeaders: Record<string, string> = {},
 ): Promise<WebhookReply> {
-  const headers: Record<string, string> = { "content-type": "application/json", ...extraHeaders };
+  const headers: Record<string, string> = {
+    "content-type": "application/json",
+    ...extraHeaders,
+  };
   if (signature !== null) headers["x-razorpay-signature"] = signature;
 
   const response = await fetch(`${BASE}/api/payments/razorpay/webhook`, {
@@ -148,7 +158,9 @@ function paymentEvent(args: {
           entity: "payment",
           amount: args.amountPaise,
           currency: args.currency ?? "INR",
-          status: args.status ?? (args.event === "payment.failed" ? "failed" : "captured"),
+          status:
+            args.status ??
+            (args.event === "payment.failed" ? "failed" : "captured"),
           order_id: args.providerOrderId,
         },
       },
@@ -227,7 +239,10 @@ async function placeOrder(
   guestToken: string | null,
   userId: string | null,
   method: "cod" | "razorpay",
-): Promise<{ ok: true; order: Placed } | { ok: false; code: string; details: string | null }> {
+): Promise<
+  | { ok: true; order: Placed }
+  | { ok: false; code: string; details: string | null }
+> {
   const { data, error } = await admin.rpc("create_order_with_stock", {
     p_cart_id: cartId,
     p_shipping_address: ADDRESS,
@@ -241,17 +256,30 @@ async function placeOrder(
     p_contact_email: "security-audit@example.com",
     p_contact_phone: "9876543210",
   });
-  if (error) return { ok: false, code: error.code ?? "unknown", details: error.details ?? null };
+  if (error)
+    return {
+      ok: false,
+      code: error.code ?? "unknown",
+      details: error.details ?? null,
+    };
   const row = data?.[0];
   if (!row) return { ok: false, code: "no_row", details: null };
   return {
     ok: true,
-    order: { orderId: row.order_id, orderNumber: row.order_number, grandTotal: row.grand_total },
+    order: {
+      orderId: row.order_id,
+      orderNumber: row.order_number,
+      grandTotal: row.grand_total,
+    },
   };
 }
 
-const anon = createClient<Database>(URL_, ANON, { auth: { persistSession: false } });
-const admin = createClient<Database>(URL_, SERVICE, { auth: { persistSession: false } });
+const anon = createClient<Database>(URL_, ANON, {
+  auth: { persistSession: false },
+});
+const admin = createClient<Database>(URL_, SERVICE, {
+  auth: { persistSession: false },
+});
 
 /**
  * Everything to undo, at module scope so the sweep runs from a `finally`.
@@ -280,20 +308,31 @@ async function main() {
   } catch {
     serverUp = false;
   }
-  if (!serverUp) console.log(`  WARNING: ${BASE} is not answering. HTTP checks will SKIP.`);
-  if (!WEBHOOK_SECRET) console.log("  WARNING: RAZORPAY_WEBHOOK_SECRET is empty in this process.");
+  if (!serverUp)
+    console.log(`  WARNING: ${BASE} is not answering. HTTP checks will SKIP.`);
+  if (!WEBHOOK_SECRET)
+    console.log("  WARNING: RAZORPAY_WEBHOOK_SECRET is empty in this process.");
 
-  const variants = await rows<{ id: string; stock_quantity: number; is_active: boolean }>(
+  const variants = await rows<{
+    id: string;
+    stock_quantity: number;
+    is_active: boolean;
+  }>(
     "pick variants",
     anon
       .from("product_variants")
-      .select("id, stock_quantity, is_active, product:products!inner(is_active, deleted_at)")
+      .select(
+        "id, stock_quantity, is_active, product:products!inner(is_active, deleted_at)",
+      )
       .eq("is_active", true)
       .gte("stock_quantity", 6)
       .limit(12)
-      .overrideTypes<{ id: string; stock_quantity: number; is_active: boolean }[]>(),
+      .overrideTypes<
+        { id: string; stock_quantity: number; is_active: boolean }[]
+      >(),
   );
-  if (variants.length < 10) throw new Error("need ten variants with stock >= 6");
+  if (variants.length < 10)
+    throw new Error("need ten variants with stock >= 6");
 
   /** A fresh guest bag holding one unit of `variantId`. */
   async function guestBag(variantId: string, quantity = 1) {
@@ -301,12 +340,18 @@ async function main() {
     const client = guestClient(token);
     const cart = await maybeRow<{ id: string }>(
       "guest cart",
-      client.from("carts").insert({ guest_token: token }).select("id").maybeSingle(),
+      client
+        .from("carts")
+        .insert({ guest_token: token })
+        .select("id")
+        .maybeSingle(),
     );
     if (!cart) throw new Error("could not create a guest cart");
     madeCarts.push(cart.id);
     const error = (
-      await client.from("cart_items").insert({ cart_id: cart.id, variant_id: variantId, quantity })
+      await client
+        .from("cart_items")
+        .insert({ cart_id: cart.id, variant_id: variantId, quantity })
     ).error;
     if (error) throw new Error(`fill guest cart: ${error.message}`);
     return { token, client, cartId: cart.id };
@@ -315,8 +360,15 @@ async function main() {
   /** An order paid for online, with the `payments` row the webhook resolves through. */
   async function razorpayOrder(variantId: string) {
     const bag = await guestBag(variantId);
-    const placed = await placeOrder(admin, bag.cartId, bag.token, null, "razorpay");
-    if (!placed.ok) throw new Error(`could not place a razorpay order: ${placed.code}`);
+    const placed = await placeOrder(
+      admin,
+      bag.cartId,
+      bag.token,
+      null,
+      "razorpay",
+    );
+    if (!placed.ok)
+      throw new Error(`could not place a razorpay order: ${placed.code}`);
     madeOrders.push(placed.order.orderId);
     const providerOrderId = `order_sec${randomUUID().replace(/-/g, "").slice(0, 14)}`;
     const error = (
@@ -359,22 +411,38 @@ async function main() {
   async function historyCount(orderId: string, status?: string) {
     const all = await rows<{ status: string }>(
       "history",
-      admin.from("order_status_history").select("status").eq("order_id", orderId),
+      admin
+        .from("order_status_history")
+        .select("status")
+        .eq("order_id", orderId),
     );
-    return status ? all.filter((row) => row.status === status).length : all.length;
+    return status
+      ? all.filter((row) => row.status === status).length
+      : all.length;
   }
 
   async function ledger(eventId: string) {
-    return rows<{ id: string; result: string | null; processed_at: string | null }>(
+    return rows<{
+      id: string;
+      result: string | null;
+      processed_at: string | null;
+    }>(
       "ledger",
-      admin.from("payment_events").select("id, result, processed_at").eq("event_id", eventId),
+      admin
+        .from("payment_events")
+        .select("id, result, processed_at")
+        .eq("event_id", eventId),
     );
   }
 
   async function stockOf(variantId: string) {
     const row = await maybeRow<{ stock_quantity: number }>(
       "stock",
-      admin.from("product_variants").select("stock_quantity").eq("id", variantId).maybeSingle(),
+      admin
+        .from("product_variants")
+        .select("stock_quantity")
+        .eq("id", variantId)
+        .maybeSingle(),
     );
     return row?.stock_quantity ?? -1;
   }
@@ -496,7 +564,10 @@ async function main() {
   const stockBeforeReplay = await stockOf(variants[1].id);
   {
     if (!serverUp || !WEBHOOK_SECRET) {
-      skip("ten sequential deliveries", "no reachable server or no webhook secret");
+      skip(
+        "ten sequential deliveries",
+        "no reachable server or no webhook secret",
+      );
     } else {
       const paymentId = `pay_sec${randomUUID().replace(/-/g, "").slice(0, 12)}`;
       const body = paymentEvent({
@@ -509,7 +580,8 @@ async function main() {
       madeEventIds.push(eventId);
 
       const replies: WebhookReply[] = [];
-      for (let i = 0; i < 10; i++) replies.push(await postWebhook(body, sign(body)));
+      for (let i = 0; i < 10; i++)
+        replies.push(await postWebhook(body, sign(body)));
 
       check(
         "all ten deliveries answer 200",
@@ -544,7 +616,10 @@ async function main() {
         (await historyCount(replay.order.orderId, "confirmed")) === 1,
         `${await historyCount(replay.order.orderId, "confirmed")}`,
       );
-      const payments = await rows<{ status: string; provider_payment_id: string | null }>(
+      const payments = await rows<{
+        status: string;
+        provider_payment_id: string | null;
+      }>(
         "payments after replay",
         admin
           .from("payments")
@@ -588,11 +663,20 @@ async function main() {
         ["no signature header at all", await postWebhook(body, null)],
         ["an empty signature", await postWebhook(body, "")],
         ["64 zeroes", await postWebhook(body, "0".repeat(64))],
-        ["the signature of a different body", await postWebhook(body, sign(other))],
+        [
+          "the signature of a different body",
+          await postWebhook(body, sign(other)),
+        ],
         // The classic: sign a cheap body, then send an expensive one.
         ["a body swapped after signing", await postWebhook(body, sign(other))],
-        ["the correct signature upper-cased", await postWebhook(body, good.toUpperCase())],
-        ["the correct signature, one character short", await postWebhook(body, good.slice(0, 63))],
+        [
+          "the correct signature upper-cased",
+          await postWebhook(body, good.toUpperCase()),
+        ],
+        [
+          "the correct signature, one character short",
+          await postWebhook(body, good.slice(0, 63)),
+        ],
         [
           "an HMAC made with the API key secret instead",
           await postWebhook(
@@ -605,7 +689,11 @@ async function main() {
       ];
 
       for (const [label, reply] of attempts) {
-        check(`rejected with 400: ${label}`, reply.status === 400, `status ${reply.status}`);
+        check(
+          `rejected with 400: ${label}`,
+          reply.status === 400,
+          `status ${reply.status}`,
+        );
       }
 
       const row = await orderRow(forge.order.orderId);
@@ -643,8 +731,12 @@ async function main() {
     const v = variants[3];
     const bag = await guestBag(v.id, 1);
     flagsToRestore.push({ id: v.id, is_active: true });
-    const off = (await admin.from("product_variants").update({ is_active: false }).eq("id", v.id))
-      .error;
+    const off = (
+      await admin
+        .from("product_variants")
+        .update({ is_active: false })
+        .eq("id", v.id)
+    ).error;
     if (off) throw new Error(`deactivate: ${off.message}`);
 
     const stockBefore = await stockOf(v.id);
@@ -656,36 +748,66 @@ async function main() {
     );
     check(
       "and reports it as available: 0, not as its stock count",
-      !refused.ok && /"available":0/.test((refused.details ?? "").replace(/\s/g, "")),
+      !refused.ok &&
+        /"available":0/.test((refused.details ?? "").replace(/\s/g, "")),
       refused.ok ? "" : (refused.details ?? "no detail"),
     );
-    check("no stock moved on the refusal", (await stockOf(v.id)) === stockBefore);
+    check(
+      "no stock moved on the refusal",
+      (await stockOf(v.id)) === stockBefore,
+    );
 
     const cart = await maybeRow<{ status: string }>(
       "cart after refusal",
       admin.from("carts").select("status").eq("id", bag.cartId).maybeSingle(),
     );
-    check("the bag is left active for the customer", cart?.status === "active", cart?.status ?? "");
+    check(
+      "the bag is left active for the customer",
+      cart?.status === "active",
+      cart?.status ?? "",
+    );
 
     // The other direction: withdraw it *after* the order exists.
-    const back = (await admin.from("product_variants").update({ is_active: true }).eq("id", v.id))
-      .error;
+    const back = (
+      await admin
+        .from("product_variants")
+        .update({ is_active: true })
+        .eq("id", v.id)
+    ).error;
     if (back) throw new Error(`reactivate: ${back.message}`);
     const bag2 = await guestBag(v.id, 1);
-    const placed = await placeOrder(admin, bag2.cartId, bag2.token, null, "cod");
+    const placed = await placeOrder(
+      admin,
+      bag2.cartId,
+      bag2.token,
+      null,
+      "cod",
+    );
     if (!placed.ok) throw new Error(`could not place: ${placed.code}`);
     madeOrders.push(placed.order.orderId);
-    const before = await rows<{ product_name: string; unit_price: number; sku: string }>(
+    const before = await rows<{
+      product_name: string;
+      unit_price: number;
+      sku: string;
+    }>(
       "snapshot before",
       admin
         .from("order_items")
         .select("product_name, unit_price, sku")
         .eq("order_id", placed.order.orderId),
     );
-    const off2 = (await admin.from("product_variants").update({ is_active: false }).eq("id", v.id))
-      .error;
+    const off2 = (
+      await admin
+        .from("product_variants")
+        .update({ is_active: false })
+        .eq("id", v.id)
+    ).error;
     if (off2) throw new Error(`deactivate 2: ${off2.message}`);
-    const after = await rows<{ product_name: string; unit_price: number; sku: string }>(
+    const after = await rows<{
+      product_name: string;
+      unit_price: number;
+      sku: string;
+    }>(
       "snapshot after",
       admin
         .from("order_items")
@@ -698,7 +820,10 @@ async function main() {
       JSON.stringify(after),
     );
     const restored = (
-      await admin.from("product_variants").update({ is_active: true }).eq("id", v.id)
+      await admin
+        .from("product_variants")
+        .update({ is_active: true })
+        .eq("id", v.id)
     ).error;
     if (restored) console.error(`  could not reactivate ${v.id}`);
   }
@@ -710,11 +835,16 @@ async function main() {
     const v = variants[4];
     stockToRestore.set(v.id, v.stock_quantity);
     const pinned = (
-      await admin.from("product_variants").update({ stock_quantity: 1 }).eq("id", v.id)
+      await admin
+        .from("product_variants")
+        .update({ stock_quantity: 1 })
+        .eq("id", v.id)
     ).error;
     if (pinned) throw new Error(`pin stock: ${pinned.message}`);
 
-    const bags = await Promise.all([0, 1, 2, 3, 4].map(() => guestBag(v.id, 1)));
+    const bags = await Promise.all(
+      [0, 1, 2, 3, 4].map(() => guestBag(v.id, 1)),
+    );
     const raced = await Promise.all(
       bags.map((bag) => placeOrder(admin, bag.cartId, bag.token, null, "cod")),
     );
@@ -728,23 +858,39 @@ async function main() {
       raced.map((r) => (r.ok ? "won" : r.code)).join(","),
     );
     const left = await stockOf(v.id);
-    check("stock lands on exactly zero and never goes negative", left === 0, `${left}`);
+    check(
+      "stock lands on exactly zero and never goes negative",
+      left === 0,
+      `${left}`,
+    );
     const orderCount = await rows<{ id: string }>(
       "orders on the contested variant",
       admin
         .from("order_items")
         .select("id, order:orders!inner(status)")
         .eq("variant_id", v.id)
-        .in("order_id", won.filter((r) => r.ok).map((r) => (r.ok ? r.order.orderId : ""))),
+        .in(
+          "order_id",
+          won.filter((r) => r.ok).map((r) => (r.ok ? r.order.orderId : "")),
+        ),
     );
-    check("exactly one order line exists for the unit", orderCount.length === 1);
+    check(
+      "exactly one order line exists for the unit",
+      orderCount.length === 1,
+    );
   }
 
   /* ═══ 6 · reading somebody else's order ═══════════════════════════════════ */
   section("6 · Customer A's order, requested by customer B");
 
   const victim = await guestBag(variants[5].id, 1);
-  const victimOrder = await placeOrder(admin, victim.cartId, victim.token, null, "cod");
+  const victimOrder = await placeOrder(
+    admin,
+    victim.cartId,
+    victim.token,
+    null,
+    "cod",
+  );
   if (!victimOrder.ok) throw new Error("could not place the victim order");
   madeOrders.push(victimOrder.order.orderId);
 
@@ -754,7 +900,10 @@ async function main() {
 
     const byNumber = await rows<{ id: string }>(
       "attacker by number",
-      attacker.from("orders").select("id").eq("order_number", victimOrder.order.orderNumber),
+      attacker
+        .from("orders")
+        .select("id")
+        .eq("order_number", victimOrder.order.orderNumber),
     );
     const byId = await rows<{ id: string }>(
       "attacker by id",
@@ -762,30 +911,53 @@ async function main() {
     );
     const items = await rows<{ id: string }>(
       "attacker items",
-      attacker.from("order_items").select("id").eq("order_id", victimOrder.order.orderId),
+      attacker
+        .from("order_items")
+        .select("id")
+        .eq("order_id", victimOrder.order.orderId),
     );
     const history = await rows<{ id: string }>(
       "attacker history",
-      attacker.from("order_status_history").select("id").eq("order_id", victimOrder.order.orderId),
+      attacker
+        .from("order_status_history")
+        .select("id")
+        .eq("order_id", victimOrder.order.orderId),
     );
     const noToken = await rows<{ id: string }>(
       "no token at all",
-      anon.from("orders").select("id").eq("order_number", victimOrder.order.orderNumber),
+      anon
+        .from("orders")
+        .select("id")
+        .eq("order_number", victimOrder.order.orderNumber),
     );
 
-    check("API — another guest reads nothing by order number", byNumber.length === 0);
+    check(
+      "API — another guest reads nothing by order number",
+      byNumber.length === 0,
+    );
     check("API — nor by order id", byId.length === 0);
     check("API — nor its items", items.length === 0);
     check("API — nor its history", history.length === 0);
-    check("API — nor an anonymous caller carrying no token", noToken.length === 0);
+    check(
+      "API — nor an anonymous caller carrying no token",
+      noToken.length === 0,
+    );
 
     // Two throwaway accounts, so the signed-in half of the question is real.
     const emailA = `fv-sec-a.${Date.now().toString(36)}@example.com`;
     const emailB = `fv-sec-b.${Date.now().toString(36)}@example.com`;
     const signA = await anon.auth.signUp({ email: emailA, password: PASSWORD });
     const signB = await anon.auth.signUp({ email: emailB, password: PASSWORD });
-    if (signA.error || !signA.data.session || signB.error || !signB.data.session) {
-      skip("the signed-in half of the IDOR check", "sign-up did not return a session");
+    if (
+      signA.error ||
+      !signA.data.session ||
+      signB.error ||
+      !signB.data.session
+    ) {
+      skip(
+        "the signed-in half of the IDOR check",
+        "sign-up did not return a session",
+      );
     } else {
       madeUsers.push(signA.data.session.user.id, signB.data.session.user.id);
       const clientA = bearerClient(signA.data.session.access_token);
@@ -803,19 +975,30 @@ async function main() {
       if (!cartA) throw new Error("no cart for A");
       madeCarts.push(cartA.id);
       const fill = (
-        await clientA
-          .from("cart_items")
-          .insert({ cart_id: cartA.id, variant_id: variants[6].id, quantity: 1 })
+        await clientA.from("cart_items").insert({
+          cart_id: cartA.id,
+          variant_id: variants[6].id,
+          quantity: 1,
+        })
       ).error;
       if (fill) throw new Error(`fill A: ${fill.message}`);
-      const owned = await placeOrder(admin, cartA.id, null, signA.data.session.user.id, "cod");
+      const owned = await placeOrder(
+        admin,
+        cartA.id,
+        null,
+        signA.data.session.user.id,
+        "cod",
+      );
       if (!owned.ok) throw new Error(`A could not order: ${owned.code}`);
       madeOrders.push(owned.order.orderId);
       const ordersOfA = owned.order;
 
       const bReadsA = await rows<{ id: string }>(
         "B reads A by number",
-        clientB.from("orders").select("id").eq("order_number", ordersOfA.orderNumber),
+        clientB
+          .from("orders")
+          .select("id")
+          .eq("order_number", ordersOfA.orderNumber),
       );
       const bReadsAById = await rows<{ id: string }>(
         "B reads A by id",
@@ -823,62 +1006,107 @@ async function main() {
       );
       const aReadsA = await rows<{ id: string }>(
         "A reads A",
-        clientA.from("orders").select("id").eq("order_number", ordersOfA.orderNumber),
+        clientA
+          .from("orders")
+          .select("id")
+          .eq("order_number", ordersOfA.orderNumber),
       );
-      check("API — signed-in B cannot read A's order by number", bReadsA.length === 0);
+      check(
+        "API — signed-in B cannot read A's order by number",
+        bReadsA.length === 0,
+      );
       check("API — nor by id", bReadsAById.length === 0);
       check("API — and A can still read their own", aReadsA.length === 1);
 
       // B tries to become the owner by writing the columns the policies key on.
       const stolen = (
-        await clientB.from("orders").update({ user_id: signB.data.session.user.id }).eq("id", ordersOfA.orderId)
+        await clientB
+          .from("orders")
+          .update({ user_id: signB.data.session.user.id })
+          .eq("id", ordersOfA.orderId)
       ).error;
       const stillA = await maybeRow<{ user_id: string | null }>(
         "owner after the attempt",
-        admin.from("orders").select("user_id").eq("id", ordersOfA.orderId).maybeSingle(),
+        admin
+          .from("orders")
+          .select("user_id")
+          .eq("id", ordersOfA.orderId)
+          .maybeSingle(),
       );
       check(
         "API — B cannot reassign A's order to themselves",
         stillA?.user_id === signA.data.session.user.id,
-        stolen ? `refused: ${stolen.code}` : "no error, but the row did not change",
+        stolen
+          ? `refused: ${stolen.code}`
+          : "no error, but the row did not change",
       );
 
       const marked = (
-        await clientB.from("orders").update({ payment_status: "paid" }).eq("id", ordersOfA.orderId)
+        await clientB
+          .from("orders")
+          .update({ payment_status: "paid" })
+          .eq("id", ordersOfA.orderId)
       ).error;
       const paid = await orderRow(ordersOfA.orderId);
       check(
         "API — a customer cannot mark any order paid",
         paid?.payment_status === "unpaid",
-        marked ? `refused: ${marked.code}` : `payment_status ${paid?.payment_status}`,
+        marked
+          ? `refused: ${marked.code}`
+          : `payment_status ${paid?.payment_status}`,
       );
 
       // The page, not just the API.
       if (!serverUp) {
         skip("the page-level IDOR checks", `${BASE} is not answering`);
       } else {
-        const asVictim = await fetch(`${BASE}/order/${victimOrder.order.orderNumber}`, {
-          headers: { cookie: `${GUEST_COOKIE}=${victim.token}` },
-          redirect: "manual",
-        });
-        const asStranger = await fetch(`${BASE}/order/${victimOrder.order.orderNumber}`, {
-          headers: { cookie: `${GUEST_COOKIE}=${randomUUID()}` },
-          redirect: "manual",
-        });
-        const asNobody = await fetch(`${BASE}/order/${victimOrder.order.orderNumber}`, {
-          redirect: "manual",
-        });
-        check("page — the guest who placed it gets 200", asVictim.status === 200, `${asVictim.status}`);
-        check("page — a guest with another token gets 404", asStranger.status === 404, `${asStranger.status}`);
-        check("page — no cookie at all gets 404", asNobody.status === 404, `${asNobody.status}`);
+        const asVictim = await fetch(
+          `${BASE}/order/${victimOrder.order.orderNumber}`,
+          {
+            headers: { cookie: `${GUEST_COOKIE}=${victim.token}` },
+            redirect: "manual",
+          },
+        );
+        const asStranger = await fetch(
+          `${BASE}/order/${victimOrder.order.orderNumber}`,
+          {
+            headers: { cookie: `${GUEST_COOKIE}=${randomUUID()}` },
+            redirect: "manual",
+          },
+        );
+        const asNobody = await fetch(
+          `${BASE}/order/${victimOrder.order.orderNumber}`,
+          {
+            redirect: "manual",
+          },
+        );
+        check(
+          "page — the guest who placed it gets 200",
+          asVictim.status === 200,
+          `${asVictim.status}`,
+        );
+        check(
+          "page — a guest with another token gets 404",
+          asStranger.status === 404,
+          `${asStranger.status}`,
+        );
+        check(
+          "page — no cookie at all gets 404",
+          asNobody.status === 404,
+          `${asNobody.status}`,
+        );
 
-        const detailAsStranger = await fetch(`${BASE}/account/orders/${ordersOfA.orderId}`, {
-          headers: { cookie: `${GUEST_COOKIE}=${randomUUID()}` },
-          redirect: "manual",
-        });
+        const detailAsStranger = await fetch(
+          `${BASE}/account/orders/${ordersOfA.orderId}`,
+          {
+            headers: { cookie: `${GUEST_COOKIE}=${randomUUID()}` },
+            redirect: "manual",
+          },
+        );
         check(
           "page — /account/orders/<A's id> is 404 (or a redirect to sign in) for a stranger",
-          detailAsStranger.status === 404 || detailAsStranger.status === 307 ||
+          detailAsStranger.status === 404 ||
+            detailAsStranger.status === 307 ||
             detailAsStranger.status === 302,
           `${detailAsStranger.status}`,
         );
@@ -916,7 +1144,10 @@ async function main() {
     const stranger = guestClient(randomUUID());
     const found = await rows<{ order_number: string }>(
       "walking the sequence",
-      stranger.from("orders").select("order_number").in("order_number", numbers),
+      stranger
+        .from("orders")
+        .select("order_number")
+        .in("order_number", numbers),
     );
     check(
       `API — walking ${numbers.length} neighbouring order numbers yields nothing`,
@@ -959,7 +1190,11 @@ async function main() {
       "can anyone select guest_token",
       stranger.from("orders").select("guest_token").limit(5),
     );
-    check("API — no stranger can list guest tokens", leak.length === 0, `${leak.length} rows`);
+    check(
+      "API — no stranger can list guest tokens",
+      leak.length === 0,
+      `${leak.length} rows`,
+    );
   }
 
   /* ═══ 8 · the coupon field ════════════════════════════════════════════════ */
@@ -967,8 +1202,16 @@ async function main() {
 
   {
     const row = await orderRow(victimOrder.order.orderId);
-    check("discount_total is zero on a placed order", row?.discount_total === 0, `${row?.discount_total}`);
-    check("coupon_code is null — nothing writes it yet", row?.coupon_code === null, `${row?.coupon_code}`);
+    check(
+      "discount_total is zero on a placed order",
+      row?.discount_total === 0,
+      `${row?.discount_total}`,
+    );
+    check(
+      "coupon_code is null — nothing writes it yet",
+      row?.coupon_code === null,
+      `${row?.coupon_code}`,
+    );
 
     const parsed = checkoutSchema({ requireContactEmail: false }).safeParse({
       paymentMethod: "cod",
@@ -979,7 +1222,9 @@ async function main() {
     });
     check(
       "a coupon in the checkout payload is dropped before the server sees it",
-      parsed.success && !("coupon" in parsed.data) && !("couponCode" in parsed.data),
+      parsed.success &&
+        !("coupon" in parsed.data) &&
+        !("couponCode" in parsed.data),
       parsed.success ? Object.keys(parsed.data).join(",") : "rejected",
     );
 
@@ -987,7 +1232,11 @@ async function main() {
       "anon reads coupons",
       anon.from("coupons").select("id").limit(5),
     );
-    check("the coupons table is unreadable from the client", coupons.length === 0, `${coupons.length} rows`);
+    check(
+      "the coupons table is unreadable from the client",
+      coupons.length === 0,
+      `${coupons.length} rows`,
+    );
   }
 
   /* ═══ 9 · secrets in the built bundle ═════════════════════════════════════ */
@@ -997,7 +1246,10 @@ async function main() {
     const { existsSync, readdirSync, statSync } = await import("node:fs");
     const { join } = await import("node:path");
     if (!existsSync(".next/static")) {
-      skip("grepping the built output", "run `npm run build` first — .next/static is missing");
+      skip(
+        "grepping the built output",
+        "run `npm run build` first — .next/static is missing",
+      );
     } else {
       const files: string[] = [];
       const walk = (dir: string) => {
@@ -1016,15 +1268,26 @@ async function main() {
       ];
       for (const [label, value] of needles) {
         if (!value) {
-          skip(`${label} is not reachable in the bundle`, "the value is blank in this environment");
+          skip(
+            `${label} is not reachable in the bundle`,
+            "the value is blank in this environment",
+          );
           continue;
         }
-        const hits = files.filter((file) => readFileSync(file, "utf8").includes(value));
-        check(`${label} does not appear in .next/static`, hits.length === 0, hits.slice(0, 3).join(" "));
+        const hits = files.filter((file) =>
+          readFileSync(file, "utf8").includes(value),
+        );
+        check(
+          `${label} does not appear in .next/static`,
+          hits.length === 0,
+          hits.slice(0, 3).join(" "),
+        );
       }
       const named = files.filter((file) => {
         const text = readFileSync(file, "utf8");
-        return /RAZORPAY_KEY_SECRET|RAZORPAY_WEBHOOK_SECRET|SUPABASE_SERVICE_ROLE_KEY/.test(text);
+        return /RAZORPAY_KEY_SECRET|RAZORPAY_WEBHOOK_SECRET|SUPABASE_SERVICE_ROLE_KEY/.test(
+          text,
+        );
       });
       check(
         "no client chunk even names a server-only secret variable",
@@ -1043,7 +1306,9 @@ async function main() {
     // which is also what keeps footvault/no-unchecked-supabase-error happy.
     const refusals: [string, string][] = [];
     {
-      const { error } = await anon.rpc("assert_cart_stock", { p_cart_id: randomUUID() });
+      const { error } = await anon.rpc("assert_cart_stock", {
+        p_cart_id: randomUUID(),
+      });
       refusals.push(["assert_cart_stock", error?.code ?? "NO ERROR"]);
     }
     {
@@ -1078,9 +1343,11 @@ async function main() {
     check(
       "owns_order() is callable by anon but answers false for somebody else's order",
       !ownsError && notMine === false,
-      ownsError ? ownsError.code ?? "error" : `returned ${notMine}`,
+      ownsError ? (ownsError.code ?? "error") : `returned ${notMine}`,
     );
-    const { data: mine, error: mineError } = await guestClient(victim.token).rpc("owns_order", {
+    const { data: mine, error: mineError } = await guestClient(
+      victim.token,
+    ).rpc("owns_order", {
       order_ref: victimOrder.order.orderId,
     });
     check(
@@ -1101,7 +1368,10 @@ async function main() {
     const email = `fv-sec-m.${Date.now().toString(36)}@example.com`;
     const signed = await anon.auth.signUp({ email, password: PASSWORD });
     if (signed.error || !signed.data.session) {
-      skip("merge_guest_cart parameter spoofing", "sign-up did not return a session");
+      skip(
+        "merge_guest_cart parameter spoofing",
+        "sign-up did not return a session",
+      );
     } else {
       madeUsers.push(signed.data.session.user.id);
       const client = createClient<Database>(URL_, ANON, {
@@ -1120,7 +1390,7 @@ async function main() {
       check(
         "merge_guest_cart refuses a token that is not in the request header",
         !!error && error.code === "42501",
-        error ? error.code ?? "error" : "NO ERROR — it merged",
+        error ? (error.code ?? "error") : "NO ERROR — it merged",
       );
       const stillTheirs = await rows<{ id: string }>(
         "victim cart after the spoof",
@@ -1135,12 +1405,17 @@ async function main() {
   }
 
   /* ═══ 11 · the double-claim seam, under real concurrency ══════════════════ */
-  section("11 · The double claim: recordAndApply's pre-claim vs applyPaymentOutcome's");
+  section(
+    "11 · The double claim: recordAndApply's pre-claim vs applyPaymentOutcome's",
+  );
 
   {
     const target = await razorpayOrder(variants[7].id);
     if (!serverUp || !WEBHOOK_SECRET) {
-      skip("simultaneous deliveries of one event", "no reachable server or no webhook secret");
+      skip(
+        "simultaneous deliveries of one event",
+        "no reachable server or no webhook secret",
+      );
     } else {
       const paymentId = `pay_race${randomUUID().replace(/-/g, "").slice(0, 11)}`;
       const body = paymentEvent({
@@ -1164,10 +1439,15 @@ async function main() {
         replies.map((r) => r.status).join(","),
       );
       const ledgerRows = await ledger(eventId);
-      check("exactly one ledger row survives the storm", ledgerRows.length === 1, `${ledgerRows.length}`);
+      check(
+        "exactly one ledger row survives the storm",
+        ledgerRows.length === 1,
+        `${ledgerRows.length}`,
+      );
       check(
         "the surviving row is processed and marked applied",
-        ledgerRows[0]?.processed_at !== null && ledgerRows[0]?.result === "applied",
+        ledgerRows[0]?.processed_at !== null &&
+          ledgerRows[0]?.result === "applied",
         `${ledgerRows[0]?.result} / ${ledgerRows[0]?.processed_at}`,
       );
       const confirms = await historyCount(target.order.orderId, "confirmed");
@@ -1178,9 +1458,16 @@ async function main() {
       );
       const payments = await rows<{ id: string }>(
         "payment rows after the storm",
-        admin.from("payments").select("id").eq("order_id", target.order.orderId),
+        admin
+          .from("payments")
+          .select("id")
+          .eq("order_id", target.order.orderId),
       );
-      check("still exactly one payment row", payments.length === 1, `${payments.length}`);
+      check(
+        "still exactly one payment row",
+        payments.length === 1,
+        `${payments.length}`,
+      );
     }
   }
 
@@ -1191,7 +1478,10 @@ async function main() {
     // concurrent writers of one transition.
     const target = await razorpayOrder(variants[8].id);
     if (!serverUp || !WEBHOOK_SECRET) {
-      skip("payment.captured racing order.paid", "no reachable server or no webhook secret");
+      skip(
+        "payment.captured racing order.paid",
+        "no reachable server or no webhook secret",
+      );
     } else {
       const paymentId = `pay_pair${randomUUID().replace(/-/g, "").slice(0, 11)}`;
       const captured = paymentEvent({
@@ -1206,7 +1496,10 @@ async function main() {
         amountPaidPaise: target.order.grandTotal,
         paymentEntity: { id: paymentId, amountPaise: target.order.grandTotal },
       });
-      madeEventIds.push(`payment.captured:${paymentId}`, `order.paid:${target.providerOrderId}`);
+      madeEventIds.push(
+        `payment.captured:${paymentId}`,
+        `order.paid:${target.providerOrderId}`,
+      );
 
       const replies = await Promise.all([
         postWebhook(captured, sign(captured)),
@@ -1233,9 +1526,15 @@ async function main() {
       );
       const payments = await rows<{ status: string }>(
         "payments after the pair",
-        admin.from("payments").select("status").eq("order_id", target.order.orderId),
+        admin
+          .from("payments")
+          .select("status")
+          .eq("order_id", target.order.orderId),
       );
-      check("one payment row, captured", payments.length === 1 && payments[0].status === "captured");
+      check(
+        "one payment row, captured",
+        payments.length === 1 && payments[0].status === "captured",
+      );
     }
   }
 
@@ -1258,14 +1557,22 @@ async function main() {
       madeEventIds.push(`payment.captured:${paymentId}`);
       const reply = await postWebhook(body, sign(body));
 
-      check("an under-paid capture still answers 200 (no retry storm)", reply.status === 200, `${reply.status}`);
+      check(
+        "an under-paid capture still answers 200 (no retry storm)",
+        reply.status === 200,
+        `${reply.status}`,
+      );
       const row = await orderRow(under.order.orderId);
       check(
         "an order under-paid by 1 rupee is NOT confirmed",
         row?.status === "pending",
         `${row?.status}`,
       );
-      check("and is NOT marked paid", row?.payment_status === "unpaid", `${row?.payment_status}`);
+      check(
+        "and is NOT marked paid",
+        row?.payment_status === "unpaid",
+        `${row?.payment_status}`,
+      );
       const rec = await ledger(`payment.captured:${paymentId}`);
       check(
         "the ledger records the mismatch with both numbers",
@@ -1274,7 +1581,10 @@ async function main() {
       );
       const payments = await rows<{ status: string; amount: number }>(
         "payments after under-payment",
-        admin.from("payments").select("status, amount").eq("order_id", under.order.orderId),
+        admin
+          .from("payments")
+          .select("status, amount")
+          .eq("order_id", under.order.orderId),
       );
       check(
         "the payment attempt is still recorded as captured, for a human to reconcile",
@@ -1359,9 +1669,17 @@ async function main() {
       });
       madeEventIds.push(`payment.captured:${paymentId}`);
       const reply = await postWebhook(body, sign(body));
-      check("a non-INR payment.captured is dropped with 400", reply.status === 400, `${reply.status}`);
+      check(
+        "a non-INR payment.captured is dropped with 400",
+        reply.status === 400,
+        `${reply.status}`,
+      );
       const row = await orderRow(foreign.order.orderId);
-      check("and the order does not move", row?.status === "pending", `${row?.status}`);
+      check(
+        "and the order does not move",
+        row?.status === "pending",
+        `${row?.status}`,
+      );
 
       // The precedence question: the guard reads payment.currency, the amount
       // for order.paid comes from the *order* entity. A USD order carrying an
@@ -1371,7 +1689,11 @@ async function main() {
         amountPaise: foreign.order.grandTotal,
         amountPaidPaise: foreign.order.grandTotal,
         orderCurrency: "USD",
-        paymentEntity: { id: `${paymentId}b`, amountPaise: foreign.order.grandTotal, currency: "INR" },
+        paymentEntity: {
+          id: `${paymentId}b`,
+          amountPaise: foreign.order.grandTotal,
+          currency: "INR",
+        },
       });
       madeEventIds.push(`order.paid:${foreign.providerOrderId}`);
       const paidReply = await postWebhook(paidBody, sign(paidBody));
@@ -1428,11 +1750,20 @@ async function main() {
         const row = await orderRow(target.order.orderId);
         // The one state that must never exist: a live order whose units have
         // already been given back to the catalog.
-        if (row && row.status !== "cancelled" && row.stock_restored_at !== null) {
+        if (
+          row &&
+          row.status !== "cancelled" &&
+          row.stock_restored_at !== null
+        ) {
           inconsistent++;
           observed = `${row.status}/${row.payment_status} with stock_restored_at set`;
         }
-        if (row && row.status === "cancelled" && row.payment_status === "paid" && !observed) {
+        if (
+          row &&
+          row.status === "cancelled" &&
+          row.payment_status === "paid" &&
+          !observed
+        ) {
           observed = "cancelled/paid — charged and restocked, refund owed";
         }
       }
@@ -1441,7 +1772,8 @@ async function main() {
         inconsistent === 0,
         inconsistent > 0
           ? `${inconsistent}/${attempts} produced ${observed}`
-          : observed || "every race resolved to cancelled or confirmed consistently",
+          : observed ||
+              "every race resolved to cancelled or confirmed consistently",
       );
     }
   }
@@ -1459,7 +1791,10 @@ async function main() {
      * the shelf for somebody else to buy.
      */
     if (!serverUp || !WEBHOOK_SECRET) {
-      skip("aimed cancel-vs-capture race", "no reachable server or no webhook secret");
+      skip(
+        "aimed cancel-vs-capture race",
+        "no reachable server or no webhook secret",
+      );
     } else {
       const spare = await rows<{ id: string }>(
         "variants for the aimed race",
@@ -1492,15 +1827,25 @@ async function main() {
 
         const capture = postWebhook(body, sign(body));
         await new Promise((resolve) => setTimeout(resolve, delays[i]));
-        await Promise.all([capture, cancelOrder(target.order.orderId, "audit: aimed abandon")]);
+        await Promise.all([
+          capture,
+          cancelOrder(target.order.orderId, "audit: aimed abandon"),
+        ]);
 
         const row = await orderRow(target.order.orderId);
         const state = `${delays[i]}ms:${row?.status}/${row?.payment_status}${row?.stock_restored_at ? "+restocked" : ""}`;
         outcomes.push(state);
-        if (row && row.status !== "cancelled" && row.stock_restored_at !== null) {
+        if (
+          row &&
+          row.status !== "cancelled" &&
+          row.stock_restored_at !== null
+        ) {
           bad++;
           if (!evidence) {
-            const timeline = await rows<{ status: string; note: string | null }>(
+            const timeline = await rows<{
+              status: string;
+              note: string | null;
+            }>(
               "timeline of the lost update",
               admin
                 .from("order_status_history")
@@ -1508,8 +1853,7 @@ async function main() {
                 .eq("order_id", target.order.orderId)
                 .order("created_at", { ascending: true }),
             );
-            evidence =
-              ` [${target.order.orderNumber} timeline: ${timeline.map((t) => t.status).join(" -> ")}]`;
+            evidence = ` [${target.order.orderNumber} timeline: ${timeline.map((t) => t.status).join(" -> ")}]`;
           }
         }
       }
@@ -1522,30 +1866,56 @@ async function main() {
     }
   }
 
-  /* ═══ 14 · the guest order that signing in loses ══════════════════════════ */
-  section("14 · A guest order, after the customer accepts the offer to sign in");
+  /* ═══ 14 · the guest order that signing in used to lose ═══════════════════ */
+  section(
+    "14 · A guest order, after the customer accepts the offer to sign in",
+  );
 
   {
-    // The confirmation page for a guest order shows "Create an account" with
-    // `next=/order/<number>`. /auth/callback merges the bag and then, if the
-    // merge says the guest cart is spent, deletes the guest cookie. A checked-
-    // out cart is `converted`, so merge_guest_cart finds no *active* bag — and
-    // reports the token spent. That is the whole chain; each link is checked.
+    /**
+     * This section asserted the bug, and kept asserting it after it was fixed.
+     *
+     * It was written against pre-E-3 behaviour and it checked exactly two of
+     * the three things `/auth/callback` does: merge the bag, then drop the
+     * cookie. It never called `adopt_guest_orders()`, so it never saw the step
+     * that moves the orders — and it then asserted the *consequence* of that
+     * omission, "the guest order is NOT attached to the account", as though it
+     * were the correct outcome. Meanwhile `audit:checkout` §9 asserted the
+     * opposite, correctly. Two suites disagreeing about one behaviour is worse
+     * than one suite, because it means at least one of them is lying and
+     * neither says which.
+     *
+     * Rewritten to run the callback's real sequence, in the callback's real
+     * order — merge, adopt, and only then drop the cookie — and to assert what
+     * that sequence is supposed to produce. The one assertion kept from the old
+     * version is the last: a stranger with no cookie still gets a 404. That was
+     * never the bug, and it must not become one.
+     */
     const bag = await guestBag(variants[2].id, 1);
     const placed = await placeOrder(admin, bag.cartId, bag.token, null, "cod");
-    if (!placed.ok) throw new Error(`could not place the guest order: ${placed.code}`);
+    if (!placed.ok)
+      throw new Error(`could not place the guest order: ${placed.code}`);
     madeOrders.push(placed.order.orderId);
 
     const beforeSignIn = await rows<{ id: string }>(
       "guest reads their order before signing in",
-      guestClient(bag.token).from("orders").select("id").eq("id", placed.order.orderId),
+      guestClient(bag.token)
+        .from("orders")
+        .select("id")
+        .eq("id", placed.order.orderId),
     );
-    check("the guest can read their order while they hold the cookie", beforeSignIn.length === 1);
+    check(
+      "the guest can read their order while they hold the cookie",
+      beforeSignIn.length === 1,
+    );
 
     const email = `fv-sec-g.${Date.now().toString(36)}@example.com`;
     const signUp = await anon.auth.signUp({ email, password: PASSWORD });
     if (signUp.error || !signUp.data.session) {
-      skip("the sign-in half of the orphaned-order chain", "sign-up did not return a session");
+      skip(
+        "the sign-in half of the orphaned-order chain",
+        "sign-up did not return a session",
+      );
     } else {
       madeUsers.push(signUp.data.session.user.id);
       const callbackClient = createClient<Database>(URL_, ANON, {
@@ -1557,49 +1927,62 @@ async function main() {
           },
         },
       });
+      /* Step 1, as /auth/callback does it: fold the bag in. */
       const { data, error } = await callbackClient.rpc("merge_guest_cart", {
         p_guest_token: bag.token,
         p_max_line_quantity: 5,
       });
-      check("merge_guest_cart succeeds for a token whose only cart is converted", !error, error?.message ?? "");
       check(
-        "and reports guest_cart_consumed — which is what makes /auth/callback delete the cookie",
+        "merge_guest_cart succeeds for a token whose only cart is converted",
+        !error,
+        error?.message ?? "",
+      );
+      check(
+        "and reports guest_cart_consumed — the first of the two conditions for dropping the cookie",
         data?.[0]?.guest_cart_consumed === true,
         JSON.stringify(data?.[0] ?? null),
+      );
+
+      /* Step 2, the one this section used to skip. Same client, because the
+         function reads the user from auth.uid() and the token from the
+         x-guest-token header and takes no arguments at all. */
+      const { data: adopted, error: adoptError } =
+        await callbackClient.rpc("adopt_guest_orders");
+      check(
+        "adopt_guest_orders succeeds",
+        !adoptError,
+        adoptError?.message ?? "",
+      );
+      check(
+        "and reports moving exactly the one guest order",
+        adopted === 1,
+        `returned ${JSON.stringify(adopted)}`,
       );
 
       const attached = await rows<{ id: string }>(
         "the new account's orders",
         createClient<Database>(URL_, ANON, {
           auth: { persistSession: false },
-          global: { headers: { Authorization: `Bearer ${signUp.data.session.access_token}` } },
+          global: {
+            headers: {
+              Authorization: `Bearer ${signUp.data.session.access_token}`,
+            },
+          },
         })
           .from("orders")
           .select("id")
           .eq("user_id", signUp.data.session.user.id),
       );
       check(
-        "the guest order is NOT attached to the account that just signed in",
-        attached.length === 0,
+        "the guest order is now readable through the customer policy, by the account that just signed in",
+        attached.length === 1 && attached[0]?.id === placed.order.orderId,
         `${attached.length} orders on the new account`,
       );
 
-      if (!serverUp) {
-        skip("page — the order after the cookie is dropped", `${BASE} is not answering`);
-      } else {
-        // Exactly what the browser does next: same URL, no guest cookie, a
-        // session that does not own the order.
-        const afterSignIn = await fetch(`${BASE}/order/${placed.order.orderNumber}`, {
-          redirect: "manual",
-        });
-        check(
-          "page — /order/<number> now 404s for the customer who placed and paid for it",
-          afterSignIn.status === 404,
-          `${afterSignIn.status} — a 200 here would mean the chain is broken and this is not a finding`,
-        );
-      }
-
-      const stillOrphan = await maybeRow<{ user_id: string | null; guest_token: string | null }>(
+      const row = await maybeRow<{
+        user_id: string | null;
+        guest_token: string | null;
+      }>(
         "the order row itself",
         admin
           .from("orders")
@@ -1608,10 +1991,33 @@ async function main() {
           .maybeSingle(),
       );
       check(
-        "the row still carries only the guest token nobody holds any more",
-        stillOrphan?.user_id === null && stillOrphan?.guest_token === bag.token,
-        JSON.stringify(stillOrphan),
+        "the row carries the account and no longer carries the token — so dropping the cookie is now safe",
+        row?.user_id === signUp.data.session.user.id &&
+          row?.guest_token === null,
+        JSON.stringify(row),
       );
+
+      if (!serverUp) {
+        skip(
+          "page — /order/<number> for a stranger",
+          `${BASE} is not answering`,
+        );
+      } else {
+        // Unchanged from the original, and deliberately so. Adoption moved the
+        // order onto an account; it must not have made the order public. No
+        // cookie, no session — this is a stranger with a guessed order number.
+        const stranger = await fetch(
+          `${BASE}/order/${placed.order.orderNumber}`,
+          {
+            redirect: "manual",
+          },
+        );
+        check(
+          "page — a stranger with no cookie and no session still gets 404",
+          stranger.status === 404,
+          `${stranger.status}`,
+        );
+      }
     }
   }
 
@@ -1646,7 +2052,9 @@ async function main() {
     const backdated = (
       await admin
         .from("orders")
-        .update({ placed_at: new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString() })
+        .update({
+          placed_at: new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString(),
+        })
         .eq("id", target.order.orderId)
     ).error;
     if (backdated) console.error(`  could not backdate: ${backdated.message}`);
@@ -1654,15 +2062,18 @@ async function main() {
     // Called over raw PostgREST rather than through the typed client: the
     // function does not exist yet, so `Database` has no name for it and the
     // typed call would need an `any` the lint gate forbids.
-    const release = await fetch(`${URL_}/rest/v1/rpc/release_abandoned_orders`, {
-      method: "POST",
-      headers: {
-        apikey: SERVICE,
-        Authorization: `Bearer ${SERVICE}`,
-        "content-type": "application/json",
+    const release = await fetch(
+      `${URL_}/rest/v1/rpc/release_abandoned_orders`,
+      {
+        method: "POST",
+        headers: {
+          apikey: SERVICE,
+          Authorization: `Bearer ${SERVICE}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ p_older_than_minutes: 60 }),
       },
-      body: JSON.stringify({ p_older_than_minutes: 60 }),
-    });
+    );
     const after = await stockOf(v.id);
     check(
       "a six-hour-old unpaid order gives its unit back to the catalog",
@@ -1670,7 +2081,7 @@ async function main() {
       release.ok
         ? `${before} -> ${after}`
         : `no release mechanism exists (HTTP ${release.status} from ` +
-          `rpc/release_abandoned_orders) — the unit is still held, ${before} -> ${after}`,
+            `rpc/release_abandoned_orders) — the unit is still held, ${before} -> ${after}`,
     );
   }
 
@@ -1685,13 +2096,18 @@ async function main() {
     const email = `fv-sec-w.${Date.now().toString(36)}@example.com`;
     const signUp = await anon.auth.signUp({ email, password: PASSWORD });
     if (signUp.error || !signUp.data.session) {
-      skip("direct writes to the money tables", "sign-up did not return a session");
+      skip(
+        "direct writes to the money tables",
+        "sign-up did not return a session",
+      );
     } else {
       madeUsers.push(signUp.data.session.user.id);
       const customer = bearerClient(signUp.data.session.access_token);
       const victimVariant = variants[3];
 
-      const variantRow = await maybeRow<{ product: { id: string; base_price: number } }>(
+      const variantRow = await maybeRow<{
+        product: { id: string; base_price: number };
+      }>(
         "a product to reprice",
         admin
           .from("product_variants")
@@ -1700,21 +2116,34 @@ async function main() {
           .maybeSingle()
           .overrideTypes<{ product: { id: string; base_price: number } }>(),
       );
-      if (!variantRow) throw new Error("could not find the product behind the variant");
+      if (!variantRow)
+        throw new Error("could not find the product behind the variant");
       const product = variantRow.product;
 
       // The victim order is COD, so it already carries one legitimate
       // `confirmed` row. The assertion is "unchanged", not "zero".
       const historyBefore = await historyCount(victimOrder.order.orderId);
 
-      const attacks: [string, () => Promise<{ error: { code?: string } | null }>, () => Promise<boolean>][] = [
+      const attacks: [
+        string,
+        () => Promise<{ error: { code?: string } | null }>,
+        () => Promise<boolean>,
+      ][] = [
         [
           "set a product's base_price to 1 paisa",
-          async () => customer.from("products").update({ base_price: 1 }).eq("id", product.id),
+          async () =>
+            customer
+              .from("products")
+              .update({ base_price: 1 })
+              .eq("id", product.id),
           async () => {
             const now = await maybeRow<{ base_price: number }>(
               "price after",
-              admin.from("products").select("base_price").eq("id", product.id).maybeSingle(),
+              admin
+                .from("products")
+                .select("base_price")
+                .eq("id", product.id)
+                .maybeSingle(),
             );
             return now?.base_price === product.base_price;
           },
@@ -1722,7 +2151,10 @@ async function main() {
         [
           "set a variant's price_override to 1 paisa",
           async () =>
-            customer.from("product_variants").update({ price_override: 1 }).eq("id", victimVariant.id),
+            customer
+              .from("product_variants")
+              .update({ price_override: 1 })
+              .eq("id", victimVariant.id),
           async () => {
             const now = await maybeRow<{ price_override: number | null }>(
               "override after",
@@ -1759,17 +2191,23 @@ async function main() {
             (
               await rows<{ id: string }>(
                 "self-issued orders",
-                admin.from("orders").select("id").eq("user_id", signUp.data.session!.user.id),
+                admin
+                  .from("orders")
+                  .select("id")
+                  .eq("user_id", signUp.data.session!.user.id),
               )
             ).length === 0,
         ],
         [
           "insert a 'confirmed' row into somebody's order history",
           async () =>
-            customer
-              .from("order_status_history")
-              .insert({ order_id: victimOrder.order.orderId, status: "confirmed", note: "forged" }),
-          async () => (await historyCount(victimOrder.order.orderId)) === historyBefore,
+            customer.from("order_status_history").insert({
+              order_id: victimOrder.order.orderId,
+              status: "confirmed",
+              note: "forged",
+            }),
+          async () =>
+            (await historyCount(victimOrder.order.orderId)) === historyBefore,
         ],
         [
           "insert a captured payment against an order",
@@ -1785,7 +2223,10 @@ async function main() {
             (
               await rows<{ id: string }>(
                 "payments on the victim order",
-                admin.from("payments").select("id").eq("order_id", victimOrder.order.orderId),
+                admin
+                  .from("payments")
+                  .select("id")
+                  .eq("order_id", victimOrder.order.orderId),
               )
             ).length === 0,
         ],
@@ -1811,7 +2252,11 @@ async function main() {
         ],
         [
           "make themselves an admin",
-          async () => customer.from("profiles").update({ role: "admin" }).eq("id", signUp.data.session!.user.id),
+          async () =>
+            customer
+              .from("profiles")
+              .update({ role: "admin" })
+              .eq("id", signUp.data.session!.user.id),
           async () => {
             const { data, error } = await customer.rpc("is_admin");
             return !error && data === false;
@@ -1825,7 +2270,9 @@ async function main() {
         check(
           `refused, and nothing changed: ${label}`,
           held,
-          error ? `refused with ${error.code}` : "no error returned — RLS matched zero rows",
+          error
+            ? `refused with ${error.code}`
+            : "no error returned — RLS matched zero rows",
         );
       }
     }
@@ -1835,17 +2282,38 @@ async function main() {
   section("17 · verifyHexSignature, against HMACs this file computed itself");
 
   {
-    const { verifyHexSignature } = await import("../../src/lib/payments/signature");
+    const { verifyHexSignature } =
+      await import("../../src/lib/payments/signature");
     const secret = "a-test-secret";
     const message = '{"event":"payment.captured"}';
-    const expected = createHmac("sha256", secret).update(message, "utf8").digest("hex");
+    const expected = createHmac("sha256", secret)
+      .update(message, "utf8")
+      .digest("hex");
 
-    check("the correct hex signature verifies", verifyHexSignature(secret, message, expected));
-    check("a different secret does not", !verifyHexSignature("other", message, expected));
-    check("a different message does not", !verifyHexSignature(secret, `${message} `, expected));
-    check("upper case does not", !verifyHexSignature(secret, message, expected.toUpperCase()));
-    check("a truncated signature does not", !verifyHexSignature(secret, message, expected.slice(0, 63)));
-    check("a padded signature does not", !verifyHexSignature(secret, message, `${expected}0`));
+    check(
+      "the correct hex signature verifies",
+      verifyHexSignature(secret, message, expected),
+    );
+    check(
+      "a different secret does not",
+      !verifyHexSignature("other", message, expected),
+    );
+    check(
+      "a different message does not",
+      !verifyHexSignature(secret, `${message} `, expected),
+    );
+    check(
+      "upper case does not",
+      !verifyHexSignature(secret, message, expected.toUpperCase()),
+    );
+    check(
+      "a truncated signature does not",
+      !verifyHexSignature(secret, message, expected.slice(0, 63)),
+    );
+    check(
+      "a padded signature does not",
+      !verifyHexSignature(secret, message, `${expected}0`),
+    );
     check("null does not", !verifyHexSignature(secret, message, null));
     check("an empty string does not", !verifyHexSignature(secret, message, ""));
     check(
@@ -1861,7 +2329,6 @@ async function main() {
       ),
     );
   }
-
 }
 
 /* ═══ cleanup ═══════════════════════════════════════════════════════════════ */
@@ -1882,21 +2349,25 @@ async function sweep() {
       cleanupProblems++;
       console.error(`  could not cancel ${orderId}: ${cancelled.message}`);
     }
-    const deleted = (await admin.from("orders").delete().eq("id", orderId)).error;
+    const deleted = (await admin.from("orders").delete().eq("id", orderId))
+      .error;
     if (deleted) {
       cleanupProblems++;
       console.error(`  could not delete ${orderId}: ${deleted.message}`);
     }
   }
   if (madeCarts.length) {
-    const carts = (await admin.from("carts").delete().in("id", madeCarts)).error;
+    const carts = (await admin.from("carts").delete().in("id", madeCarts))
+      .error;
     if (carts) {
       cleanupProblems++;
       console.error(`  could not delete carts: ${carts.message}`);
     }
   }
   if (madeEventIds.length) {
-    const events = (await admin.from("payment_events").delete().in("event_id", madeEventIds)).error;
+    const events = (
+      await admin.from("payment_events").delete().in("event_id", madeEventIds)
+    ).error;
     if (events) {
       cleanupProblems++;
       console.error(`  could not delete payment events: ${events.message}`);
@@ -1904,7 +2375,10 @@ async function sweep() {
   }
   for (const [variantId, stock] of stockToRestore) {
     const restored = (
-      await admin.from("product_variants").update({ stock_quantity: stock }).eq("id", variantId)
+      await admin
+        .from("product_variants")
+        .update({ stock_quantity: stock })
+        .eq("id", variantId)
     ).error;
     if (restored) {
       cleanupProblems++;
@@ -1913,7 +2387,10 @@ async function sweep() {
   }
   for (const flag of flagsToRestore) {
     const restored = (
-      await admin.from("product_variants").update({ is_active: flag.is_active }).eq("id", flag.id)
+      await admin
+        .from("product_variants")
+        .update({ is_active: flag.is_active })
+        .eq("id", flag.id)
     ).error;
     if (restored) {
       cleanupProblems++;
@@ -1923,18 +2400,25 @@ async function sweep() {
   let usersDeleted = 0;
   for (const userId of madeUsers) {
     const { error } = await admin.auth.admin.deleteUser(userId);
-    if (error) console.error(`  could not delete user ${userId}: ${error.message}`);
+    if (error)
+      console.error(`  could not delete user ${userId}: ${error.message}`);
     else usersDeleted++;
   }
 
   // Prove the sweep rather than assert it.
   const leftOrders = await rows<{ id: string }>(
     "orders left behind",
-    admin.from("orders").select("id").in("id", madeOrders.length ? madeOrders : [randomUUID()]),
+    admin
+      .from("orders")
+      .select("id")
+      .in("id", madeOrders.length ? madeOrders : [randomUUID()]),
   );
   const leftCarts = await rows<{ id: string }>(
     "carts left behind",
-    admin.from("carts").select("id").in("id", madeCarts.length ? madeCarts : [randomUUID()]),
+    admin
+      .from("carts")
+      .select("id")
+      .in("id", madeCarts.length ? madeCarts : [randomUUID()]),
   );
   const leftEvents = await rows<{ id: string }>(
     "events left behind",
@@ -1951,8 +2435,16 @@ async function sweep() {
       `  accounts created ${madeUsers.length}, deleted ${usersDeleted}\n` +
       `  cleanup errors ${cleanupProblems}`,
   );
-  check("every row this run created has been swept", leftOrders.length === 0 && leftCarts.length === 0 && leftEvents.length === 0);
-  check("every throwaway account has been deleted", usersDeleted === madeUsers.length);
+  check(
+    "every row this run created has been swept",
+    leftOrders.length === 0 &&
+      leftCarts.length === 0 &&
+      leftEvents.length === 0,
+  );
+  check(
+    "every throwaway account has been deleted",
+    usersDeleted === madeUsers.length,
+  );
 }
 
 async function run() {

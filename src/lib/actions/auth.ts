@@ -40,7 +40,9 @@ async function currentOrigin(): Promise<string> {
   const h = await headers();
   const host = h.get("x-forwarded-host") ?? h.get("host");
   if (!host) return SITE_URL;
-  const proto = h.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https");
+  const proto =
+    h.get("x-forwarded-proto") ??
+    (host.startsWith("localhost") ? "http" : "https");
   return `${proto}://${host}`;
 }
 
@@ -100,9 +102,13 @@ export async function signInWithGoogle(
     // By far the most common cause is the provider not being enabled on the
     // Supabase project, which is a setup problem rather than a customer
     // problem — so the copy points at shopping on, not at trying again.
-    console.error("[auth] signInWithOAuth failed:", error?.message ?? "no redirect URL");
+    console.error(
+      "[auth] signInWithOAuth failed:",
+      error?.message ?? "no redirect URL",
+    );
     return {
-      error: "Google sign-in is unavailable right now. You can keep shopping as a guest.",
+      error:
+        "Google sign-in is unavailable right now. You can keep shopping as a guest.",
     };
   }
 

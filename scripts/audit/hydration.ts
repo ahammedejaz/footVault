@@ -77,7 +77,9 @@ async function main() {
   const fixture = await buildFixture(browser);
 
   try {
-    const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    const context = await browser.newContext({
+      viewport: { width: 390, height: 844 },
+    });
     const page = await context.newPage();
     page.setDefaultNavigationTimeout(60_000);
 
@@ -91,7 +93,9 @@ async function main() {
     await context.close();
 
     for (const state of auditStates(fixture).filter((entry) => !entry.once)) {
-      const stateContext = await browser.newContext({ viewport: { width: 390, height: 844 } });
+      const stateContext = await browser.newContext({
+        viewport: { width: 390, height: 844 },
+      });
       await stateContext.addCookies(jarFor(fixture, state.as));
       const statePage = await stateContext.newPage();
       statePage.setDefaultNavigationTimeout(60_000);
@@ -143,7 +147,9 @@ async function main() {
   console.log(`  other console errors/warnings: ${other.length}`);
 
   for (const message of [...hydration, ...other].slice(0, 25)) {
-    console.log(`    [${message.kind}] ${message.where} — ${message.text.replace(/\s+/g, " ").slice(0, 180)}`);
+    console.log(
+      `    [${message.kind}] ${message.where} — ${message.text.replace(/\s+/g, " ").slice(0, 180)}`,
+    );
   }
 
   if (hydration.length === 0 && other.length === 0) {

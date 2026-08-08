@@ -55,8 +55,8 @@ export default async function AccountPage() {
       {!user ? (
         <div className="border-border mt-8 rounded-lg border p-6 text-center">
           <p className="text-base text-pretty">
-            An account keeps your orders, your addresses and your saved pairs together on
-            every device. Buying never needs one.
+            An account keeps your orders, your addresses and your saved pairs
+            together on every device. Buying never needs one.
           </p>
           <div className="mx-auto mt-5 max-w-xs">
             <GoogleSignInForm next="/account" />
@@ -75,9 +75,14 @@ export default async function AccountPage() {
                   href={section.href}
                   className="border-border hover:bg-fog flex min-h-11 items-start gap-4 rounded-lg border p-4 transition-colors"
                 >
-                  <section.icon className="text-muted-foreground mt-0.5 size-5 shrink-0" aria-hidden />
+                  <section.icon
+                    className="text-muted-foreground mt-0.5 size-5 shrink-0"
+                    aria-hidden
+                  />
                   <span className="min-w-0">
-                    <span className="block text-sm font-medium">{section.title}</span>
+                    <span className="block text-sm font-medium">
+                      {section.title}
+                    </span>
                     <span className="text-muted-foreground mt-1 block text-sm text-pretty">
                       {section.body}
                     </span>

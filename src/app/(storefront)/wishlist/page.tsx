@@ -32,9 +32,9 @@ export default async function WishlistPage() {
       {!user ? (
         <div className="border-border mt-8 rounded-lg border p-6 text-center">
           <p className="text-base text-pretty">
-            Saving keeps a pair to hand while you decide, on every device you use.
-            It needs an account — a list that lives in one browser is a list you
-            lose.
+            Saving keeps a pair to hand while you decide, on every device you
+            use. It needs an account — a list that lives in one browser is a
+            list you lose.
           </p>
           <div className="mx-auto mt-5 max-w-xs">
             <GoogleSignInForm next="/wishlist" />

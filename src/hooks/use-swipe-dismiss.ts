@@ -53,7 +53,11 @@ export function useSwipeDismiss({
         "[data-swipe-scroller]",
       );
       if (scroller && scroller.scrollTop > 0) return;
-      start.current = { x: event.clientX, y: event.clientY, at: event.timeStamp };
+      start.current = {
+        x: event.clientX,
+        y: event.clientY,
+        at: event.timeStamp,
+      };
     },
     [enabled],
   );
@@ -62,7 +66,9 @@ export function useSwipeDismiss({
     (event: React.PointerEvent<HTMLElement>) => {
       if (!start.current) return;
       const delta =
-        axis === "y" ? event.clientY - start.current.y : event.clientX - start.current.x;
+        axis === "y"
+          ? event.clientY - start.current.y
+          : event.clientX - start.current.x;
       const towardsEdge = delta * sign;
       setOffset(towardsEdge > 0 ? towardsEdge : towardsEdge / 4);
     },
@@ -74,10 +80,15 @@ export function useSwipeDismiss({
       if (!start.current) return;
       const elapsed = Math.max(1, event.timeStamp - start.current.at);
       const delta =
-        axis === "y" ? event.clientY - start.current.y : event.clientX - start.current.x;
+        axis === "y"
+          ? event.clientY - start.current.y
+          : event.clientX - start.current.x;
       const travelled = delta * sign;
       reset();
-      if (travelled > DISMISS_DISTANCE || travelled / elapsed > DISMISS_VELOCITY) {
+      if (
+        travelled > DISMISS_DISTANCE ||
+        travelled / elapsed > DISMISS_VELOCITY
+      ) {
         onDismiss();
       }
     },

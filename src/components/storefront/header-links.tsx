@@ -18,7 +18,13 @@ import { useBagUi } from "@/lib/stores/bag";
  * The link is still a real `<a href="/cart">`, so middle-click, ⌘-click and
  * JavaScript-off all reach the page.
  */
-export function BagLink({ count, children }: { count: number; children: React.ReactNode }) {
+export function BagLink({
+  count,
+  children,
+}: {
+  count: number;
+  children: React.ReactNode;
+}) {
   const openDrawer = useBagUi((state) => state.openDrawer);
 
   return (
@@ -29,7 +35,8 @@ export function BagLink({ count, children }: { count: number; children: React.Re
         onClick={(event) => {
           // Let the browser do its thing for anything that is not a plain
           // left-click: a modified click means "open this somewhere else".
-          if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+          if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)
+            return;
           if (event.button !== 0) return;
           event.preventDefault();
           openDrawer();
@@ -42,7 +49,13 @@ export function BagLink({ count, children }: { count: number; children: React.Re
   );
 }
 
-export function SavedLink({ count, children }: { count: number; children: React.ReactNode }) {
+export function SavedLink({
+  count,
+  children,
+}: {
+  count: number;
+  children: React.ReactNode;
+}) {
   return (
     <Button
       variant="ghost"

@@ -32,7 +32,11 @@
 import { readFileSync } from "node:fs";
 
 import { createServerClient } from "@supabase/ssr";
-import { createClient, type Session, type SupabaseClient } from "@supabase/supabase-js";
+import {
+  createClient,
+  type Session,
+  type SupabaseClient,
+} from "@supabase/supabase-js";
 import type { Browser, Cookie, Page } from "playwright";
 
 import type { Database } from "../../src/lib/database.types";
@@ -53,12 +57,19 @@ const ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
 
 export function anonClient(): SupabaseClient<Database> {
-  return createClient<Database>(SUPABASE_URL, ANON_KEY, { auth: { persistSession: false } });
+  return createClient<Database>(SUPABASE_URL, ANON_KEY, {
+    auth: { persistSession: false },
+  });
 }
 
 export function adminClient(): SupabaseClient<Database> {
-  if (!SERVICE_KEY) throw new Error("SUPABASE_SERVICE_ROLE_KEY is empty — cannot build fixtures");
-  return createClient<Database>(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } });
+  if (!SERVICE_KEY)
+    throw new Error(
+      "SUPABASE_SERVICE_ROLE_KEY is empty — cannot build fixtures",
+    );
+  return createClient<Database>(SUPABASE_URL, SERVICE_KEY, {
+    auth: { persistSession: false },
+  });
 }
 
 /** The address every fixture ships to. Real enough to pass `checkoutSchema`. */
@@ -89,7 +100,9 @@ export async function createAccount(label: string): Promise<Account> {
     options: { data: { full_name: "Quality Runner" } },
   });
   if (error || !data.session || !data.user) {
-    throw new Error(`sign-up failed for ${email}: ${error?.message ?? "no session"}`);
+    throw new Error(
+      `sign-up failed for ${email}: ${error?.message ?? "no session"}`,
+    );
   }
   return { email, userId: data.user.id, session: data.session };
 }
@@ -106,7 +119,8 @@ export async function sessionCookies(session: Session): Promise<Cookie[]> {
   const client = createServerClient(SUPABASE_URL, ANON_KEY, {
     cookies: {
       getAll: () => [...jar].map(([name, value]) => ({ name, value })),
-      setAll: (list) => list.forEach((entry) => jar.set(entry.name, entry.value)),
+      setAll: (list) =>
+        list.forEach((entry) => jar.set(entry.name, entry.value)),
     },
   });
   await client.auth.setSession({
@@ -140,9 +154,14 @@ export const FIXTURE_SLUGS = [
  * Selects on the accessible name — "UK 9", "UK 6, sold out" — rather than the
  * visible digit, because the digit alone cannot tell those two apart.
  */
-export async function addToBag(page: Page, slug: string): Promise<string | null> {
+export async function addToBag(
+  page: Page,
+  slug: string,
+): Promise<string | null> {
   await page.goto(`${BASE_URL}/product/${slug}`, { waitUntil: "load" });
-  const chip = page.locator('button[aria-label^="UK "]:not([aria-label*="sold out"])').first();
+  const chip = page
+    .locator('button[aria-label^="UK "]:not([aria-label*="sold out"])')
+    .first();
   if ((await chip.count()) === 0) return null;
   const size = await chip.getAttribute("aria-label");
   await chip.click();
@@ -161,9 +180,15 @@ export async function addToBag(page: Page, slug: string): Promise<string | null>
  * an order, which is the only way the confirmation and history states get built
  * out of something a customer could have produced.
  */
-export async function placeCodOrder(page: Page, options: { guest: boolean }): Promise<string> {
+export async function placeCodOrder(
+  page: Page,
+  options: { guest: boolean },
+): Promise<string> {
   await page.goto(`${BASE_URL}/checkout`, { waitUntil: "load" });
-  await page.locator("h1").first().waitFor({ state: "visible", timeout: 15_000 });
+  await page
+    .locator("h1")
+    .first()
+    .waitFor({ state: "visible", timeout: 15_000 });
 
   // A saved address preselects itself and hides the form; only type when the
   // form is the thing on screen.
@@ -176,7 +201,10 @@ export async function placeCodOrder(page: Page, options: { guest: boolean }): Pr
     await page.selectOption("#checkout-state", QA_ADDRESS.state);
   }
   if (options.guest) {
-    await page.fill("#checkout-contactEmail", `${QA_EMAIL_PREFIX}guest@example.com`);
+    await page.fill(
+      "#checkout-contactEmail",
+      `${QA_EMAIL_PREFIX}guest@example.com`,
+    );
   }
 
   await page.locator('input[name="paymentMethod"][value="cod"]').check();
@@ -184,7 +212,8 @@ export async function placeCodOrder(page: Page, options: { guest: boolean }): Pr
 
   await page.waitForURL(/\/order\/FV-/, { timeout: 45_000 });
   const number = /\/order\/(FV-[0-9-]+)/.exec(page.url())?.[1];
-  if (!number) throw new Error(`checkout did not land on an order page: ${page.url()}`);
+  if (!number)
+    throw new Error(`checkout did not land on an order page: ${page.url()}`);
   return number;
 }
 
@@ -218,7 +247,8 @@ async function overfillLine(
     .eq("guest_token", token)
     .eq("status", "active")
     .maybeSingle();
-  if (cartError) throw new Error(`fixture: reading the failure cart: ${cartError.message}`);
+  if (cartError)
+    throw new Error(`fixture: reading the failure cart: ${cartError.message}`);
   const item = cart?.items?.[0];
   if (!item) throw new Error("fixture: the failure bag is empty");
 
@@ -227,7 +257,8 @@ async function overfillLine(
     .select("sku, stock_quantity")
     .eq("id", item.variant_id)
     .maybeSingle();
-  if (variantError) throw new Error(`fixture: reading stock: ${variantError.message}`);
+  if (variantError)
+    throw new Error(`fixture: reading stock: ${variantError.message}`);
   if (!variant) throw new Error("fixture: the failure variant vanished");
 
   const asked = variant.stock_quantity + 1;
@@ -235,7 +266,8 @@ async function overfillLine(
     .from("cart_items")
     .update({ quantity: asked })
     .eq("id", item.id);
-  if (updateError) throw new Error(`fixture: overfilling the line: ${updateError.message}`);
+  if (updateError)
+    throw new Error(`fixture: overfilling the line: ${updateError.message}`);
 
   return { sku: variant.sku, stock: variant.stock_quantity, asked };
 }
@@ -285,7 +317,9 @@ export async function buildGuestBag(
   browser: Browser,
   slugs: readonly string[] = FIXTURE_SLUGS,
 ): Promise<{ cookies: Cookie[]; lines: number }> {
-  const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const context = await browser.newContext({
+    viewport: { width: 390, height: 844 },
+  });
   const page = await context.newPage();
   page.setDefaultNavigationTimeout(60_000);
   let lines = 0;
@@ -358,8 +392,12 @@ export async function buildFixture(browser: Browser): Promise<QaFixture> {
     .select("id")
     .eq("order_number", accountOrderNumber)
     .maybeSingle();
-  if (orderError) throw new Error(`fixture: could not resolve ${accountOrderNumber}: ${orderError.message}`);
-  if (!orderRow) throw new Error(`fixture: ${accountOrderNumber} is not in the database`);
+  if (orderError)
+    throw new Error(
+      `fixture: could not resolve ${accountOrderNumber}: ${orderError.message}`,
+    );
+  if (!orderRow)
+    throw new Error(`fixture: ${accountOrderNumber} is not in the database`);
 
   return {
     guest: { cookies: guestCookies, lines },

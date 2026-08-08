@@ -61,7 +61,12 @@ const KNOWN_PREFIXES = [
 
 const DOMAIN = "@example.com";
 
-type Args = { dryRun: boolean; stockOnly: boolean; prefixes: string[]; orders: string[] };
+type Args = {
+  dryRun: boolean;
+  stockOnly: boolean;
+  prefixes: string[];
+  orders: string[];
+};
 
 function parseArgs(argv: string[]): Args {
   const prefixes: string[] = [];
@@ -72,7 +77,8 @@ function parseArgs(argv: string[]): Args {
     if (argv[i] === "--dry-run") dryRun = true;
     else if (argv[i] === "--stock-only") stockOnly = true;
     else if (argv[i] === "--prefix") prefixes.push(argv[++i] ?? "");
-    else if (argv[i] === "--orders") orders.push(...(argv[++i] ?? "").split(",").filter(Boolean));
+    else if (argv[i] === "--orders")
+      orders.push(...(argv[++i] ?? "").split(",").filter(Boolean));
   }
   return {
     dryRun,
@@ -94,7 +100,8 @@ function parseArgs(argv: string[]): Args {
 function seedStock(): Map<string, number> {
   const expected = new Map<string, number>();
   for (const product of products) {
-    for (const variant of variantsFor(product)) expected.set(variant.sku, variant.stock);
+    for (const variant of variantsFor(product))
+      expected.set(variant.sku, variant.stock);
   }
   return expected;
 }
@@ -116,7 +123,8 @@ async function reconcileStock(dryRun: boolean): Promise<number> {
     .from("order_items")
     .select("sku, quantity, orders!inner(stock_restored_at)")
     .is("orders.stock_restored_at", null);
-  if (heldError) throw new Error(`reading outstanding orders: ${heldError.message}`);
+  if (heldError)
+    throw new Error(`reading outstanding orders: ${heldError.message}`);
 
   const outstanding = new Map<string, number>();
   for (const item of held ?? []) {
@@ -128,7 +136,13 @@ async function reconcileStock(dryRun: boolean): Promise<number> {
     .select("id, sku, stock_quantity");
   if (liveError) throw new Error(`reading stock: ${liveError.message}`);
 
-  const drift: { sku: string; id: string; is: number; want: number; heldBy: number }[] = [];
+  const drift: {
+    sku: string;
+    id: string;
+    is: number;
+    want: number;
+    heldBy: number;
+  }[] = [];
   let unknown = 0;
   for (const variant of live ?? []) {
     const seed = expected.get(variant.sku);
@@ -177,7 +191,9 @@ async function reconcileStock(dryRun: boolean): Promise<number> {
     );
   }
   if (drift.length === 0) {
-    console.log("  Every variant matches the seed, less what outstanding orders hold.");
+    console.log(
+      "  Every variant matches the seed, less what outstanding orders hold.",
+    );
     return 0;
   }
   console.log(`  ${drift.length} variant(s) off the seed baseline:`);
@@ -195,7 +211,8 @@ async function reconcileStock(dryRun: boolean): Promise<number> {
       .from("product_variants")
       .update({ stock_quantity: row.want })
       .eq("id", row.id);
-    if (error) console.error(`    could not restore ${row.sku}: ${error.message}`);
+    if (error)
+      console.error(`    could not restore ${row.sku}: ${error.message}`);
     else fixed++;
   }
   console.log(`  Restored ${fixed} of ${drift.length}.`);
@@ -205,22 +222,31 @@ async function reconcileStock(dryRun: boolean): Promise<number> {
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const admin = adminClient();
-  const mode = args.dryRun ? "DRY RUN — nothing will be deleted" : "LIVE — rows will be deleted";
+  const mode = args.dryRun
+    ? "DRY RUN — nothing will be deleted"
+    : "LIVE — rows will be deleted";
 
   console.log(`\nAudit teardown · ${mode}`);
   console.log(`  prefixes: ${args.prefixes.join(", ")}`);
-  if (args.orders.length > 0) console.log(`  extra orders: ${args.orders.join(", ")}`);
+  if (args.orders.length > 0)
+    console.log(`  extra orders: ${args.orders.join(", ")}`);
 
   /* ── 1 · the accounts ───────────────────────────────────────────────────── */
   // listUsers rather than a query: auth.users is not exposed through PostgREST,
   // and it should not be.
   const users: { id: string; email: string }[] = [];
   for (let page = 1; page <= 20; page++) {
-    const { data, error } = await admin.auth.admin.listUsers({ page, perPage: 200 });
+    const { data, error } = await admin.auth.admin.listUsers({
+      page,
+      perPage: 200,
+    });
     if (error) throw new Error(`listing users: ${error.message}`);
     for (const user of data.users) {
       const email = user.email ?? "";
-      if (args.prefixes.some((prefix) => email.startsWith(prefix)) && email.endsWith(DOMAIN)) {
+      if (
+        args.prefixes.some((prefix) => email.startsWith(prefix)) &&
+        email.endsWith(DOMAIN)
+      ) {
         users.push({ id: user.id, email });
       }
     }
@@ -240,7 +266,11 @@ async function main() {
       .in("user_id", ids);
     if (error) throw new Error(`reading account orders: ${error.message}`);
     for (const row of data ?? []) {
-      found.set(row.id, { id: row.id, number: row.order_number, who: row.contact_email ?? "account" });
+      found.set(row.id, {
+        id: row.id,
+        number: row.order_number,
+        who: row.contact_email ?? "account",
+      });
     }
   }
   for (const prefix of args.prefixes) {
@@ -248,9 +278,14 @@ async function main() {
       .from("orders")
       .select("id, order_number, contact_email")
       .like("contact_email", `${prefix}%${DOMAIN}`);
-    if (error) throw new Error(`reading guest orders for ${prefix}: ${error.message}`);
+    if (error)
+      throw new Error(`reading guest orders for ${prefix}: ${error.message}`);
     for (const row of data ?? []) {
-      found.set(row.id, { id: row.id, number: row.order_number, who: row.contact_email ?? "guest" });
+      found.set(row.id, {
+        id: row.id,
+        number: row.order_number,
+        who: row.contact_email ?? "guest",
+      });
     }
   }
   if (args.orders.length > 0) {
@@ -260,11 +295,17 @@ async function main() {
       .in("order_number", args.orders);
     if (error) throw new Error(`reading named orders: ${error.message}`);
     for (const row of data ?? []) {
-      found.set(row.id, { id: row.id, number: row.order_number, who: row.contact_email ?? "named" });
+      found.set(row.id, {
+        id: row.id,
+        number: row.order_number,
+        who: row.contact_email ?? "named",
+      });
     }
   }
 
-  const orders = [...found.values()].sort((a, b) => a.number.localeCompare(b.number));
+  const orders = [...found.values()].sort((a, b) =>
+    a.number.localeCompare(b.number),
+  );
   console.log(`\n  ${orders.length} order(s):`);
   for (const order of orders) console.log(`    ${order.number}  ${order.who}`);
 
@@ -283,29 +324,48 @@ async function main() {
   let restocked = 0;
   let deleted = 0;
   for (const order of orders) {
-    const { error: cancelError } = await admin.rpc("cancel_order_with_restock", {
-      p_order_id: order.id,
-      p_reason: "audit teardown",
-      p_release_cart: false,
-    });
-    if (cancelError) console.error(`    could not cancel ${order.number}: ${cancelError.message}`);
+    const { error: cancelError } = await admin.rpc(
+      "cancel_order_with_restock",
+      {
+        p_order_id: order.id,
+        p_reason: "audit teardown",
+        p_release_cart: false,
+      },
+    );
+    if (cancelError)
+      console.error(
+        `    could not cancel ${order.number}: ${cancelError.message}`,
+      );
     else restocked++;
 
     const { error: eventError } = await admin
       .from("payment_events")
       .delete()
       .eq("order_id", order.id);
-    if (eventError) console.error(`    payment_events for ${order.number}: ${eventError.message}`);
+    if (eventError)
+      console.error(
+        `    payment_events for ${order.number}: ${eventError.message}`,
+      );
 
-    const { error: deleteError } = await admin.from("orders").delete().eq("id", order.id);
-    if (deleteError) console.error(`    could not delete ${order.number}: ${deleteError.message}`);
+    const { error: deleteError } = await admin
+      .from("orders")
+      .delete()
+      .eq("id", order.id);
+    if (deleteError)
+      console.error(
+        `    could not delete ${order.number}: ${deleteError.message}`,
+      );
     else deleted++;
   }
 
   /* ── 4 · the carts, then the accounts ───────────────────────────────────── */
   let carts = 0;
   if (ids.length > 0) {
-    const { data, error } = await admin.from("carts").delete().in("user_id", ids).select("id");
+    const { data, error } = await admin
+      .from("carts")
+      .delete()
+      .in("user_id", ids)
+      .select("id");
     if (error) console.error(`    deleting account carts: ${error.message}`);
     else carts = data?.length ?? 0;
   }
@@ -313,7 +373,8 @@ async function main() {
   let removedUsers = 0;
   for (const user of users) {
     const { error } = await admin.auth.admin.deleteUser(user.id);
-    if (error) console.error(`    could not delete ${user.email}: ${error.message}`);
+    if (error)
+      console.error(`    could not delete ${user.email}: ${error.message}`);
     else removedUsers++;
   }
 

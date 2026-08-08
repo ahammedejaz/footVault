@@ -31,8 +31,8 @@ export function NotFoundBody() {
         Nothing here
       </h1>
       <p className="text-muted-foreground mt-4 text-base text-pretty">
-        This page has moved or never existed. The catalogue is still where you left
-        it.
+        This page has moved or never existed. The catalogue is still where you
+        left it.
       </p>
       <div className="mt-8 flex flex-wrap justify-center gap-3">
         <Button asChild>

@@ -43,7 +43,12 @@ export const toast = {
    * regret on a phone is a tap you did not mean, and the fix belongs next to
    * the thing that just happened rather than three screens away in the bag.
    */
-  undoable(message: string, description: string | undefined, undo: UndoableOptions["onUndo"], label = "Undo") {
+  undoable(
+    message: string,
+    description: string | undefined,
+    undo: UndoableOptions["onUndo"],
+    label = "Undo",
+  ) {
     sonner.success(message, {
       description,
       duration: WITH_ACTION,
@@ -52,7 +57,12 @@ export const toast = {
   },
 
   /** Something worked and there is somewhere to go next. */
-  withLink(message: string, description: string | undefined, label: string, onClick: () => void) {
+  withLink(
+    message: string,
+    description: string | undefined,
+    label: string,
+    onClick: () => void,
+  ) {
     sonner.success(message, {
       description,
       duration: WITH_ACTION,

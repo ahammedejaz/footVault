@@ -2,7 +2,11 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 import type { Database } from "@/lib/database.types";
-import { SUPABASE_ANON_KEY, SUPABASE_URL, isSupabaseConfigured } from "@/lib/env";
+import {
+  SUPABASE_ANON_KEY,
+  SUPABASE_URL,
+  isSupabaseConfigured,
+} from "@/lib/env";
 
 /**
  * Session refresh, and the admin guard.
@@ -28,7 +32,9 @@ import { SUPABASE_ANON_KEY, SUPABASE_URL, isSupabaseConfigured } from "@/lib/env
 /** Paths whose existence should not be discoverable by a non-admin. */
 const ADMIN_PREFIX = "/admin";
 
-export async function updateSession(request: NextRequest): Promise<NextResponse> {
+export async function updateSession(
+  request: NextRequest,
+): Promise<NextResponse> {
   // A clone with no Supabase credentials still has to serve the storefront's
   // styled empty state rather than throwing out of the proxy on every route.
   if (!isSupabaseConfigured()) return NextResponse.next({ request });
@@ -38,27 +44,32 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
   // Per request, never hoisted: on a warm serverless instance a client held in
   // module scope can be reused across requests and hand one customer another
   // customer's session.
-  const supabase = createServerClient<Database>(SUPABASE_URL(), SUPABASE_ANON_KEY(), {
-    cookies: {
-      getAll() {
-        return request.cookies.getAll();
-      },
-      setAll(cookiesToSet, headers) {
-        for (const { name, value } of cookiesToSet) request.cookies.set(name, value);
-        supabaseResponse = NextResponse.next({ request });
-        for (const { name, value, options } of cookiesToSet) {
-          supabaseResponse.cookies.set(name, value, options);
-        }
-        // @supabase/ssr hands us the cache headers that must ride along with a
-        // refreshed token. Without them a CDN can cache a response carrying
-        // somebody's Set-Cookie and serve it to the next visitor, who is then
-        // signed in as them.
-        for (const [key, value] of Object.entries(headers ?? {})) {
-          supabaseResponse.headers.set(key, value);
-        }
+  const supabase = createServerClient<Database>(
+    SUPABASE_URL(),
+    SUPABASE_ANON_KEY(),
+    {
+      cookies: {
+        getAll() {
+          return request.cookies.getAll();
+        },
+        setAll(cookiesToSet, headers) {
+          for (const { name, value } of cookiesToSet)
+            request.cookies.set(name, value);
+          supabaseResponse = NextResponse.next({ request });
+          for (const { name, value, options } of cookiesToSet) {
+            supabaseResponse.cookies.set(name, value, options);
+          }
+          // @supabase/ssr hands us the cache headers that must ride along with a
+          // refreshed token. Without them a CDN can cache a response carrying
+          // somebody's Set-Cookie and serve it to the next visitor, who is then
+          // signed in as them.
+          for (const [key, value] of Object.entries(headers ?? {})) {
+            supabaseResponse.headers.set(key, value);
+          }
+        },
       },
     },
-  });
+  );
 
   // Nothing between the client and this call. Anything that throws in between
   // leaves the session half-refreshed and logs people out at random.

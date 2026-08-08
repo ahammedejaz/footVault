@@ -214,13 +214,240 @@ automatically — when the courier hands over the cash, set `payment_status` to
 
 ---
 
+## The admin panel
+
+Sign in with Google, then go to **/admin**. If you are not an admin the page
+simply does not exist — you get a 404, the same as any wrong address. That is
+deliberate: a "you are not allowed in here" page tells a stranger there is
+something worth coming back for.
+
+It is built for a tablet. The menu is a permanent strip down the left from
+tablet-portrait width up, and a drawer behind the ☰ button on a phone.
+
+**What works today:**
+
+| Page | What it does |
+|---|---|
+| **Dashboard** | Today's orders and takings, what needs fulfilling, what is running out. Every number is a link to the list behind it. |
+| **Orders** | Every order. Search by order number, phone or email. Filter by status. |
+| **Inventory** | Every size of every product, with its count. Tap a number to change it. |
+
+**What does not work yet:** Products, Categories, Brands, Customers, Media and
+Settings are in the menu but the pages are not built. Opening one gives you a
+404. Adding and editing products still has to happen in the Supabase table
+editor, exactly as before. The single order page — where the shipping buttons
+will live — is also not built yet.
+
+---
+
+## Changing stock by hand
+
+**Inventory → tap the number in the "In stock" column.**
+
+A panel opens. It asks three things:
+
+1. **How many, and which way.** Use − and + or type a number. Type a negative
+   number to take stock away. It shows you the result before you save: *8 → 11*.
+2. **Why.** "New stock arrived" for a delivery from a supplier; "Correcting the
+   count" for damage, a miscount, or something put back on the shelf.
+3. **A note.** This is required and it is not busywork — see below.
+
+Underneath, the panel shows **everything that has ever happened to that size**:
+every sale, every cancellation, every correction, who did it and when.
+
+### Why the note is compulsory
+
+Every change to stock — yours, a customer's purchase, an automatic release of an
+abandoned order — is written into a permanent record. Nothing can change a stock
+count without leaving a line in it, including somebody editing the number
+directly in the database.
+
+That record is the answer to the only question that ever matters about stock:
+*the shelf says six and the website says four, what happened?* Without a reason
+written down at the time, that question has no answer a month later. With one, it
+takes ten seconds.
+
+**A count you change by hand carries your name.** That is the point.
+
+### It works in differences, not totals
+
+If you count nine pairs on the shelf and the screen says seven, enter **+2**, not
+9. This matters when two of you are working: if you both type totals, whoever
+saves second wipes out the other's count without anyone noticing. Two
+differences both land.
+
+---
+
+## Shipping — Shiprocket
+
+**Nothing is built into the site that ships anything automatically, and that is
+deliberate.** Shiprocket's system acts on your real account: creating an order
+creates a real order in the Shiprocket panel, and assigning a tracking number can
+commit real money to a courier. A bug that shipped parcels on its own would be
+expensive. A person presses the button, every time.
+
+### What you need to do first
+
+The site cannot talk to Shiprocket until you do these four things. It is roughly
+ten minutes.
+
+**1. Create an API user.**
+
+- Sign in to Shiprocket.
+- **Settings → API → Configure**.
+- Create a new API user.
+- **Its email must be different from the email you sign into Shiprocket with.**
+  This is the single most common thing to get wrong. If you reuse your own login
+  email it will fail with an unhelpful "403" and nothing will explain why.
+- Choose a password and write both down.
+
+**2. Confirm your pickup address.**
+
+- **Settings → Company → Pickup Addresses**.
+- Make sure there is an address there — this is where couriers collect from.
+- Note its **nickname** exactly as it is spelled, capitals and all. The site
+  sends that word to Shiprocket as a literal string, so "Primary" and "primary"
+  are different things.
+
+**3. Send me those three values** — the API user's email, its password, and the
+pickup nickname. They go into the site's settings as `SHIPROCKET_EMAIL`,
+`SHIPROCKET_PASSWORD` and `SHIPROCKET_PICKUP_LOCATION`.
+
+**4. Tell me whether your account has a test mode.** If it does we will use it
+for the first shipment. If it does not, the first test creates one real order in
+your panel, and you will cancel it there afterwards.
+
+### Done — and what it turned up
+
+Steps 1–3 are complete. The credentials work: the site signed in and got a pass
+valid for exactly ten days, which it will now renew on its own.
+
+Your pickup location is called **DCSR**, in **Cuddapah, PIN 516360**. Three
+things follow from that, and two need a decision from you.
+
+**The site now quotes delivery from 516360, not Bengaluru.** It had been set to
+560001, which was a guess. Every delivery estimate and every cash-on-delivery
+check is measured from where parcels are actually collected, so this had to
+match or the answers would have been quietly wrong.
+
+**Your shop's address was still the placeholder, and it is now fixed.** The
+footer and contact page said *42 Commercial Street, Shivaji Nagar, Bengaluru
+560001* — invented data from the very first build, never real. They now say:
+
+> Classic Vastralayam Complex, Shop No. 2, Near RTC Bus Stand,
+> Cuddapah, Andhra Pradesh 516360
+
+and the phone is now **+91 91602 52643**, from your Shiprocket warehouse contact.
+
+Two things about that you should check:
+
+- I kept *Near RTC Bus Stand* and left out *peacock bar backside*. Both are in
+  your Shiprocket record and both help somebody find the shop; the second one
+  reads oddly on a shop website. Say the word and I will put it back.
+- **Two placeholders are still there and still wrong:** the email
+  `hello@footvault.in` and the WhatsApp number `+91 98450 22001`. Both are
+  invented. Send me the real ones.
+
+**Your pickup address is not verified in Shiprocket.** The panel reports it as
+unverified, and Shiprocket can refuse to assign a tracking number to an
+unverified address. Please verify it in the panel before we try a real shipment.
+
+### What delivery actually costs you
+
+Measured against your real account, for one 900g pair:
+
+| Delivering to | Cheapest courier | Their price |
+|---|---|---|
+| Bengaluru | India Post Speed Post | **₹200.68** |
+| Delhi | Amazon Shipping Surface | **₹207.34** |
+| Srinagar | India Post Speed Post | **₹259.68** |
+| Port Blair | *no courier serves this route* | — |
+
+At the old ₹99 flat rate you were paying roughly ₹100 to ₹160 per order out of
+your own margin, and the whole ₹200-odd on anything over ₹1,999 where delivery
+was free.
+
+**That has now changed on your instruction, and delivery is priced per order.**
+
+**Paying online**
+
+- **₹2,499 and above — free.**
+- Below that, the customer pays what the courier charges to reach them,
+  rounded up to the nearest ₹10. India Post is never used for pricing.
+
+**Cash on delivery**
+
+- **Charged on every order, whatever the value. No free threshold.**
+- The charge is the delivery *plus the return leg*, because a refused COD
+  parcel costs you both ways and earns nothing.
+
+Measured live against your account today, for one pair:
+
+| To | Bag | Online | COD |
+|---|---|---|---|
+| Bengaluru | ₹1,999 | ₹210 | ₹350 |
+| Bengaluru | ₹3,000 | **free** | ₹390 |
+| Delhi | ₹1,999 | ₹160 | ₹270 |
+| Port Blair | any | *refused — no courier goes there* | *refused* |
+
+Two things worth noticing. Delhi is **cheaper** than Bengaluru, because a
+different courier wins there — so a flat rate was always over-charging some
+customers and under-charging others. And the COD figure grows with the basket,
+because Shiprocket takes 3% of the order value for collecting cash.
+
+**If Shiprocket cannot be reached** the customer pays ₹199 online or ₹349 COD,
+and the sale still goes through. A courier outage never stops you selling.
+
+**Pin codes with no service are now refused at checkout**, before any money
+moves, as you asked.
+
+Port Blair is worth knowing about separately: no courier will carry from
+Cuddapah to the Andamans at all. The site now spots that and does not offer cash
+on delivery for addresses it cannot reach.
+
+### About the old key
+
+There was a value called `SHIPROCKET_API_KEY` in the site's settings. **It does
+not work and it never did** — it was checked against Shiprocket directly and
+came back "unauthorized". Shiprocket's system does not use a fixed key at all; it
+uses the email and password above to issue a pass that lasts ten days, which the
+site renews on its own. That old value has been removed.
+
+### What the site does with it, once configured
+
+- **On the checkout page**, it asks Shiprocket whether any courier will collect
+  cash at the customer's PIN code. If none will, Cash on Delivery is not offered
+  for that address, and the customer is told to pay online instead.
+- **If Shiprocket is slow or down, nothing is blocked.** Cash on Delivery stays
+  available and the delivery estimate falls back to the default. A problem at the
+  courier must never cost you a sale.
+- **What you charge for delivery does not change.** Flat ₹99, free over ₹1,999,
+  exactly as before. The courier's real cost is recorded for you to look at; it
+  is not passed to the customer. That is your decision to make, not the site's.
+
+### Fulfilling an order — not available yet
+
+The five steps (create the shipment, assign a tracking number, book a pickup,
+print the label, track the parcel) are written and tested, but the page with the
+buttons on it is not built. **You cannot fulfil an order from the panel yet.**
+Until that page exists, shipping is done in the Shiprocket panel directly, as it
+was before.
+
+The click-path for testing it against your real account will be written here once
+the buttons exist and the credentials above are in place.
+
+---
+
 ## What is not built yet
 
 Being straight about where the edges are:
 
-- **The admin panel itself** — `/admin` is a placeholder that proves the lock
-  works. Products, orders, inventory and the homepage builder are Phases 6 and 7.
-  Orders are visible through `/account` and the Supabase table editor only.
+- **Most of the admin panel.** Dashboard, Orders and Inventory work. Products,
+  Categories, Brands, Customers, Media and Settings are in the menu and 404 when
+  opened — adding and editing products is still done in the Supabase table
+  editor. The single-order page is not built either, which is why there are no
+  shipping buttons yet.
+- **The homepage builder and banner scheduling** — Phase 7.
 - **Refunds** — nothing in the shop can issue one. A refund made in the Razorpay
   dashboard will not be reflected in the order. Phase 8.
 - **Coupon codes** — the field is on the bag page and is visibly switched off,

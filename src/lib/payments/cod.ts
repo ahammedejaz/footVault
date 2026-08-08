@@ -33,7 +33,8 @@ export const codAdapter: PaymentAdapter = {
   copy: {
     method: "cod",
     label: "Cash on delivery",
-    description: "Pay the courier when your order arrives. Nothing is charged now.",
+    description:
+      "Pay the courier when your order arrives. Nothing is charged now.",
     note: "Please have the exact amount ready. Our couriers cannot always give change.",
   },
 
@@ -71,7 +72,9 @@ export const codAdapter: PaymentAdapter = {
    * will find out.
    */
   async verifyClientCallback(): Promise<VerificationResult> {
-    console.error("[cod] verifyClientCallback was called. COD has no payment to verify.");
+    console.error(
+      "[cod] verifyClientCallback was called. COD has no payment to verify.",
+    );
     return {
       ok: false,
       reason: "provider_error",

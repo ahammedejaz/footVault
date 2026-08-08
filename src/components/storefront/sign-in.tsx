@@ -50,8 +50,16 @@ export function GoogleSignInForm({
   return (
     <form action={formAction} className={className}>
       <input type="hidden" name="next" value={next ?? here} readOnly />
-      {intent ? <input type="hidden" name="intent" value={intent} readOnly /> : null}
-      <Button type="submit" size="lg" variant="outline" className="w-full" disabled={pending}>
+      {intent ? (
+        <input type="hidden" name="intent" value={intent} readOnly />
+      ) : null}
+      <Button
+        type="submit"
+        size="lg"
+        variant="outline"
+        className="w-full"
+        disabled={pending}
+      >
         <GoogleMark className="size-4" />
         {pending ? "Opening Google…" : label}
       </Button>
@@ -101,7 +109,9 @@ export function SignInDialog({
           <DialogTitle className="font-display text-2xl font-bold tracking-[-0.02em] uppercase">
             {title}
           </DialogTitle>
-          <DialogDescription className="text-base text-pretty">{reason}</DialogDescription>
+          <DialogDescription className="text-base text-pretty">
+            {reason}
+          </DialogDescription>
         </DialogHeader>
         <GoogleSignInForm next={next} intent={intent} />
         <p className="text-muted-foreground font-mono text-xs tracking-[0.06em]">

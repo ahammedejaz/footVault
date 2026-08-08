@@ -42,7 +42,9 @@ export function reportBoundaryError(
   pathname: string,
 ): void {
   const route =
-    typeof window === "undefined" ? pathname : `${pathname}${window.location.search}`;
+    typeof window === "undefined"
+      ? pathname
+      : `${pathname}${window.location.search}`;
 
   const digest = present(
     error.digest,
@@ -56,7 +58,10 @@ export function reportBoundaryError(
       route,
       digest,
       message: present(error.message, "(no message on the error)"),
-      stack: present(error.stack, "(no stack — stripped from Server Component errors)"),
+      stack: present(
+        error.stack,
+        "(no stack — stripped from Server Component errors)",
+      ),
       whereTheRealMessageIs: error.digest
         ? `Server log, on the line carrying digest ${error.digest}.`
         : "Here — a browser-thrown error is not stripped.",

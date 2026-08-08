@@ -3,7 +3,11 @@ import "server-only";
 import type { ApplyPaymentResult } from "@/lib/orders/types";
 import { applyPaymentOutcome } from "@/lib/orders/payment-state";
 import { claimPaymentEvent, releasePaymentEvent } from "@/lib/payments/events";
-import { assertPaise, type PaymentMethod, type PaymentOutcome } from "@/lib/payments/types";
+import {
+  assertPaise,
+  type PaymentMethod,
+  type PaymentOutcome,
+} from "@/lib/payments/types";
 
 /**
  * Claim the event, then let the order code move the order. In that order.
@@ -49,7 +53,9 @@ export type RecordAndApplyInput = {
   outcome: PaymentOutcome;
 };
 
-export async function recordAndApply(input: RecordAndApplyInput): Promise<PaymentApplication> {
+export async function recordAndApply(
+  input: RecordAndApplyInput,
+): Promise<PaymentApplication> {
   const { eventId, provider, providerOrderId, eventType, outcome } = input;
 
   // The last boundary check before the number reaches the order code. It has
@@ -67,7 +73,10 @@ export async function recordAndApply(input: RecordAndApplyInput): Promise<Paymen
     return {
       status: "failed",
       retryable: true,
-      message: error instanceof Error ? error.message : "could not record the payment event",
+      message:
+        error instanceof Error
+          ? error.message
+          : "could not record the payment event",
     };
   }
 
@@ -75,13 +84,22 @@ export async function recordAndApply(input: RecordAndApplyInput): Promise<Paymen
 
   let result: ApplyPaymentResult;
   try {
-    result = await applyPaymentOutcome({ eventId, provider, providerOrderId, eventType, outcome });
+    result = await applyPaymentOutcome({
+      eventId,
+      provider,
+      providerOrderId,
+      eventType,
+      outcome,
+    });
   } catch (error) {
     await releasePaymentEvent(provider, eventId);
     return {
       status: "failed",
       retryable: true,
-      message: error instanceof Error ? error.message : "applying the payment outcome failed",
+      message:
+        error instanceof Error
+          ? error.message
+          : "applying the payment outcome failed",
     };
   }
 

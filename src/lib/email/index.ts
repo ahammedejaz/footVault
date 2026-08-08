@@ -1,10 +1,17 @@
 import "server-only";
 
 import { createConsoleEmailAdapter } from "@/lib/email/console-adapter";
-import { buildOrderConfirmationEmail, type OrderConfirmationInput } from "@/lib/email/order-confirmation";
+import {
+  buildOrderConfirmationEmail,
+  type OrderConfirmationInput,
+} from "@/lib/email/order-confirmation";
 import type { EmailAdapter, EmailSendResult } from "@/lib/email/types";
 
-export type { EmailAdapter, EmailMessage, EmailSendResult } from "@/lib/email/types";
+export type {
+  EmailAdapter,
+  EmailMessage,
+  EmailSendResult,
+} from "@/lib/email/types";
 export type { OrderConfirmationInput } from "@/lib/email/order-confirmation";
 
 /**
@@ -50,12 +57,16 @@ export async function sendOrderConfirmation(
   try {
     const result = await adapter.send(buildOrderConfirmationEmail(input));
     if (!result.ok) {
-      console.error(`[email] ${adapter.name} refused order ${input.orderNumber}: ${result.reason}`);
+      console.error(
+        `[email] ${adapter.name} refused order ${input.orderNumber}: ${result.reason}`,
+      );
     }
     return result;
   } catch (error) {
     const reason = error instanceof Error ? error.message : "unknown";
-    console.error(`[email] ${adapter.name} threw for order ${input.orderNumber}: ${reason}`);
+    console.error(
+      `[email] ${adapter.name} threw for order ${input.orderNumber}: ${reason}`,
+    );
     return { ok: false, via: adapter.name, reason };
   }
 }
