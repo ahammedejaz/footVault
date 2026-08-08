@@ -1,7 +1,7 @@
 # Database
 
 Generated against the live Supabase project (`ahumjhwqgmskjsitctcj`) after the
-Phase 5 migrations. Regenerate this whenever a migration lands.
+Phase 6 migrations. Regenerate this whenever a migration lands.
 
 Money is **integer paise** everywhere. ₹1,999 is `199900`. There is no float in
 the schema and no rounding to argue about.
@@ -10,9 +10,13 @@ the schema and no rounding to argue about.
 
 ## Tables
 
-23 tables in `public`. **Row Level Security is enabled on every one**, and every
-one carries at least one policy — a table with RLS on and no policies is
-invisible rather than safe, so both are checked.
+**29 tables in `public`, and Row Level Security is enabled on every one.**
+Twenty-six carry at least one policy. The three that carry none —
+`integration_tokens`, `rate_limits` and `shipping_quotes` — are deliberate and
+are the stricter posture rather than a gap: RLS is on, every grant is revoked
+from `anon` and `authenticated`, and only `service_role` reaches them. They are
+refused by the *absence* of a policy rather than by the wording of one, which is
+one fewer sentence to get wrong. Counts below are from the live project.
 
 | Table | Cols | Policies | What it is |
 |---|---:|---:|---|
@@ -28,7 +32,7 @@ invisible rather than safe, so both are checked.
 | `carts` | 6 | 3 | `user_id` **xor** `guest_token`, by check constraint |
 | `cart_items` | 7 | 2 | Unique on `(cart_id, variant_id)` |
 | `wishlist_items` | 5 | 2 | Unique on `(user_id, product_id)` |
-| `orders` | 23 | 4 | Phase 5 added `guest_token`, `cart_id`, `payment_reference`, `stock_restored_at` |
+| `orders` | 29 | 4 | Phase 5 added `guest_token`, `cart_id`, `payment_reference`, `stock_restored_at`; Phase 6 added the advance/balance columns below |
 | `order_items` | 15 | 2 | Snapshots name, size, colour, SKU, price — history cannot break |
 | `order_status_history` | 6 | 2 | |
 | `payments` | 11 | 1 | **Phase 5.** One row per provider order. Admin-read only |
@@ -39,6 +43,12 @@ invisible rather than safe, so both are checked.
 | `banners` | 14 | 2 | |
 | `pages` | 9 | 2 | About, Contact, policies |
 | `site_settings` | 6 | 2 | Key/jsonb. Announcement, shipping, contact, social |
+| `inventory_movements` | 10 | 1 | Append-only ledger of every change to `stock_quantity`. `sum(delta)` per variant must equal the stock; `reconcile_inventory()` proves it |
+| `shipments` | 22 | 2 | One per order, `unique (order_id)` — which is the only reason "create shipment" can be idempotent |
+| `shipment_events` | 6 | 1 | `unique (shipment_id, event_id)`, claimed by an insert. The same discipline as `payment_events` |
+| `shipping_quotes` | 16 | **0** | The delivery fee a customer was *shown*, held server-side so the fee they are *charged* is the same row |
+| `integration_tokens` | 4 | **0** | Cached third-party bearer tokens. In Postgres because a serverless instance is not a cache |
+| `rate_limits` | 3 | **0** | Fixed-window counters for `consume_rate_limit()`. Per-instance counters reset on every cold start |
 
 ### The `private` schema
 
@@ -132,6 +142,155 @@ This paragraph is the pointer that makes that survivable.
 
 ---
 
+## What Phase 6 added
+
+Pay on Delivery. The customer pays an **advance** through Razorpay at checkout
+and the courier collects the **balance** in cash, so an order now has to record
+both — and the database, not the application, is what guarantees they agree.
+
+### New columns on `orders`
+
+| Column | Type | Why |
+|---|---|---|
+| `advance_amount` | `bigint` | Charged through Razorpay at checkout, before the order is confirmed. The whole `grand_total` for a prepaid order. **Never zero on a new order** — an order with no money against it is the unsecured COD this model replaced |
+| `balance_due_on_delivery` | `bigint` | What the courier collects in cash. This — never `grand_total` — is the COD collectable handed to Shiprocket |
+| `cod_handling_fee` | `bigint` | How much of `shipping_fee` is the Pay-on-Delivery return-leg extra. A breakdown, not an addition |
+| `cash_collected_at`, `cash_collected_by` | `timestamptz`, `uuid` | Marked by hand in the admin, never inferred from a Shiprocket "Delivered". Delivery usually means payment and occasionally does not, and the difference is the shop's money |
+| `delivered_at` | `timestamptz` | When the courier recorded delivery. The 24-hour window for reporting shipment damage runs from this instant, so it is evidence rather than decoration |
+
+**`shipping_fee` deliberately still holds the *total* delivery charge**, so
+`grand_total` arithmetic is unchanged and no existing row shifted by a paisa.
+`cod_handling_fee` breaks that figure down rather than adding to it — which is
+what lets every read site keep reading one column.
+
+The invariant the whole feature rests on is a **check constraint**, enforced by
+the database rather than by hope:
+
+```sql
+alter table public.orders add constraint orders_advance_balance_sums
+  check (advance_amount + balance_due_on_delivery = grand_total);
+```
+
+A courier collecting the wrong amount is discovered by customer complaint, which
+is far too late and far too expensive. Rows that predate the split were
+backfilled *honestly* rather than uniformly — a prepaid order settled its whole
+total online, a legacy cash-on-delivery order paid nothing online and owed all of
+it at the door — so every existing row satisfies the constraint, which is the
+point of writing it that way.
+
+### New columns on `shipments` and `shipping_quotes`
+
+| Table | Column | Why |
+|---|---|---|
+| `shipments` | `cod_collectable_amount` | What Shiprocket was actually told to collect, recorded when the shipment is created so a discrepancy is answerable from our own data instead of from the Shiprocket panel. Equals the order's `balance_due_on_delivery` |
+| `shipments` | `delivered_at` | Taken from tracking when the status first reaches delivered, and mirrored onto the order so the account page can count down without a join |
+| `shipping_quotes` | `shipping_fee_paise` | The forward leg a prepaid order would have paid |
+| `shipping_quotes` | `cod_handling_paise` | The Pay-on-Delivery extra covering the return leg on a refused parcel. Always `0` for prepaid |
+
+`shipping_quotes.fee_paise` is untouched and still means the total charged for
+delivery, so nothing that reads it changed meaning — and a second check
+constraint holds the split to it:
+
+```sql
+check (shipping_fee_paise + cod_handling_paise = fee_paise)
+```
+
+The split is *stored on the quote the customer was shown* rather than recomputed
+later from a rate that has since moved. That was the owner's condition for
+keeping the surcharge at all: a customer comparing prepaid against Pay on
+Delivery has to be able to see the extra and point at it, which is only possible
+if it is a named line rather than the difference between two totals. Rows that
+predate the split had their whole fee attributed to `shipping_fee_paise` rather
+than to an invented boundary.
+
+### `create_order_with_stock` learns about the advance
+
+Two new parameters, both trailing and defaulted, and one new pair of returned
+columns:
+
+| | |
+|---|---|
+| Added in | `p_advance_amount bigint default null`, `p_cod_handling_fee bigint default 0` |
+| Returns | `advance_amount`, `balance_due`, alongside what it already returned |
+| Unchanged | `SECURITY INVOKER`, `search_path = ''`, **`service_role` only** |
+
+`p_advance_amount` null means "the whole order settles online", which is
+prepaid. Both inputs are clamped inside the function rather than trusted: the
+handling fee cannot exceed the delivery charge it breaks down, and the advance is
+clamped into `[0, grand_total]`.
+
+**The balance is derived inside the function as `grand_total - advance`, never
+passed in.** The subtotal is recomputed under the cart's row lock and can differ
+from what the checkout page saw if a price moved; two independently-supplied
+numbers would then fail the check constraint above and take the whole checkout
+down with an opaque error at the pay button. Derived, the invariant holds by
+construction, the customer is charged online exactly what the modal showed them,
+and any drift lands on the amount the courier collects.
+
+Dropping the function took its privileges with it, so
+`20260808120300_create_order_records_advance.sql` re-issues the revoke and the
+`service_role` grant. That is not ceremony: Postgres grants `EXECUTE` to
+`PUBLIC` on every new function, and a customer who could reach this over
+PostgREST could pass their own `p_advance_amount` and pay ₹1 for a ₹17,000
+order. Verified live — see `docs/rls-tests.md` §10.
+
+**A migration-vs-live drift was repaired in the same file.** The previous
+migration to define this function (`20260808090750_create_order_optional_params`)
+had dropped the four `set_config('app.inventory_*')` calls that attribute stock
+movements, while the live database still had them. The files therefore no longer
+reproduced the database: replaying them into a fresh environment would have
+produced a function that still moves stock but records every movement as
+`unspecified`, with no actor and no order reference — a ledger that looks
+present and is useless, discovered only when somebody asks why a count is wrong.
+They are restored, and that file is now the whole truth about this function.
+
+### The ledger learned about new variants
+
+`record_inventory_movement()` was an `AFTER UPDATE` trigger, so a variant
+inserted with `stock_quantity = 10` had ten units and **no movement rows at
+all** — and `reconcile_inventory()` counted it as drifting by ten, for ever,
+because nothing would ever go back and write the missing opening balance. The
+370 variants that existed when the ledger was built were backfilled by hand,
+which is exactly why this was invisible: it only bites on the *next* variant
+anybody creates, and Phase 6 is about to hand the owner a form that creates
+variants with stock in them.
+
+There are now two triggers on `product_variants` calling the same function:
+
+| Trigger | Fires | Writes |
+|---|---|---|
+| `product_variants_record_opening` | `after insert` | An `opening_balance` row for the starting stock. Skipped when the variant is created with zero, because a zero-delta row is noise in the one table that has to stay readable |
+| `product_variants_record_movement` | `after update` | The delta, as before. Still tested on the *value* rather than the statement, because `after update of stock_quantity` fires even when the column is in the `SET` list unchanged |
+
+`inventory_movement_reason` also gained `replacement`, so a replacement leaves a
+named row rather than an `admin_adjustment` nobody can interpret later. Live
+values: `opening_balance, order, cancellation, sweep, admin_adjustment, restock,
+shipment, unspecified, replacement`.
+
+### `site_settings.shipping`
+
+**`flat_fee_paise` was deleted, not corrected**, so it cannot come back. It was
+the cause of a real drift — the cart read the flat fee and showed ₹199 while
+checkout charged a live courier rate, which is `FV-2026-00487` against
+`FV-2026-00488`: identical ₹1,499 subtotals, ₹199 and ₹220 of delivery. The
+owner's rule is that rates always come from the Shiprocket API and never from
+this codebase, and that the *thresholds* are the shop's decision, so what
+replaced it is a set of admin-tunable numbers:
+
+| Key | Live value | What it decides |
+|---|---|---|
+| `free_above_paise` | `249900` | Prepaid delivery is free at or above this. `0` disables the free tier |
+| `cod_enabled` | `true` | Master switch for Pay on Delivery, independent of PIN-code serviceability |
+| `cod_advance_mode` | `greater_of` | One of `shipping_fee`, `fixed`, `greater_of` |
+| `cod_advance_minimum_paise` | `9900` | The advance never falls below this, nor below Razorpay's own 100-paise floor |
+| `cod_advance_fixed_paise` | `9900` | Used only when the mode is `fixed` |
+| `fallback_fee_paise` | `{"razorpay": 19900, "cod": 34900}` | Used **only** when Shiprocket is unreachable. Not a price list |
+
+`return_window_days` is now **`1`**: the policy is 24 hours, replacement only,
+for shipment damage, and there are no refunds and no online returns.
+
+---
+
 ## RLS, in one table
 
 | Table group | Anonymous / customer | Admin |
@@ -209,11 +368,14 @@ none of that touches.
 | `color_family(text)` | invoker, immutable | anon, authenticated | Pure arithmetic on a hex string. No table access |
 | **Phase 5** | | | |
 | `assert_cart_stock(uuid)` | invoker | **service_role only** | Locks every variant in the cart `FOR UPDATE` in id order and raises `OSTCK` with an `OutOfStockItem[]` json DETAIL. The lock only means anything inside the caller's transaction |
-| `create_order_with_stock(...)` | invoker | **service_role only** | The one checkout transaction. Takes no price as an argument — only the shipping policy. Raises `MTCRT`, `CNVRT`, `OSTCK` |
+| `create_order_with_stock(...)` | invoker | **service_role only** | The one checkout transaction. Takes no *item* price as an argument; the delivery total, the free-above threshold and the advance go in and are clamped. Raises `MTCRT`, `CNVRT`, `OSTCK` |
 | `cancel_order_with_restock(...)` | invoker | **service_role only** | Cancels and returns the units exactly once, guarded by `orders.stock_restored_at`. Returns a word — `cancelled`, `already_cancelled`, `already_paid`, `illegal_transition`, `not_found` — rather than raising, because every caller has to tell those apart |
 | `release_abandoned_orders(int)` | invoker | **service_role only** | The sweep. Default cutoff 30 minutes, bounded at 500 rows, skips anything with money in flight. Run by `pg_cron` as the job's owner |
 | `merge_guest_cart(text, int)` | invoker | **authenticated only** | The bag merge, in one transaction. Invoker is correct: RLS already shows the `/auth/callback` client both bags |
 | `adopt_guest_orders()` | **definer** | authenticated, service_role | Moves the caller's guest orders onto their account. Takes **no arguments** — see below |
+| **Phase 6** | | | |
+| `create_order_with_stock(...)` | invoker | **service_role only** | Re-declared with `p_advance_amount` and `p_cod_handling_fee`. The `drop` took its ACL with it, so the revoke and grant are re-issued in the same migration |
+| `record_inventory_movement()` | **definer** | **revoked** | Trigger only, on `product_variants`. Now `AFTER INSERT` as well as `AFTER UPDATE`, so a new variant's opening stock reaches the ledger |
 
 **Why the Phase 5 write functions are `SECURITY INVOKER`.** The checkout action
 reaches them through `createAdminClient()`, which already bypasses RLS, so
@@ -344,6 +506,33 @@ It is a `drop` and not a `create or replace` because changing parameter names
 and order produces an **overload**, not a replacement, and two functions
 differing only in argument order is a live ambiguity waiting for a caller to
 trip on.
+
+---
+
+## Phase 6 migrations
+
+Six, each applied through the Supabase MCP server and verified with a follow-up
+query rather than assumed.
+
+| File | What it does |
+|---|---|
+| `20260808120000_shipping_cod_advance_settings.sql` | Deletes `shipping.flat_fee_paise`; adds `cod_enabled`, the three advance keys and `fallback_fee_paise` |
+| `20260808120100_shipping_quotes_cod_split.sql` | `shipping_fee_paise` and `cod_handling_paise` on `shipping_quotes`, plus the check that they sum to `fee_paise` |
+| `20260808120200_orders_advance_and_balance.sql` | The advance/balance/handling columns, the cash-collection markers, the honest backfill, and `orders_advance_balance_sums` |
+| `20260808120300_create_order_records_advance.sql` | `create_order_with_stock` gains the advance — **and the file catches up with the database.** Read this one first |
+| `20260808120400_ledger_covers_new_variants.sql` | `replacement` on the reason enum; `record_inventory_movement()` fires on insert; the `product_variants_record_opening` trigger |
+| `20260808120500_shipments_collectable_and_delivery.sql` | `shipments.cod_collectable_amount`, `shipments.delivered_at`, `orders.delivered_at` |
+
+### Why `20260808120300` is the file to read
+
+The same 5KB truncation that split the checkout transaction in Phase 5 still
+applies, and this file is close to it. It is nonetheless the annotated one,
+because it carries two things that cannot be recovered from the schema: why the
+balance is derived rather than passed, and the record of the drift it repaired —
+the four `set_config('app.inventory_*')` calls that a previous migration had
+dropped while the live database kept them. A file that produces a different
+function from the one running in production is worse than no file, because it
+will be trusted.
 
 ### One known untidiness
 
