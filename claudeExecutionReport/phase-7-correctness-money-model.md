@@ -394,7 +394,7 @@ parcel lost ₹182.36 and the shop found out by reconciliation.
 
 ### The guard rails, all measured
 
-`npm run audit:totals` — **30 assertions, 30 passing**, no database and no
+`npm run audit:totals` — **42 assertions, 42 passing**, no database and no
 browser. Every figure in it is a real rate from the serviceability call in §1;
 invented numbers let a rounding rule pass that a real rate breaks.
 
@@ -404,9 +404,9 @@ invented numbers let a rounding rule pass that a real rate breaks.
 | 2 · `balance ≥ 0`; below the minimum, POD is not offered | `audit:totals` §3 |
 | 3 · Shiprocket's COD collectable equals `balance` | `audit:shipping` (pre-existing, still asserted) |
 | 4 · a refused POD order leaves the shop at net zero | `audit:totals` §1 |
-| 5 · prepaid RTO refunds total − freight; shop error refunds in full | **not built** — §7 |
-| 6 · a refund webhook replayed ten times produces one refund | **not built** — §7 |
-| 7 · a refund cannot exceed the captured amount | **not built** — §7 |
+| 5 · prepaid RTO refunds total − freight; shop error refunds in full | `audit:totals` §8 — the refund table, row by row |
+| 6 · a refund webhook replayed ten times produces one refund | **not built** — §7. `refunds.razorpay_refund_id` is unique, which is the floor, but nothing exercises it |
+| 7 · a refund cannot exceed the captured amount | `audit:totals` §8 — every branch × every cause |
 | 8 · stock returns on physical receipt, not on the tracking event | schema and state machine only — §7 |
 | 9 · courier and both legs stored on the order match the quote | schema and write path built; **not asserted** — §7 |
 
@@ -471,7 +471,7 @@ reached.
 |---|---|---|
 | **A5** — checkout address book | **Not done.** `src/components/checkout/address-book.tsx` and `address.ts` exist from Phase 6; the edit/delete/set-default operations and the re-quote on address change were not built or verified |
 | **A8** — forged Server Action harness | Handed to the adversarial pass. **See `phase-7-security-review.md`; if it is not there, this gate is unmet** |
-| **B3** — refunds | **Schema only.** `refunds` table, enums, indexes and RLS are live and in migrations. No Razorpay Refunds API call, no `refund.processed`/`refund.failed` webhook handling, no policy table in code, no admin UI, no idempotency test. **The brief's refund matrix — including the shop-error row it calls "not optional" — is not implemented** |
+| **B3** — refunds | **Schema and policy, no mechanics.** The `refunds` table, enums, indexes and RLS are live and in migrations, and `src/lib/orders/refund-policy.ts` is the brief's matrix as an explicit table — every row, the shop-error short-circuit, and the clamp to the captured amount, all measured in `audit:totals` §8. **What is missing is the mechanics:** no Razorpay Refunds API call, no `refund.processed`/`refund.failed` webhook, no admin UI, no idempotency test. So the *rule* is built and provable and nothing can yet issue a refund |
 | **B4** — RTO handling | **Schema and state machine only.** `returning` exists in `order_status` with correct transitions and `RESTOCKS_ON_ENTRY: false`; `rto_*` columns and `rto_return`/`rto_writeoff` movement reasons exist; `profiles.cod_blocked_at` exists. No admin flow to mark a parcel received, no restock action, no RTO ledger, no dashboard figures, no repeat-RTO flagging |
 | **C** — image pipeline | **Not started.** No `sharp`, no normalisation, no upload guidance, no preview |
 | **D** — admin usability | **Only the settings screen.** Page-purpose lines, shopkeeper vocabulary, teaching empty states, the guided first-product flow, reversible deletes and the dashboard were not touched |
@@ -570,6 +570,7 @@ new   src/lib/stock-freshness.ts             one statement, from every path that
 new   src/lib/content-tokens.ts              policy numbers resolved into prose
 new   src/components/storefront/flash-toast.tsx
 new   scripts/audit/literals.ts              npm run audit:literals
+new   src/lib/orders/refund-policy.ts        the refund matrix, as a table
 
       src/lib/payments/advance.ts            round-trip advance, guard rails, prepaid discount
       src/lib/orders/totals.ts               the one place a total is computed
@@ -595,5 +596,5 @@ sql   20260808140000_quote_freeze_columns.sql
 ```
 
 `npm run typecheck`, `npm run lint`, `npm run build` and `npm run shapes` are
-green. `npm run audit:totals` is 30/30 and `npm run audit:literals` is clean on
+green. `npm run audit:totals` is 42/42 and `npm run audit:literals` is clean on
 both halves. The browser suites were not run — §7.
