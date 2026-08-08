@@ -1,4 +1,5 @@
 import type { OrderStatus, PaymentStatus } from "@/lib/orders/types";
+import { formatPaise } from "@/lib/format";
 import type { PaymentMethod } from "@/lib/payments/types";
 
 /**
@@ -108,14 +109,27 @@ export function whatHappensNext(order: {
   status: OrderStatus;
   paymentStatus: PaymentStatus;
   paymentMethod: PaymentMethod;
+  totals?: { advanceAmount: number; balanceDueOnDelivery: number };
 }): string {
   if (order.status === "cancelled") return ORDER_STATUS_COPY.cancelled.blurb;
   if (order.status === "returned") return ORDER_STATUS_COPY.returned.blurb;
 
   if (order.paymentMethod === "cod") {
-    return order.paymentStatus === "paid"
-      ? "Paid on delivery. Nothing left to do."
-      : "Pay the delivery agent in cash when your parcel arrives. Keep the exact amount ready if you can.";
+    const balance = order.totals?.balanceDueOnDelivery ?? 0;
+    if (balance === 0) return "Paid in full. Nothing left to do.";
+    /**
+     * Both numbers, always. This line used to say only "pay the delivery agent
+     * in cash when your parcel arrives", which under the old model was true and
+     * under this one leaves the customer believing they have paid nothing. That
+     * belief is what gets a parcel refused at the door, and a refused parcel
+     * costs the shop both legs of the delivery.
+     */
+    const paid = order.totals?.advanceAmount ?? 0;
+    return (
+      `You have paid ${formatPaise(paid)}. The courier will collect ` +
+      `${formatPaise(balance)} in cash when your parcel arrives — keep the exact ` +
+      "amount ready if you can."
+    );
   }
 
   if (order.paymentStatus === "paid") {

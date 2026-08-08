@@ -274,6 +274,11 @@ export type OrderView = {
   paymentMethod: PaymentMethod;
   placedAt: string;
   totals: OrderTotals;
+  /**
+   * When the courier recorded delivery, or null. The 24-hour window for
+   * reporting shipment damage runs from this instant.
+   */
+  deliveredAt: string | null;
   lines: OrderLine[];
   shippingAddress: ShippingAddress;
   contactEmail: string | null;

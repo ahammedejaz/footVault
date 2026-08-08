@@ -6,6 +6,7 @@ import {
   whatHappensNext,
 } from "@/components/checkout/order-format";
 import { Totals } from "@/components/checkout/totals";
+import { ReplacementWindow } from "@/components/account/replacement-window";
 import type { OrderView } from "@/lib/orders/types";
 import type { PaymentMethod } from "@/lib/payments/types";
 
@@ -20,7 +21,19 @@ import type { PaymentMethod } from "@/lib/payments/types";
  * this page with: what happens now, what did I buy, where is it going, what did
  * I pay. The timeline sits under the first because it is the evidence for it.
  */
-export function OrderDetail({ order }: { order: OrderView }) {
+export function OrderDetail({
+  order,
+  contact,
+}: {
+  order: OrderView;
+  /**
+   * Where to reach the shop. Passed in rather than read here so this stays a
+   * pure render — and it is not optional in spirit: if the only way to claim a
+   * replacement is to contact the store, that contact must be impossible to
+   * miss on the page where somebody realises they need it.
+   */
+  contact?: { phone: string | null; whatsapp: string | null };
+}) {
   return (
     <div className="mt-8 grid gap-8 lg:grid-cols-[minmax(0,1fr)_23rem] lg:gap-10">
       <div className="min-w-0 space-y-10">
@@ -30,6 +43,21 @@ export function OrderDetail({ order }: { order: OrderView }) {
           </h2>
           <p className="mt-2 text-base text-pretty">{whatHappensNext(order)}</p>
           <OrderTimeline timeline={order.timeline} />
+
+          {/*
+            Only once the parcel has actually arrived. Before then the window
+            has not started and showing a countdown would be noise; after it
+            lapses the component swaps itself for the shop's contact details.
+          */}
+          {order.deliveredAt ? (
+            <div className="mt-4">
+              <ReplacementWindow
+                deliveredAt={order.deliveredAt}
+                phone={contact?.phone ?? null}
+                whatsapp={contact?.whatsapp ?? null}
+              />
+            </div>
+          ) : null}
         </section>
 
         <section aria-labelledby="order-items-heading">

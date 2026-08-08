@@ -8,6 +8,8 @@ import { StatusChip } from "@/components/checkout/status-chip";
 import { GoogleSignInForm } from "@/components/storefront/sign-in";
 import { Button } from "@/components/ui/button";
 import { getOrderForViewer } from "@/lib/queries/orders";
+import { cachedSiteSettings } from "@/lib/queries/cached";
+import { setting, type ContactSettings } from "@/lib/queries/content";
 
 /**
  * Deliberately static, and deliberately vague.
@@ -92,7 +94,7 @@ export default async function OrderConfirmationPage({
         <time dateTime={order.placedAt}>{formatOrderDate(order.placedAt)}</time>
       </p>
 
-      <OrderDetail order={order} />
+      <OrderDetail order={order} contact={await shopContact()} />
 
       <div className="mt-10 border-t border-border pt-8">
         {order.isGuestOrder ? (
@@ -133,4 +135,25 @@ export default async function OrderConfirmationPage({
       </div>
     </div>
   );
+}
+
+/**
+ * Where to reach the shop, for the replacement window.
+ *
+ * The store's policy is that a damaged parcel is reported by contacting them
+ * directly — there is no self-service path by design — so the contact details
+ * have to travel with the order, not sit in the footer.
+ */
+async function shopContact() {
+  const settings = await cachedSiteSettings();
+  const contact = setting<ContactSettings>(settings, "contact", {
+    email: "",
+    phone: "",
+    whatsapp: "",
+    address: "",
+  });
+  return {
+    phone: contact.phone || null,
+    whatsapp: contact.whatsapp || null,
+  };
 }
