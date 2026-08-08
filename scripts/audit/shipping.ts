@@ -511,8 +511,25 @@ async function main() {
   /* ═══ 5b · the delivery fee the customer pays ════════════════════════════ */
   section("5b · Delivery pricing");
   {
-    const { deliveryFee, FREE_DELIVERY_THRESHOLD_PAISE, FALLBACK_FEE_PAISE } =
-      await import("@/lib/shipping/fee");
+    const { deliveryFee } = await import("@/lib/shipping/fee");
+
+    /**
+     * The thresholds, stated here rather than read from the database.
+     *
+     * They are the shop's numbers and they move — the owner edits them in
+     * /admin/settings — so a suite that read them would assert whatever the
+     * database happened to hold and prove nothing. Pinning them keeps this
+     * testing the *rules*, which is the part that must not change silently.
+     * `shippingSettings()` is covered separately by its own parse fallbacks.
+     */
+    const SETTINGS = {
+      freeAbovePaise: 249_900,
+      fallbackFeePaise: { razorpay: 19_900, cod: 34_900 },
+      codEnabled: true,
+      codAdvanceMode: "greater_of" as const,
+      codAdvanceMinimumPaise: 9_900,
+      codAdvanceFixedPaise: 9_900,
+    };
 
     // Measured against the live account: Delhivery Surface, Cuddapah to
     // Bengaluru, 0.9kg. rate already includes the cash-collection fee.
@@ -531,6 +548,7 @@ async function main() {
       method: "razorpay",
       subtotalPaise: 199900,
       verdict: live,
+      settings: SETTINGS,
     });
     check(
       "prepaid under the threshold pays the forward rate, rounded up to Rs 10",
@@ -540,8 +558,9 @@ async function main() {
 
     const prepaidOver = deliveryFee({
       method: "razorpay",
-      subtotalPaise: FREE_DELIVERY_THRESHOLD_PAISE,
+      subtotalPaise: SETTINGS.freeAbovePaise,
       verdict: live,
+      settings: SETTINGS,
     });
     check(
       "prepaid at exactly Rs 2,499 is free",
@@ -553,6 +572,7 @@ async function main() {
       method: "cod",
       subtotalPaise: 199900,
       verdict: live,
+      settings: SETTINGS,
     });
     check(
       "COD pays forward PLUS the return leg — 205.33 + 142 rounds to Rs 350",
@@ -564,6 +584,7 @@ async function main() {
       method: "cod",
       subtotalPaise: 500000,
       verdict: live,
+      settings: SETTINGS,
     });
     check(
       "COD gets NO free threshold, however large the order",
@@ -575,6 +596,7 @@ async function main() {
       method: "cod",
       subtotalPaise: 199900,
       verdict: { ...live, rtoCostPaise: null },
+      settings: SETTINGS,
     });
     check(
       "a missing return cost is assumed to equal the forward one, never zero",
@@ -586,10 +608,12 @@ async function main() {
       method: "cod",
       subtotalPaise: 199900,
       verdict: { ...UNKNOWN, forwardCostPaise: null },
+      settings: SETTINGS,
     });
     check(
       "an outage falls back to the COD flat rate, not the prepaid one",
-      outage.feePaise === FALLBACK_FEE_PAISE.cod && outage.basis === "fallback",
+      outage.feePaise === SETTINGS.fallbackFeePaise.cod &&
+        outage.basis === "fallback",
       String(outage.feePaise),
     );
 
@@ -597,6 +621,7 @@ async function main() {
       method: "razorpay",
       subtotalPaise: 300000,
       verdict: { ...UNKNOWN, forwardCostPaise: null },
+      settings: SETTINGS,
     });
     check(
       "and an outage never costs a customer their earned free delivery",
@@ -608,11 +633,39 @@ async function main() {
       method: "razorpay",
       subtotalPaise: 199900,
       verdict: { ...UNKNOWN, deliverable: false, forwardCostPaise: null },
+      settings: SETTINGS,
     });
     check(
       "an undeliverable pin code is reported as such rather than priced",
       dead.deliverable === false,
       JSON.stringify(dead.deliverable),
+    );
+
+    /**
+     * The COD extra is a named line, which is the owner's condition for keeping
+     * the surcharge at all: the difference between a prepaid total and a
+     * Pay-on-Delivery one must be something a customer can see and point at.
+     */
+    check(
+      "the COD extra is split out as its own line",
+      codUnder.shippingFeePaise === 21000 &&
+        codUnder.codHandlingPaise === 14000,
+      `${codUnder.shippingFeePaise} + ${codUnder.codHandlingPaise}`,
+    );
+    check(
+      "prepaid never carries a COD handling line",
+      prepaidUnder.codHandlingPaise === 0 && prepaidOver.codHandlingPaise === 0,
+    );
+    check(
+      "the split always reconstitutes the fee actually charged",
+      [prepaidUnder, prepaidOver, codUnder, codOver, noRto, outage, outageFree].every(
+        (f) => f.shippingFeePaise + f.codHandlingPaise === f.feePaise,
+      ),
+    );
+    check(
+      "splitting did not change what the customer pays",
+      codUnder.feePaise === 35000 && prepaidUnder.feePaise === 21000,
+      `${codUnder.feePaise} / ${prepaidUnder.feePaise}`,
     );
   }
 

@@ -638,6 +638,11 @@ export type Database = {
       };
       orders: {
         Row: {
+          advance_amount: number;
+          balance_due_on_delivery: number;
+          cash_collected_at: string | null;
+          cash_collected_by: string | null;
+          cod_handling_fee: number;
           cart_id: string | null;
           contact_email: string | null;
           contact_phone: string | null;
@@ -663,6 +668,11 @@ export type Database = {
           user_id: string | null;
         };
         Insert: {
+          advance_amount?: number;
+          balance_due_on_delivery?: number;
+          cash_collected_at?: string | null;
+          cash_collected_by?: string | null;
+          cod_handling_fee?: number;
           cart_id?: string | null;
           contact_email?: string | null;
           contact_phone?: string | null;
@@ -688,6 +698,11 @@ export type Database = {
           user_id?: string | null;
         };
         Update: {
+          advance_amount?: number;
+          balance_due_on_delivery?: number;
+          cash_collected_at?: string | null;
+          cash_collected_by?: string | null;
+          cod_handling_fee?: number;
           cart_id?: string | null;
           contact_email?: string | null;
           contact_phone?: string | null;
@@ -1255,6 +1270,8 @@ export type Database = {
       };
       shipping_quotes: {
         Row: {
+          cod_handling_paise: number;
+          shipping_fee_paise: number;
           cart_id: string;
           cod_available: boolean;
           cost_forward_paise: number | null;
@@ -1271,6 +1288,8 @@ export type Database = {
           subtotal_paise: number;
         };
         Insert: {
+          cod_handling_paise?: number;
+          shipping_fee_paise?: number;
           cart_id: string;
           cod_available: boolean;
           cost_forward_paise?: number | null;
@@ -1287,6 +1306,8 @@ export type Database = {
           subtotal_paise: number;
         };
         Update: {
+          cod_handling_paise?: number;
+          shipping_fee_paise?: number;
           cart_id?: string;
           cod_available?: boolean;
           cost_forward_paise?: number | null;
