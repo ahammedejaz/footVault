@@ -31,6 +31,24 @@ import { CATALOG_CACHE_TAG } from "@/lib/queries/cached";
  * stock, so the stale direction is "we still say sold out for up to an hour" —
  * a lost sale rather than an oversold pair. The product page does not have even
  * that window, because its availability is read live.
+ *
+ * **And a deploy does not clear it.** This was got wrong once, in writing, on
+ * the way to production: `unstable_cache` on Vercel is backed by the **Data
+ * Cache**, which is a *runtime* store shared across deployments — not the
+ * `.next/cache` directory in the build output. So shipping new code does not
+ * flush it, and neither does forcing a build with the build cache disabled
+ * (`vercel --prod --force`); both were tried against the live project and the
+ * stale entry survived. The only three things that clear a tagged entry are the
+ * two functions above, the TTL lapsing, and an owner purging the Data Cache
+ * from the Vercel dashboard.
+ *
+ * The practical consequence is worth stating because it is the *good* half:
+ * content edited by SQL is stale for up to an hour, but a **policy number**
+ * never is. Thresholds are not stored in cached content any more — the cached
+ * payload holds `{{free_shipping_threshold}}` and the value is resolved on
+ * every render from `site_settings`, uncached. So the owner changing a
+ * threshold is correct immediately, everywhere, cache or no cache. See
+ * `src/lib/content-tokens.ts`.
  */
 export function stockChanged(): void {
   updateTag(CATALOG_CACHE_TAG);
