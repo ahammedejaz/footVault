@@ -15,7 +15,11 @@ import {
 import { CheckRow } from "@/components/checkout/check-row";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { deleteAddress, saveAddress, setDefaultAddress } from "@/lib/actions/address";
+import {
+  deleteAddress,
+  saveAddress,
+  setDefaultAddress,
+} from "@/lib/actions/address";
 import type { SavedAddress } from "@/lib/address-types";
 import { toast } from "@/lib/toast";
 import { addressBookSchema } from "@/lib/validations/address";
@@ -72,7 +76,10 @@ export function AddressBook({ addresses }: { addresses: SavedAddress[] }) {
     const issue = parsed.success
       ? undefined
       : parsed.error.issues.find((entry) => entry.path[0] === name);
-    setErrors((previous) => ({ ...previous, [`address.${name}`]: issue?.message }));
+    setErrors((previous) => ({
+      ...previous,
+      [`address.${name}`]: issue?.message,
+    }));
   }
 
   function reset() {
@@ -90,12 +97,16 @@ export function AddressBook({ addresses }: { addresses: SavedAddress[] }) {
     if (!parsed.success) {
       const next: FieldErrors = {};
       for (const issue of parsed.error.issues) {
-        const key = issue.path[0] === "label" ? "label" : `address.${String(issue.path[0])}`;
+        const key =
+          issue.path[0] === "label"
+            ? "label"
+            : `address.${String(issue.path[0])}`;
         if (!next[key]) next[key] = issue.message;
       }
       setErrors(next);
       const first = parsed.error.issues[0];
-      if (first) document.getElementById(fieldId(String(first.path[0])))?.focus();
+      if (first)
+        document.getElementById(fieldId(String(first.path[0])))?.focus();
       return;
     }
 
@@ -125,7 +136,10 @@ export function AddressBook({ addresses }: { addresses: SavedAddress[] }) {
         toast.failed(result.message);
         return;
       }
-      toast.done("Default address changed", address.label ?? address.recipientName);
+      toast.done(
+        "Default address changed",
+        address.label ?? address.recipientName,
+      );
     });
   }
 
@@ -170,7 +184,10 @@ export function AddressBook({ addresses }: { addresses: SavedAddress[] }) {
       {addresses.length > 0 ? (
         <ul className="mt-8 space-y-4">
           {addresses.map((address) => (
-            <li key={address.id} className="border-border rounded-lg border p-4">
+            <li
+              key={address.id}
+              className="border-border rounded-lg border p-4"
+            >
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="min-w-0">
                   {address.label ? (
@@ -220,7 +237,11 @@ export function AddressBook({ addresses }: { addresses: SavedAddress[] }) {
       ) : null}
 
       {adding ? (
-        <form onSubmit={submit} noValidate className="border-border mt-8 rounded-lg border p-5">
+        <form
+          onSubmit={submit}
+          noValidate
+          className="border-border mt-8 rounded-lg border p-5"
+        >
           <h2 className="text-lg font-semibold">Add an address</h2>
 
           <Field
@@ -246,7 +267,9 @@ export function AddressBook({ addresses }: { addresses: SavedAddress[] }) {
             className="mt-4"
             draft={draft}
             errors={errors}
-            onChange={(name, value) => setDraft((previous) => ({ ...previous, [name]: value }))}
+            onChange={(name, value) =>
+              setDraft((previous) => ({ ...previous, [name]: value }))
+            }
             onBlurField={validateField}
           />
 

@@ -6,7 +6,11 @@ import { saveAddress as saveAddressToBook } from "@/lib/actions/address";
 import { getCurrentUser } from "@/lib/auth";
 import { readGuestToken } from "@/lib/cart/token";
 import { sendOrderConfirmation } from "@/lib/email";
-import { CHECKOUT_SQLSTATE, describeOutOfStock, parseOutOfStockItems } from "@/lib/orders/errors";
+import {
+  CHECKOUT_SQLSTATE,
+  describeOutOfStock,
+  parseOutOfStockItems,
+} from "@/lib/orders/errors";
 import type {
   OrderStatus,
   PaymentStatus,
@@ -20,9 +24,9 @@ import {
   type PaymentInitiation,
   type PaymentMethod,
 } from "@/lib/payments/types";
-import { cachedSiteSettings } from "@/lib/queries/cached";
+import { callerIdentity, consumeRateLimit } from "@/lib/rate-limit";
+import { chargeableFee } from "@/lib/shipping/quote-store";
 import { getCart } from "@/lib/queries/cart";
-import { setting, type ShippingSettings } from "@/lib/queries/content";
 import { maybeRow } from "@/lib/queries/run";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
@@ -52,23 +56,31 @@ import { checkoutSchema } from "@/lib/validations/checkout";
  * in words that leave no doubt the customer was not charged.
  */
 
-/** Only reached if `site_settings` has no shipping row. Matches getCart()'s. */
-const SHIPPING_FALLBACK: ShippingSettings = {
-  flat_fee_paise: 9900,
-  free_above_paise: 199900,
-  currency: "INR",
-  regions: ["IN"],
-};
+/**
+ * Delivery pricing no longer lives here.
+ *
+ * `site_settings.shipping` used to be read at this point and passed to
+ * `create_order_with_stock` as a flat fee plus a threshold. Since the fee now
+ * depends on the destination and the payment method, that decision moved
+ * wholesale into `src/lib/shipping/fee.ts`, and this action reads the answer
+ * from `shipping_quotes` — the same row the checkout page showed the customer.
+ * Two places computing a price is two prices.
+ */
 
-const GENERIC = "We could not place your order. Nothing has been charged. Please try again.";
+const GENERIC =
+  "We could not place your order. Nothing has been charged. Please try again.";
 
-export async function placeOrder(input: PlaceOrderInput): Promise<PlaceOrderResult> {
+export async function placeOrder(
+  input: PlaceOrderInput,
+): Promise<PlaceOrderResult> {
   try {
     const user = await getCurrentUser();
 
     // The server decides who is signed in, so the "is an email required" rule
     // is a parameter of the schema rather than a field in the payload.
-    const parsed = checkoutSchema({ requireContactEmail: !user }).safeParse(input);
+    const parsed = checkoutSchema({ requireContactEmail: !user }).safeParse(
+      input,
+    );
     if (!parsed.success) {
       const issue = parsed.error.issues[0];
       return {
@@ -87,7 +99,38 @@ export async function placeOrder(input: PlaceOrderInput): Promise<PlaceOrderResu
       return {
         ok: false,
         reason: "payment_unavailable",
-        message: "That payment method is not available right now. Choose another.",
+        message:
+          "That payment method is not available right now. Choose another.",
+      };
+    }
+
+    /**
+     * Placed before the first database read, so a caller in a loop is stopped
+     * before they cost us a cart query, a settings read and a write transaction
+     * that takes a row lock on every variant in the bag.
+     *
+     * Counted per signed-in customer, or per IP for a guest. Not per guest
+     * token: that is a cookie the caller holds, and a limiter you can reset by
+     * clearing a cookie is decoration.
+     *
+     * Ten a minute. A customer who is genuinely retrying a failed card sits far
+     * under it; a script trying to exhaust stock by placing and abandoning
+     * orders sits far over. The abandoned-order sweep already gives that stock
+     * back after thirty minutes, so this narrows a window rather than closing a
+     * hole — E-1 was the hole and it is fixed.
+     */
+    const throttle = await consumeRateLimit(
+      "checkout",
+      await callerIdentity(user?.id ?? null),
+    );
+    if (!throttle.allowed) {
+      return {
+        ok: false,
+        reason: "throttled",
+        retryAfterSeconds: throttle.retryAfterSeconds,
+        message:
+          "That is a lot of attempts in a short time. Wait a moment and try again — " +
+          "nothing has been placed and nothing has been charged.",
       };
     }
 
@@ -111,7 +154,11 @@ export async function placeOrder(input: PlaceOrderInput): Promise<PlaceOrderResu
       };
     }
 
-    const address = await resolveAddress(user?.id ?? null, data.addressId, data.address);
+    const address = await resolveAddress(
+      user?.id ?? null,
+      data.addressId,
+      data.address,
+    );
     if (!address) {
       return {
         ok: false,
@@ -121,30 +168,99 @@ export async function placeOrder(input: PlaceOrderInput): Promise<PlaceOrderResu
       };
     }
 
-    const settings = await cachedSiteSettings();
-    const shipping = setting<ShippingSettings>(settings, "shipping", SHIPPING_FALLBACK);
+    /**
+     * One quote decides three things: whether we can deliver at all, whether
+     * cash can be collected, and what the customer pays to receive it.
+     *
+     * **It is read from `shipping_quotes`, not taken fresh.** The checkout page
+     * already asked for this exact combination — same bag, same postcode, same
+     * method — and showed the customer the answer. Quoting again here could
+     * return a different number, and charging a figure the customer was never
+     * shown is the one failure this whole path exists to prevent. If the stored
+     * quote has lapsed, `chargeableFee` takes a new one, which is honest: a
+     * fifteen-minute-old price is not a promise.
+     *
+     * **The browser still sends no money.** It sent a postcode and a method.
+     * Every rupee below is computed on this server and recomputed inside
+     * `create_order_with_stock`, so `PlaceOrderInput` remains a type with no
+     * number in it.
+     */
+    const units = cart.lines.reduce((total, line) => total + line.quantity, 0);
+    const quote = await chargeableFee({
+      cartId: cart.id,
+      postalCode: address.postalCode,
+      method,
+      subtotalPaise: cart.subtotal,
+      units,
+    });
+
+    /**
+     * A pin code no courier will reach is refused outright, for every payment
+     * method.
+     *
+     * This is the owner's decision and it is the honest one: taking money for a
+     * parcel that cannot be sent buys a refund, a support conversation and a
+     * disappointed customer. Note that `deliverable` is false *only* when
+     * Shiprocket says so in as many words — an outage, a timeout or an
+     * ambiguous empty response all leave it true, so a courier problem still
+     * cannot block a sale.
+     */
+    if (!quote.deliverable) {
+      return {
+        ok: false,
+        reason: "undeliverable",
+        message:
+          `We are sorry — no courier will carry to ${address.postalCode} from our store. ` +
+          "Try a different delivery address, or contact us and we will see what we can do.",
+      };
+    }
+
+    /**
+     * Cash on delivery, only where cash can actually be collected.
+     *
+     * The hook Phase 5 §8.8 left for exactly this. Fails soft in the same
+     * direction as everything else: only an explicit "couriers serve this pin
+     * code and none of them will collect cash" declines.
+     */
+    if (method === "cod" && !quote.codAvailable) {
+      return {
+        ok: false,
+        reason: "payment_unavailable",
+        message:
+          `No courier will collect cash at ${address.postalCode}. ` +
+          "Pay online instead and we will send it to the same address.",
+      };
+    }
 
     // COD is confirmed the moment it is placed: there is nothing to wait for.
     // Razorpay stays pending until the webhook says captured, and the webhook
     // is the only thing allowed to confirm it.
-    const initialStatus: OrderStatus = method === "cod" ? "confirmed" : "pending";
+    const initialStatus: OrderStatus =
+      method === "cod" ? "confirmed" : "pending";
     const paymentStatus: PaymentStatus = "unpaid";
 
     const admin = createAdminClient();
-    const { data: created, error } = await admin.rpc("create_order_with_stock", {
-      p_cart_id: cart.id,
-      p_shipping_address: address,
-      p_payment_method: method,
-      p_initial_status: initialStatus,
-      p_payment_status: paymentStatus,
-      p_shipping_flat_fee: shipping.flat_fee_paise,
-      p_free_shipping_above: shipping.free_above_paise,
-      p_user_id: user?.id,
-      p_guest_token: guestToken ?? undefined,
-      p_contact_email: data.contactEmail ?? user?.email ?? undefined,
-      p_contact_phone: data.contactPhone ?? address.phone,
-      p_customer_note: data.customerNote ?? undefined,
-    });
+    const { data: created, error } = await admin.rpc(
+      "create_order_with_stock",
+      {
+        p_cart_id: cart.id,
+        p_shipping_address: address,
+        p_payment_method: method,
+        p_initial_status: initialStatus,
+        p_payment_status: paymentStatus,
+        // The quote has already applied the free-delivery threshold, the COD
+        // rule and the rounding, so the fee is passed as-is and the function is
+        // told there is no threshold left to apply. Passing both would let the
+        // database silently zero a COD fee that deliberately has no free tier.
+        p_shipping_flat_fee: quote.feePaise,
+        p_free_shipping_above: null,
+        p_user_id: user?.id,
+        p_guest_token: guestToken ?? undefined,
+        p_contact_email: data.contactEmail ?? user?.email ?? undefined,
+        p_contact_phone: data.contactPhone ?? address.phone,
+        p_customer_note: data.customerNote ?? undefined,
+      },
+    );
 
     if (error) {
       if (error.code === CHECKOUT_SQLSTATE.outOfStock) {
@@ -157,7 +273,11 @@ export async function placeOrder(input: PlaceOrderInput): Promise<PlaceOrderResu
         };
       }
       if (error.code === CHECKOUT_SQLSTATE.emptyCart) {
-        return { ok: false, reason: "empty_cart", message: "Your bag is empty." };
+        return {
+          ok: false,
+          reason: "empty_cart",
+          message: "Your bag is empty.",
+        };
       }
       if (error.code === CHECKOUT_SQLSTATE.cartUnavailable) {
         // Almost always a double submit: the first one won and converted the
@@ -169,7 +289,11 @@ export async function placeOrder(input: PlaceOrderInput): Promise<PlaceOrderResu
             "This bag has already been checked out. Look in your orders before trying again.",
         };
       }
-      console.error("[checkout] create_order_with_stock failed:", error.message, error.code);
+      console.error(
+        "[checkout] create_order_with_stock failed:",
+        error.message,
+        error.code,
+      );
       return { ok: false, reason: "error", message: GENERIC };
     }
 
@@ -184,8 +308,16 @@ export async function placeOrder(input: PlaceOrderInput): Promise<PlaceOrderResu
     // Best-effort, and after the order exists rather than before: a book that
     // fails to save must not cost somebody their checkout.
     if (data.saveAddress && user) {
-      const saved = await saveAddressToBook({ ...address, label: null, isDefault: false });
-      if (!saved.ok) console.warn("[checkout] could not save the address to the book:", saved.message);
+      const saved = await saveAddressToBook({
+        ...address,
+        label: null,
+        isDefault: false,
+      });
+      if (!saved.ok)
+        console.warn(
+          "[checkout] could not save the address to the book:",
+          saved.message,
+        );
     }
 
     const initiation = await initiatePayment({
@@ -211,11 +343,18 @@ export async function placeOrder(input: PlaceOrderInput): Promise<PlaceOrderResu
     }
 
     if (initiation.kind === "razorpay") {
-      const recorded = await recordProviderOrder(order.order_id, initiation, grandTotal);
+      const recorded = await recordProviderOrder(
+        order.order_id,
+        initiation,
+        grandTotal,
+      );
       if (!recorded) {
         // Without this row the webhook cannot find the order, so a captured
         // payment would never confirm anything. Better to refuse now.
-        await rollBackUnpaidOrder(order.order_id, "Could not record the payment attempt");
+        await rollBackUnpaidOrder(
+          order.order_id,
+          "Could not record the payment attempt",
+        );
         revalidatePath("/", "layout");
         return {
           ok: false,
@@ -283,6 +422,23 @@ export async function abandonUnpaidOrder(input: {
   orderNumber: string;
 }): Promise<{ ok: boolean; message: string }> {
   try {
+    const user = await getCurrentUser();
+
+    // Registered and reachable from a browser as of Phase 6, so it is now a
+    // public entry point to a cancellation path and gets counted like one. RLS
+    // decides *whether* the caller may cancel; this only decides how fast they
+    // may ask.
+    const throttle = await consumeRateLimit(
+      "orderCancel",
+      await callerIdentity(user?.id ?? null),
+    );
+    if (!throttle.allowed) {
+      return {
+        ok: false,
+        message: "Too many attempts. Wait a moment and try again.",
+      };
+    }
+
     const supabase = await createClient();
     const own = await maybeRow<{ id: string; status: OrderStatus }>(
       "abandonUnpaidOrder.own",
@@ -294,21 +450,41 @@ export async function abandonUnpaidOrder(input: {
     );
     if (!own) return { ok: false, message: "We could not find that order." };
     if (own.status !== "pending") {
-      return { ok: false, message: "That order can no longer be cancelled here." };
+      return {
+        ok: false,
+        message: "That order can no longer be cancelled here.",
+      };
     }
 
-    const outcome = await cancelWithRestock(own.id, "Payment abandoned by the customer", true);
+    const outcome = await cancelWithRestock(
+      own.id,
+      "Payment abandoned by the customer",
+      true,
+      user?.id ?? null,
+    );
     if (outcome === "cancelled" || outcome === "already_cancelled") {
       revalidatePath("/", "layout");
-      return { ok: true, message: "Your order was cancelled and nothing was charged." };
+      return {
+        ok: true,
+        message: "Your order was cancelled and nothing was charged.",
+      };
     }
     if (outcome === "already_paid") {
-      return { ok: false, message: "That payment went through. Contact us if you need to cancel." };
+      return {
+        ok: false,
+        message: "That payment went through. Contact us if you need to cancel.",
+      };
     }
-    return { ok: false, message: "We could not cancel that order. Please contact us." };
+    return {
+      ok: false,
+      message: "We could not cancel that order. Please contact us.",
+    };
   } catch (thrown) {
     console.error("[checkout] abandonUnpaidOrder threw:", thrown);
-    return { ok: false, message: "We could not cancel that order. Please contact us." };
+    return {
+      ok: false,
+      message: "We could not cancel that order. Please contact us.",
+    };
   }
 }
 
@@ -390,7 +566,9 @@ async function initiatePayment(args: {
     if (initiation.kind === "razorpay") {
       if (!initiation.providerOrderId || !initiation.keyId) return null;
       if (initiation.amountPaise !== args.amountPaise) {
-        console.error("[checkout] the provider was given a different amount than the order holds");
+        console.error(
+          "[checkout] the provider was given a different amount than the order holds",
+        );
         return null;
       }
     }
@@ -427,17 +605,29 @@ async function recordProviderOrder(
     status: "created",
   });
   if (error) {
-    console.error("[checkout] could not record the payment attempt:", error.message, error.code);
+    console.error(
+      "[checkout] could not record the payment attempt:",
+      error.message,
+      error.code,
+    );
     return false;
   }
   return true;
 }
 
-/** Cancel, restock, and hand the bag back. Returns the function's verdict. */
+/**
+ * Cancel, restock, and hand the bag back. Returns the function's verdict.
+ *
+ * `actor` is passed through to `inventory_movements.actor` so the ledger can say
+ * *who* put the stock back. It is null for the rollback path, which is the
+ * server undoing its own failed initiation rather than a person deciding
+ * anything, and null is the honest answer to "who did this".
+ */
 async function cancelWithRestock(
   orderId: string,
   reason: string,
   releaseCart: boolean,
+  actor: string | null = null,
 ): Promise<string> {
   const admin = createAdminClient();
   const { data, error } = await admin.rpc("cancel_order_with_restock", {
@@ -445,9 +635,14 @@ async function cancelWithRestock(
     p_reason: reason,
     p_require_unpaid: true,
     p_release_cart: releaseCart,
+    p_changed_by: actor ?? undefined,
   });
   if (error) {
-    console.error("[checkout] cancel_order_with_restock failed:", error.message, error.code);
+    console.error(
+      "[checkout] cancel_order_with_restock failed:",
+      error.message,
+      error.code,
+    );
     return "error";
   }
   return data ?? "error";
@@ -459,7 +654,10 @@ async function cancelWithRestock(
  * Loud on failure, because the failure mode is silent and expensive: stock
  * claimed by an order nobody will ever pay for, which nothing else will notice.
  */
-async function rollBackUnpaidOrder(orderId: string, reason: string): Promise<void> {
+async function rollBackUnpaidOrder(
+  orderId: string,
+  reason: string,
+): Promise<void> {
   const outcome = await cancelWithRestock(orderId, reason, true);
   if (outcome !== "cancelled" && outcome !== "already_cancelled") {
     console.error(
@@ -475,7 +673,12 @@ async function confirmByEmail(args: {
   to: string | null;
   customerName: string;
   method: PaymentMethod;
-  lines: { productName: string; size: string; quantity: number; lineTotal: number }[];
+  lines: {
+    productName: string;
+    size: string;
+    quantity: number;
+    lineTotal: number;
+  }[];
   subtotal: number;
   shippingFee: number;
   grandTotal: number;
@@ -485,7 +688,9 @@ async function confirmByEmail(args: {
     // Only possible for a signed-in customer with no email on their claims,
     // which OAuth and password sign-up both rule out. Worth a line if it ever
     // happens rather than a silent skip.
-    console.warn(`[checkout] order ${args.orderNumber} has no address to confirm to`);
+    console.warn(
+      `[checkout] order ${args.orderNumber} has no address to confirm to`,
+    );
     return;
   }
 

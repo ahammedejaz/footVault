@@ -59,7 +59,8 @@ export type StatusCopy = {
 export const ORDER_STATUS_COPY: Readonly<Record<OrderStatus, StatusCopy>> = {
   pending: {
     label: "Awaiting payment",
-    blurb: "We are holding these for you. The order confirms as soon as the payment settles.",
+    blurb:
+      "We are holding these for you. The order confirms as soon as the payment settles.",
   },
   confirmed: {
     label: "Confirmed",
@@ -71,11 +72,13 @@ export const ORDER_STATUS_COPY: Readonly<Record<OrderStatus, StatusCopy>> = {
   },
   shipped: {
     label: "Shipped",
-    blurb: "On its way. The courier will call the number on this order before delivering.",
+    blurb:
+      "On its way. The courier will call the number on this order before delivering.",
   },
   delivered: {
     label: "Delivered",
-    blurb: "Delivered. Anything not right can go back within the returns window.",
+    blurb:
+      "Delivered. Anything not right can go back within the returns window.",
   },
   cancelled: {
     label: "Cancelled",

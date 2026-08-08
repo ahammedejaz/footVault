@@ -28,7 +28,10 @@ export function Totals({
   return (
     <div className={className}>
       <dl className="space-y-2 text-sm">
-        <Row label="Subtotal" hint={itemCount ? ` for ${itemCount} items` : undefined}>
+        <Row
+          label="Subtotal"
+          hint={itemCount ? ` for ${itemCount} items` : undefined}
+        >
           {formatPaise(totals.subtotal)}
         </Row>
 
@@ -37,13 +40,19 @@ export function Totals({
         </Row>
 
         <Row label="Discount" muted>
-          {totals.discountTotal > 0 ? `−${formatPaise(totals.discountTotal)}` : "—"}
+          {totals.discountTotal > 0
+            ? `−${formatPaise(totals.discountTotal)}`
+            : "—"}
         </Row>
       </dl>
 
       <div className="border-border mt-4 flex items-baseline justify-between border-t pt-4">
-        <span className="font-mono text-xs tracking-[0.06em] uppercase">Total</span>
-        <span className="font-mono text-base font-medium">{formatPaise(totals.grandTotal)}</span>
+        <span className="font-mono text-xs tracking-[0.06em] uppercase">
+          Total
+        </span>
+        <span className="font-mono text-base font-medium">
+          {formatPaise(totals.grandTotal)}
+        </span>
       </div>
 
       <p className="text-muted-foreground mt-2 text-xs text-pretty">
@@ -70,7 +79,12 @@ function Row({
         {label}
         {hint ? <span className="sr-only">{hint}</span> : null}
       </dt>
-      <dd className={cn("font-mono font-medium", muted && "text-muted-foreground font-normal")}>
+      <dd
+        className={cn(
+          "font-mono font-medium",
+          muted && "text-muted-foreground font-normal",
+        )}
+      >
         {children}
       </dd>
     </div>

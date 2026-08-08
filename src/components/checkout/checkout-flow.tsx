@@ -16,11 +16,18 @@ import {
 } from "@/components/checkout/address-fields";
 import { AddressCard } from "@/components/checkout/address-card";
 import { CheckRow } from "@/components/checkout/check-row";
-import { CheckoutFailure, type CheckoutProblem } from "@/components/checkout/checkout-failure";
+import {
+  CheckoutFailure,
+  type CheckoutProblem,
+} from "@/components/checkout/checkout-failure";
 import { ChoiceCard } from "@/components/checkout/choice-card";
-import { RAZORPAY_CHECKOUT_SRC, waitForRazorpay } from "@/components/checkout/razorpay";
+import {
+  RAZORPAY_CHECKOUT_SRC,
+  waitForRazorpay,
+} from "@/components/checkout/razorpay";
 import type { RazorpaySuccess } from "@/components/checkout/razorpay";
 import { Totals } from "@/components/checkout/totals";
+import { quoteShipping } from "@/lib/actions/shipping-quote";
 import { EmptyState } from "@/components/storefront/empty-state";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,7 +36,11 @@ import { verifyRazorpayPayment } from "@/lib/actions/payment";
 import type { SavedAddress } from "@/lib/address-types";
 import type { CartLine } from "@/lib/cart-types";
 import { formatPaise } from "@/lib/format";
-import type { OrderTotals, PlaceOrderInput, PlacedOrder } from "@/lib/orders/types";
+import type {
+  OrderTotals,
+  PlaceOrderInput,
+  PlacedOrder,
+} from "@/lib/orders/types";
 import type { PaymentMethod, PaymentMethodCopy } from "@/lib/payments/types";
 import { useBagUi } from "@/lib/stores/bag";
 import { toast } from "@/lib/toast";
@@ -97,7 +108,8 @@ export function CheckoutFlow({
   const router = useRouter();
   const refreshBag = useBagUi((state) => state.refresh);
 
-  const defaultAddress = addresses.find((address) => address.isDefault) ?? addresses[0] ?? null;
+  const defaultAddress =
+    addresses.find((address) => address.isDefault) ?? addresses[0] ?? null;
 
   const [addressChoice, setAddressChoice] = useState<string>(
     defaultAddress ? defaultAddress.id : NEW_ADDRESS,
@@ -109,7 +121,9 @@ export function CheckoutFlow({
   const [saveToBook, setSaveToBook] = useState(true);
   const [contactEmail, setContactEmail] = useState("");
   const [customerNote, setCustomerNote] = useState("");
-  const [method, setMethod] = useState<PaymentMethod | null>(methods[0]?.method ?? null);
+  const [method, setMethod] = useState<PaymentMethod | null>(
+    methods[0]?.method ?? null,
+  );
 
   const [errors, setErrors] = useState<FieldErrors>({});
   const [attempted, setAttempted] = useState(false);
@@ -132,9 +146,122 @@ export function CheckoutFlow({
   const outcome = useRef<"none" | "settled" | "failed">("none");
 
   const usingNewAddress = addressChoice === NEW_ADDRESS;
-  const chosenAddress = addresses.find((address) => address.id === addressChoice) ?? null;
+  const chosenAddress =
+    addresses.find((address) => address.id === addressChoice) ?? null;
   const offersRazorpay = methods.some((entry) => entry.method === "razorpay");
   const busy = placing || paying || resuming;
+
+  /* ------------------------------------------------------------- delivery -- */
+
+  /**
+   * The delivery fee, fetched when the pin code is complete.
+   *
+   * Delivery is no longer a flat rate: below the free-delivery threshold the
+   * customer pays what the courier charges, and a cash-on-delivery order also
+   * carries the return leg because a refused parcel costs the shop both ways.
+   * None of that can be computed in a browser, so it is asked for.
+   *
+   * **The answer is stored server-side and is what `placeOrder` charges.** This
+   * is not a preview that a second calculation might contradict — see
+   * `src/lib/shipping/quote-store.ts`. That is the whole reason the fee is
+   * fetched here rather than estimated here.
+   */
+  const [quoted, setQuoted] = useState<{
+    /** The (pin code, method) this answer belongs to. See `quote` below. */
+    key: string;
+    feePaise: number;
+    deliverable: boolean;
+    codAvailable: boolean;
+    estimatedDays: number | null;
+  } | null>(null);
+  const [quoting, setQuoting] = useState(false);
+
+  const postalCode = usingNewAddress
+    ? draft.postalCode
+    : (chosenAddress?.postalCode ?? "");
+  const pin = postalCode.trim();
+  const quoteKey = `${pin}:${method ?? ""}`;
+
+  /**
+   * The quote, but only if it is still about what the customer is looking at.
+   *
+   * Derived rather than cleared. Changing the pin code used to `setQuote(null)`
+   * from inside the effect, which is a synchronous state write during an effect
+   * — React's own lint rule flags it, and it renders once with a fee belonging
+   * to the *previous* address before correcting itself. Comparing keys during
+   * render means a stale answer is simply never shown.
+   */
+  const quote = quoted && quoted.key === quoteKey ? quoted : null;
+
+  useEffect(() => {
+    if (!/^\d{6}$/.test(pin) || !method) return;
+
+    let cancelled = false;
+    // Debounced: a pin code is typed a digit at a time and only the sixth
+    // keystroke is worth a round trip. `setQuoting` lives inside the timer so
+    // nothing writes state synchronously from the effect body.
+    const timer = setTimeout(async () => {
+      if (cancelled) return;
+      setQuoting(true);
+      const result = await quoteShipping({
+        postalCode: pin,
+        paymentMethod: method,
+      });
+      if (cancelled) return;
+      setQuoting(false);
+      // A failed quote leaves whatever is on screen alone. `placeOrder` prices
+      // the order regardless, and a shipping row that empties itself mid
+      // checkout reads as broken.
+      if (result.ok) {
+        setQuoted({
+          key: `${pin}:${method}`,
+          feePaise: result.feePaise,
+          deliverable: result.deliverable,
+          codAvailable: result.codAvailable,
+          estimatedDays: result.estimatedDays,
+        });
+      }
+    }, 400);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [pin, method]);
+
+  /**
+   * The totals as shown, with the quoted fee folded in.
+   *
+   * `totals` from the server is the bag before a destination is known, so it
+   * carries the fallback fee. Once a real quote exists it replaces both the
+   * shipping row and the grand total — updating one and not the other is how a
+   * checkout ends up not adding up.
+   */
+  if (method === "cod" && quote?.codAvailable === false && offersRazorpay) {
+    // Selected a method that has since been withdrawn for this address. Moved
+    // during render rather than in an effect, so the radio group and the button
+    // label never disagree for a frame.
+    setMethod("razorpay");
+  }
+
+  const shownTotals = quote
+    ? {
+        ...totals,
+        shippingFee: quote.feePaise,
+        grandTotal: totals.subtotal - totals.discountTotal + quote.feePaise,
+      }
+    : totals;
+
+  /** COD is hidden where no courier will collect cash. */
+  const offeredMethods = methods.filter(
+    (entry) => entry.method !== "cod" || quote?.codAvailable !== false,
+  );
+
+  /**
+   * A pin code nothing will reach stops checkout here rather than at the
+   * server. The server refuses it too — this is the courtesy, not the control.
+   */
+  const undeliverable = quote?.deliverable === false;
 
   // Focus the failure so a keyboard or screen-reader customer is not left at
   // the bottom of a form wondering what the button did. Focus rather than a
@@ -175,7 +302,9 @@ export function CheckoutFlow({
   }
 
   function buildInput(): Record<string, unknown> {
-    const rawPhone = usingNewAddress ? draft.phone : (chosenAddress?.phone ?? "");
+    const rawPhone = usingNewAddress
+      ? draft.phone
+      : (chosenAddress?.phone ?? "");
     const phone = phoneSchema.safeParse(rawPhone);
 
     return {
@@ -226,9 +355,14 @@ export function CheckoutFlow({
     });
     const issue = parsed.success
       ? undefined
-      : parsed.error.issues.find((entry) => entry.path[0] === "address" && entry.path[1] === name);
+      : parsed.error.issues.find(
+          (entry) => entry.path[0] === "address" && entry.path[1] === name,
+        );
 
-    setErrors((previous) => ({ ...previous, [`address.${name}`]: issue?.message }));
+    setErrors((previous) => ({
+      ...previous,
+      [`address.${name}`]: issue?.message,
+    }));
   }
 
   /* ----------------------------------------------------------------- place -- */
@@ -240,7 +374,9 @@ export function CheckoutFlow({
     setAttempted(true);
     setProblem(null);
 
-    const parsed = checkoutSchema({ requireContactEmail: !signedIn }).safeParse(buildInput());
+    const parsed = checkoutSchema({ requireContactEmail: !signedIn }).safeParse(
+      buildInput(),
+    );
 
     if (!parsed.success) {
       const next: FieldErrors = {};
@@ -460,8 +596,8 @@ export function CheckoutFlow({
         ) : (
           <>
             <p className="mt-5 text-base text-pretty">
-              The payment window is open. Finish there — nothing has been charged yet,
-              and your pairs are held for this order either way.
+              The payment window is open. Finish there — nothing has been
+              charged yet, and your pairs are held for this order either way.
             </p>
             <div className="mt-4 flex flex-wrap gap-3">
               <Button onClick={resume} disabled={resuming || paying}>
@@ -497,7 +633,9 @@ export function CheckoutFlow({
       {/* Only on the one route that needs it, and only when the method is
           actually on offer. `lazyOnload` keeps it off the critical path; the
           click path polls for it rather than assuming it has landed. */}
-      {offersRazorpay ? <Script src={RAZORPAY_CHECKOUT_SRC} strategy="lazyOnload" /> : null}
+      {offersRazorpay ? (
+        <Script src={RAZORPAY_CHECKOUT_SRC} strategy="lazyOnload" />
+      ) : null}
 
       {/* The same two-column proportions as /cart, deliberately: a customer
           crossing from the bag to checkout should not feel the page change
@@ -578,12 +716,15 @@ export function CheckoutFlow({
           {/* ------------------------------------------------------ contact -- */}
           {signedIn ? null : (
             <section aria-labelledby="checkout-contact-heading">
-              <h2 id="checkout-contact-heading" className="text-lg font-semibold">
+              <h2
+                id="checkout-contact-heading"
+                className="text-lg font-semibold"
+              >
                 Where should we send the receipt?
               </h2>
               <p className="text-muted-foreground mt-2 text-sm text-pretty">
-                You do not need an account to buy. We use this for the order confirmation
-                and nothing else.
+                You do not need an account to buy. We use this for the order
+                confirmation and nothing else.
               </p>
 
               <Field
@@ -649,17 +790,17 @@ export function CheckoutFlow({
               How would you like to pay?
             </h2>
 
-            {methods.length === 0 ? (
+            {offeredMethods.length === 0 ? (
               <p className="border-destructive/40 bg-destructive/5 mt-4 rounded-lg border p-4 text-sm text-pretty">
-                No payment method is available right now, so this order cannot be placed.
-                Nothing in your bag has been lost — try again shortly, or call us and we
-                will take the order by phone.
+                No payment method is available right now, so this order cannot
+                be placed. Nothing in your bag has been lost — try again
+                shortly, or call us and we will take the order by phone.
               </p>
             ) : (
               <fieldset className="mt-4">
                 <legend className="sr-only">Choose how to pay</legend>
                 <div className="space-y-3">
-                  {methods.map((entry) => (
+                  {offeredMethods.map((entry) => (
                     <ChoiceCard
                       key={entry.method}
                       name="paymentMethod"
@@ -684,7 +825,10 @@ export function CheckoutFlow({
         </div>
 
         {/* -------------------------------------------------------- summary -- */}
-        <aside aria-labelledby="checkout-summary-heading" className="lg:sticky lg:top-24 lg:self-start">
+        <aside
+          aria-labelledby="checkout-summary-heading"
+          className="lg:sticky lg:top-24 lg:self-start"
+        >
           <div className="bg-fog border-border rounded-lg border p-5">
             <div className="flex items-baseline justify-between gap-3">
               <h2
@@ -696,14 +840,20 @@ export function CheckoutFlow({
               {/* 45×16 as a bare link. `hit-44` rather than a padded box: this
                   sits on the summary's title row, and a 44px-tall control there
                   would push the whole card open by half a line. */}
-              <Link href="/cart" className="hit-44 text-orange-ink text-xs underline">
+              <Link
+                href="/cart"
+                className="hit-44 text-orange-ink text-xs underline"
+              >
                 Edit bag
               </Link>
             </div>
 
             <ul className="divide-border mt-4 divide-y">
               {lines.map((line) => (
-                <li key={line.id} className="flex items-start gap-3 py-3 first:pt-0">
+                <li
+                  key={line.id}
+                  className="flex items-start gap-3 py-3 first:pt-0"
+                >
                   <div className="bg-paper relative aspect-4/5 w-12 shrink-0 overflow-hidden rounded-md">
                     {line.imageUrl ? (
                       <Image
@@ -717,35 +867,67 @@ export function CheckoutFlow({
                     ) : null}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-pretty">{line.productName}</p>
+                    <p className="text-sm font-medium text-pretty">
+                      {line.productName}
+                    </p>
                     <p className="text-muted-foreground mt-0.5 font-mono text-xs tracking-[0.06em]">
                       UK {line.size} · {line.quantity} ×{" "}
                       {formatPaise(line.unitPrice)}
                     </p>
                   </div>
-                  <p className="shrink-0 font-mono text-sm">{formatPaise(line.lineTotal)}</p>
+                  <p className="shrink-0 font-mono text-sm">
+                    {formatPaise(line.lineTotal)}
+                  </p>
                 </li>
               ))}
             </ul>
 
             <div className="border-border mt-4 border-t pt-4">
-              <Totals totals={totals} itemCount={itemCount} />
+              <Totals totals={shownTotals} itemCount={itemCount} />
             </div>
 
             <Button
               type="submit"
               size="lg"
               className="mt-5 w-full"
-              disabled={busy || methods.length === 0}
+              disabled={busy || offeredMethods.length === 0 || undeliverable}
             >
-              {placing ? "Placing your order…" : paying ? "Waiting for payment…" : payLabel}
+              {placing
+                ? "Placing your order…"
+                : paying
+                  ? "Waiting for payment…"
+                  : payLabel}
             </Button>
+
+            {undeliverable ? (
+              <p
+                className="border-destructive/40 bg-destructive/5 text-destructive mt-3 rounded-lg border p-3 text-sm text-pretty"
+                role="alert"
+              >
+                No courier will carry to {pin} from our store. Try a different
+                delivery address — everything else in your bag is fine.
+              </p>
+            ) : quote && quote.estimatedDays !== null ? (
+              <p className="text-muted-foreground mt-3 text-center text-sm text-pretty">
+                Usually arrives in about{" "}
+                <span className="text-foreground font-medium">
+                  {quote.estimatedDays}{" "}
+                  {quote.estimatedDays === 1 ? "day" : "days"}
+                </span>{" "}
+                after dispatch.
+              </p>
+            ) : quoting ? (
+              <p className="text-muted-foreground mt-3 text-center text-sm">
+                Checking delivery to {pin}…
+              </p>
+            ) : null}
 
             {/* The totals above are a preview. The server recomputes every
                 rupee from the catalog when the order is written, so this says
                 so rather than letting a stale price look like a promise. */}
             <p className="text-muted-foreground mt-3 text-center text-xs text-pretty">
-              Prices are confirmed against the catalogue when the order is placed.
+              Prices are confirmed against the catalogue when the order is
+              placed.
             </p>
           </div>
 

@@ -82,7 +82,9 @@ export function Field({
   const id = fieldId(name);
   const errorId = `${id}-error`;
   const hintId = `${id}-hint`;
-  const describedBy = [error ? errorId : null, hint ? hintId : null].filter(Boolean).join(" ");
+  const describedBy = [error ? errorId : null, hint ? hintId : null]
+    .filter(Boolean)
+    .join(" ");
 
   return (
     <div className={className}>
@@ -105,7 +107,10 @@ export function Field({
         </p>
       ) : null}
       {hint ? (
-        <p id={hintId} className="text-muted-foreground mt-1.5 text-xs text-pretty">
+        <p
+          id={hintId}
+          className="text-muted-foreground mt-1.5 text-xs text-pretty"
+        >
           {hint}
         </p>
       ) : null}
@@ -248,7 +253,12 @@ export function AddressFields({
         )}
       </Field>
 
-      <Field name="state" label="State" error={error("state")} className="sm:col-span-2">
+      <Field
+        name="state"
+        label="State"
+        error={error("state")}
+        className="sm:col-span-2"
+      >
         {(props) => (
           <Select
             {...props}

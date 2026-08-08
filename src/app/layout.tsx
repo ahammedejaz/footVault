@@ -1,6 +1,8 @@
 import type { Metadata, Viewport } from "next";
 
+import { NotConfigured } from "@/components/not-configured";
 import { Toaster } from "@/components/ui/sonner";
+import { missingSupabaseEnv } from "@/lib/env";
 import { fontVariables } from "@/lib/fonts";
 import { siteConfig } from "@/lib/site-config";
 
@@ -52,10 +54,19 @@ export default function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
+  /**
+   * The one check that makes `isSupabaseConfigured()`'s doc comment true.
+   *
+   * Highest point on the render path, so a clone with no `.env.local` gets a
+   * page that names the missing variables instead of an error boundary hiding
+   * them behind a digest. Everything below here may assume configuration.
+   */
+  const missing = missingSupabaseEnv();
+
   return (
     <html lang="en" className={`${fontVariables} h-full`}>
       <body className="flex min-h-full flex-col" suppressHydrationWarning>
-        {children}
+        {missing.length > 0 ? <NotConfigured missing={missing} /> : children}
         <Toaster position="bottom-center" />
       </body>
     </html>

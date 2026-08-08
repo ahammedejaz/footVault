@@ -43,7 +43,9 @@ export type PaymentStatus = Database["public"]["Enums"]["payment_status"];
  * come back from either is a new order or an admin correction with an audit
  * row, not a status edit.
  */
-export const ORDER_TRANSITIONS: Readonly<Record<OrderStatus, readonly OrderStatus[]>> = {
+export const ORDER_TRANSITIONS: Readonly<
+  Record<OrderStatus, readonly OrderStatus[]>
+> = {
   pending: ["confirmed", "cancelled"],
   confirmed: ["packed", "cancelled"],
   packed: ["shipped", "cancelled"],
@@ -53,7 +55,10 @@ export const ORDER_TRANSITIONS: Readonly<Record<OrderStatus, readonly OrderStatu
   returned: [],
 } as const;
 
-export const TERMINAL_ORDER_STATUSES: readonly OrderStatus[] = ["cancelled", "returned"];
+export const TERMINAL_ORDER_STATUSES: readonly OrderStatus[] = [
+  "cancelled",
+  "returned",
+];
 
 export function canTransition(from: OrderStatus, to: OrderStatus): boolean {
   return ORDER_TRANSITIONS[from].includes(to);
@@ -154,9 +159,37 @@ export type OutOfStockItem = {
 export type PlaceOrderResult =
   | { ok: true; order: PlacedOrder }
   | { ok: false; reason: "empty_cart"; message: string }
-  | { ok: false; reason: "out_of_stock"; message: string; items: OutOfStockItem[] }
+  | {
+      ok: false;
+      reason: "out_of_stock";
+      message: string;
+      items: OutOfStockItem[];
+    }
   | { ok: false; reason: "invalid_input"; message: string; field?: string }
   | { ok: false; reason: "payment_unavailable"; message: string }
+  | {
+      /**
+       * No courier will carry to this pin code at all — not a slow provider, not
+       * a timeout, but Shiprocket saying so explicitly. Distinct from
+       * `payment_unavailable` because changing payment method will not help;
+       * only a different address will.
+       */
+      ok: false;
+      reason: "undeliverable";
+      message: string;
+    }
+  | {
+      /**
+       * Too many attempts too quickly. Nothing was placed and nothing was
+       * charged, so this is safe to retry — which is exactly what the message
+       * has to say, because "we could not place your order" after a payment
+       * screen is how somebody pays twice.
+       */
+      ok: false;
+      reason: "throttled";
+      message: string;
+      retryAfterSeconds: number;
+    }
   | {
       /**
        * The order exists but the provider could not be reached, so nothing was
@@ -268,4 +301,8 @@ export type OrderSummary = {
 export type ApplyPaymentResult =
   | { applied: true; status: OrderStatus; paymentStatus: PaymentStatus }
   /** Already processed, or the order is past the point this event describes. */
-  | { applied: false; reason: "duplicate" | "not_found" | "illegal_transition"; message: string };
+  | {
+      applied: false;
+      reason: "duplicate" | "not_found" | "illegal_transition";
+      message: string;
+    };

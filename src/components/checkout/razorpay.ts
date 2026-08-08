@@ -15,7 +15,8 @@
  * is visible in devtools by design.
  */
 
-export const RAZORPAY_CHECKOUT_SRC = "https://checkout.razorpay.com/v1/checkout.js";
+export const RAZORPAY_CHECKOUT_SRC =
+  "https://checkout.razorpay.com/v1/checkout.js";
 
 /** The three strings the browser gets back, and the only ones worth reading. */
 export type RazorpaySuccess = {
@@ -52,10 +53,15 @@ export type RazorpayOptions = {
 export interface RazorpayInstance {
   open(): void;
   close(): void;
-  on(event: "payment.failed", handler: (response: RazorpayFailure) => void): void;
+  on(
+    event: "payment.failed",
+    handler: (response: RazorpayFailure) => void,
+  ): void;
 }
 
-export type RazorpayConstructor = new (options: RazorpayOptions) => RazorpayInstance;
+export type RazorpayConstructor = new (
+  options: RazorpayOptions,
+) => RazorpayInstance;
 
 declare global {
   interface Window {
@@ -76,7 +82,9 @@ declare global {
  * Eight seconds because a customer staring at a dead button for longer than
  * that has already decided the shop is broken.
  */
-export async function waitForRazorpay(timeoutMs = 8_000): Promise<RazorpayConstructor | null> {
+export async function waitForRazorpay(
+  timeoutMs = 8_000,
+): Promise<RazorpayConstructor | null> {
   if (typeof window === "undefined") return null;
   if (window.Razorpay) return window.Razorpay;
 
