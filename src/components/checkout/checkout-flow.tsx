@@ -290,7 +290,16 @@ export function CheckoutFlow({
    * could not reach the courier".
    */
   const pinComplete = /^\d{6}$/.test(pin);
-  const awaitingQuote = pinComplete && !quote;
+  /**
+   * No quote, no order — whether or not an address has been typed yet.
+   *
+   * Gating on `pinComplete` was not enough and produced the original bug in a
+   * second form: with the address step untouched there is no pin code, so
+   * nothing was "awaited", and the button sat enabled offering to charge the
+   * bag subtotal as an advance. Every order needs a destination and a courier
+   * rate, so the honest condition is simply whether we have one.
+   */
+  const awaitingQuote = !quote;
 
   /** COD is hidden where no courier will collect cash. */
   const offeredMethods = methods.filter(
@@ -663,10 +672,26 @@ export function CheckoutFlow({
     );
   }
 
-  const payLabel =
-    method === "razorpay"
-      ? `Pay ${formatPaise(totals.grandTotal)}`
-      : "Place order";
+  /**
+   * What the button promises to take.
+   *
+   * Two corrections here. It read `totals.grandTotal` — the *preview* total,
+   * before a courier rate was known — so the button could offer to charge one
+   * figure while the order charged another; it now reads the quoted totals like
+   * everything else. And "Place order" was the Pay-on-Delivery label back when
+   * that method took no money. It takes an advance now, so the button says so:
+   * the last thing a customer reads before pressing it should be the amount
+   * about to leave their account.
+   */
+  const payLabel = !quote
+    ? // Before a destination is known there is no figure that would be true,
+      // so the button asks for the missing thing instead of naming a number.
+      pinComplete
+      ? "Checking delivery…"
+      : "Enter a delivery address"
+    : method === "cod"
+      ? `Pay ${formatPaise(shownTotals.advanceAmount)} now`
+      : `Pay ${formatPaise(shownTotals.grandTotal)}`;
 
   return (
     <form onSubmit={submit} noValidate>
@@ -848,13 +873,42 @@ export function CheckoutFlow({
                       checked={method === entry.method}
                       onSelect={(value) => setMethod(value as PaymentMethod)}
                       title={entry.label}
-                      description={entry.description}
+                      /*
+                       * The exact figures, interpolated, once a quote exists.
+                       * The adapter's static copy cannot name them — the advance
+                       * for a ₹1,499 bag to one pin code is not the advance for
+                       * a ₹17,000 bag to another — and the brief is explicit
+                       * that a Pay-on-Delivery option must never be shown
+                       * without its advance disclosed.
+                       */
+                      description={
+                        entry.method === "cod" && quote
+                          ? `Pay ${formatPaise(quote.advancePaise)} now to confirm your order. ` +
+                            `Pay the remaining ${formatPaise(quote.balanceDuePaise)} in cash when it arrives.`
+                          : entry.description
+                      }
                       note={entry.note}
                     />
                   ))}
                 </div>
               </fieldset>
             )}
+
+            {/*
+              Disclosed where it is acted on, not buried in the footer.
+              The policy is narrow and a customer is entitled to know it before
+              they pay rather than after something arrives broken.
+            */}
+            <p className="text-muted-foreground mt-4 text-sm text-pretty">
+              Replacements are for shipping damage only, reported within 24
+              hours of delivery. We do not offer refunds or returns.{" "}
+              <Link
+                href="/page/returns"
+                className="underline underline-offset-2"
+              >
+                Read the policy
+              </Link>
+            </p>
 
             {errors["paymentMethod"] ? (
               <p className="text-destructive mt-2 text-xs text-pretty">
@@ -945,10 +999,8 @@ export function CheckoutFlow({
                 ? "Placing your order…"
                 : paying
                   ? "Waiting for payment…"
-                  : awaitingQuote
-                    ? quoteFailed
-                      ? "Delivery price unavailable"
-                      : "Checking delivery…"
+                  : awaitingQuote && quoteFailed
+                    ? "Delivery price unavailable"
                     : payLabel}
             </Button>
 
