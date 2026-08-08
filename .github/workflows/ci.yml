@@ -54,10 +54,24 @@ jobs:
       # time the action is invoked — which is in production, on a button press.
       # Phase 4 shipped exactly that (a SIGN_IN_IDLE constant) and only found it
       # by clicking. `export type` is erased at build time and is fine.
+      #
+      # The file list matches a *directive*, not a mention. It used to be
+      # `grep -rl '"use server"' src`, which matches the string anywhere —
+      # including inside prose. Phase 6 added src/lib/orders/replacement.ts,
+      # whose doc comment explains that a "use server" file may only export
+      # async functions, and thereby tripped the check that enforces it. CI has
+      # been red on main since that merge. A directive is a string-literal
+      # statement, so it is anchored to the start and end of its own line, and
+      # both quote styles are matched because Prettier's choice is not a rule.
       - name: Assert "use server" files export only async functions
         run: |
           offenders=""
-          for f in $(grep -rl '"use server"' src || true); do
+          directives=$(
+            { grep -rlE '^[[:space:]]*"use server";?[[:space:]]*$' src || true
+              grep -rlE "^[[:space:]]*'use server';?[[:space:]]*\$" src || true
+            } | sort -u
+          )
+          for f in $directives; do
             hits=$(grep -nE '^export (const|let|var|class|enum|function[^ ]*[^c] )' "$f"               | grep -vE '^\s*[0-9]+:export (async function|type|interface)' || true)
             if [ -n "$hits" ]; then
               offenders="$offenders$f\n$hits\n"
