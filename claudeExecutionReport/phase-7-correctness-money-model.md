@@ -266,6 +266,22 @@ substring, so "Free shipping over ₹2,000" is still caught.
 The seed was resynced from the live pages as well; without that a fresh
 environment would have reintroduced ₹2,499 and the pre-Phase-7 money-model copy.
 
+**And a third thing was got wrong, in writing, on the way to production.** The
+PR body for that fix said the stale strip "clears on deploy". It does not.
+`unstable_cache` on Vercel is backed by the **Data Cache** — a *runtime* store
+shared across deployments — not the `.next/cache` directory in the build output.
+Shipping new code does not flush it, and neither does `vercel --prod --force`
+with the build cache disabled; both were tried against the live project and the
+entry survived both. Only `updateTag`/`revalidateTag`, the TTL lapsing, or an
+owner purging the Data Cache from the dashboard will clear it.
+
+The good half of that, and the reason it is a one-off rather than a standing
+hazard: **a policy number can no longer go stale at all.** The cached payload
+holds `{{free_shipping_threshold}}` and the *value* is resolved on every render
+from `site_settings`, uncached. The owner changing a threshold is correct
+immediately, everywhere. What is stale is the one payload row I edited by hand
+with SQL, and only until its entry lapses.
+
 Both policy pages were also rewritten, because they described the *old* money
 model. `/page/returns` said the Pay-on-Delivery charge is never refundable; under
 this phase it comes back in full if nothing has shipped, and the shop-error row
