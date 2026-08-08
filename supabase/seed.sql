@@ -374,20 +374,39 @@ Orders are packed and dispatched from our own shelves, not a drop-shipper''s. If
 For an existing order, send your order number (it looks like FV-2026-00147) and we can pull it up straight away.
 
 Our contact details and opening hours are in the footer of every page, and they are kept current from the shop''s own settings.', 'Phone, WhatsApp and email for Foot Vault, plus our shop address and opening hours.', true),
-  ('shipping', 'Shipping', 'We ship across India.
+  ('shipping', 'Shipping', 'We ship across India from our store in Cuddapah, Andhra Pradesh.
 
-Orders placed before 4pm on a working day are dispatched the same day. Metro addresses usually receive in 2–4 working days; the rest of India in 4–7.
+Orders placed before 4pm on a working day are dispatched the same day. Most addresses receive in 3–5 working days; remote pin codes can take longer.
 
-Shipping is ₹99 on orders below ₹1,999 and free above it. The exact charge is shown in your bag before you pay, never added at the last step.
+**Paying online** — delivery is free on orders of ₹2,499 or more. Below that you pay what the courier charges to reach your pin code. The exact figure appears as soon as you enter your pin code, never added at the last step.
 
-Cash on delivery is available on every order.', 'Delivery times, shipping charges and free shipping threshold for Foot Vault orders.', true),
-  ('returns', 'Returns and exchanges', 'You have 7 days from delivery to return or exchange anything you buy from us.
+**Pay on Delivery** — you pay the delivery charge online when you place the order, and the rest in cash to the courier when it arrives. Your order is not placed until that first payment goes through.
 
-Shoes must be unworn and come back in their original box. Try them on indoors, on a carpet — a sole that has been outside cannot be resold, and we will not be able to take it back.
+Delivery is charged on every Pay-on-Delivery order, whatever its value, and it is higher than the online rate. A parcel refused at the door costs us both the delivery and the return, so the charge covers the round trip. Paying in full online is always cheaper, and free above ₹2,499.
 
-Size exchanges are free: we collect the pair you have and send the size you want, provided we hold it. If we do not, we refund you in full.
+Checkout shows all three figures before you pay: what you pay now, what the courier will collect, and the total.
 
-Refunds are issued to the original payment method within 5 working days of the pair reaching us. Cash on delivery orders are refunded by bank transfer.', 'Foot Vault''s 7 day free return and size exchange policy.', true),
+Not every courier will collect cash at every pin code. If yours is one they will not, the option is not offered and you can pay online instead — the order still comes to the same address. A very small number of pin codes have no courier service from us at all, and checkout will say so before you pay rather than take an order we cannot deliver.', 'Delivery times, what the courier charges, and how Pay on Delivery works at Foot Vault.', true),
+  ('returns', 'Returns and damage', 'Please read this before you buy. Our policy is narrower than most online shops and we would rather you know that now than discover it later.
+
+**We do not offer refunds.** Not on change of mind, not on size, not on colour. Once an order is placed it is yours.
+
+**We do not take returns online.** There is no returns button in your account and no pickup will be arranged. Everything below happens by contacting the store directly.
+
+**If a pair arrives damaged, we will replace it.** That is the one thing we cover, and it comes with a hard deadline:
+
+- Contact us **within 24 hours of the parcel being delivered**. After that we cannot help, because we can no longer tell damage in transit from damage in use.
+- Call or WhatsApp the store. Do not wait for an email reply.
+- Keep the box, the packaging and the courier label. Send us photographs of the damage and of the packaging it arrived in — the courier will not accept a claim without them.
+- Do not wear the pair. A sole that has been outside cannot be assessed or replaced.
+
+If we agree the pair was damaged in transit, we send a replacement of the same item in the same size, subject to us holding it. If we do not hold it, we will agree something with you directly.
+
+**Sizes.** We cannot exchange for a different size, so please use the size guide on every product page before ordering, and ask us if you are unsure.
+
+**Pay on Delivery.** The delivery charge is paid online when you place the order, and it is not refundable — it pays the courier to carry the parcel to you, and again to carry it back if it is refused.
+
+Nothing on this page affects your statutory rights under Indian consumer law.', 'Foot Vault replaces items damaged in shipment, reported within 24 hours of delivery. No refunds, no online returns.', true),
   ('size-guide', 'Size guide', 'Every size on this site is UK. The conversions below are the ones we use.
 
 UK 6 = EU 40 = US 7. UK 7 = EU 41 = US 8. UK 8 = EU 42 = US 9. UK 9 = EU 43 = US 10. UK 10 = EU 44 = US 11. UK 11 = EU 45.5 = US 12. UK 12 = EU 47 = US 13.
@@ -415,12 +434,12 @@ on conflict (slug) do update set title = excluded.title, body = excluded.body, m
 insert into public.site_settings (key, value, description) values
   ('store_name', '"Foot Vault"'::jsonb, 'Shop name, used in the header, metadata and invoices.'),
   ('store_tagline', '"Every step counts"'::jsonb, 'Wordmark tagline.'),
-  ('announcement', '{"text":"Free returns within 7 days · Free shipping over ₹1,999","href":"/page/returns","is_active":true}'::jsonb, 'The thin strip above the header.'),
+  ('announcement', '{"text":"Damage on arrival? Tell us within 24 hours · Free shipping over ₹2,499","href":"/page/returns","is_active":true}'::jsonb, 'The thin strip above the header.'),
   ('contact', '{"email":"hello@footvault.in","phone":"+91 80 4718 2200","whatsapp":"+91 98450 22001","address":"42 Commercial Street, Shivaji Nagar, Bengaluru 560001"}'::jsonb, 'Shown in the footer and on the contact page.'),
   ('business_hours', '{"weekday":"10:30 – 20:30","saturday":"10:30 – 21:00","sunday":"11:00 – 19:00"}'::jsonb, 'Opening hours, shown on the contact page.'),
   ('social', '{"instagram":"https://instagram.com/footvault","facebook":"https://facebook.com/footvault"}'::jsonb, 'Social links in the footer.'),
-  ('shipping', '{"flat_fee_paise":9900,"free_above_paise":199900,"currency":"INR","regions":["IN"]}'::jsonb, 'Flat shipping fee, and the order value above which it is waived.'),
-  ('return_window_days', '7'::jsonb, 'Days from delivery in which a return is accepted.'),
+  ('shipping', '{"free_above_paise":249900,"currency":"INR","regions":["IN"],"cod_enabled":true,"cod_advance_mode":"greater_of","cod_advance_minimum_paise":9900,"cod_advance_fixed_paise":9900,"fallback_fee_paise":{"razorpay":19900,"cod":34900}}'::jsonb, 'Free-delivery threshold, the Pay-on-Delivery advance rule, and the amounts used only when Shiprocket cannot be reached. Rates themselves always come from the courier.'),
+  ('return_window_days', '1'::jsonb, 'Days from delivery in which shipment damage can be reported. One day — the policy is 24 hours, replacement only, no refunds.'),
   ('payment_methods', '{"cod":true,"online":false}'::jsonb, 'Cash on delivery only for now; the online gateway sits behind the same interface.')
 on conflict (key) do update set value = excluded.value, description = excluded.description;
 
@@ -433,7 +452,7 @@ insert into public.homepage_sections (section_type, title, subtitle, payload, so
   ('hero', 'Every size we hold, shown on every shoe', 'Sneakers, formal shoes, boots and sandals for men, women and kids.', '{"eyebrow":"Foot Vault","cta_label":"Shop all footwear","cta_href":"/shop","secondary_cta_label":"New arrivals","secondary_cta_href":"/collection/new-arrivals"}'::jsonb, 1),
   ('category_grid', 'Shop by department', NULL, '{"category_slugs":["men","women","kids"]}'::jsonb, 2),
   ('product_rail', 'New arrivals', 'Just landed on the shelf.', '{"collection_slug":"new-arrivals","cta_href":"/collection/new-arrivals"}'::jsonb, 3),
-  ('promo_strip', 'Free returns within 7 days', NULL, '{"items":[{"label":"Free returns within 7 days","detail":"Unworn, in the box, no questions."},{"label":"Free shipping over ₹1,999","detail":"Flat ₹99 below that."},{"label":"Cash on delivery","detail":"On every order, everywhere we ship."},{"label":"Live stock counts","detail":"If it says two left, there are two."}]}'::jsonb, 4),
+  ('promo_strip', 'What you can count on', NULL, '{"items":[{"label":"Damaged in transit? Replaced","detail":"Tell us within 24 hours of delivery."},{"label":"Free shipping over ₹2,499","detail":"The courier''s own rate below that."},{"label":"Pay on Delivery","detail":"Delivery charge now, the rest in cash at the door."},{"label":"Live stock counts","detail":"If it says two left, there are two."}]}'::jsonb, 4),
   ('product_rail', 'Monsoon ready', 'Waterproof, washable, and happy in standing water.', '{"collection_slug":"monsoon-ready","cta_href":"/collection/monsoon-ready"}'::jsonb, 5),
   ('banner', 'Under ₹2,000', 'School shoes, everyday trainers and sandals that do the job.', '{"cta_label":"Shop the rail","cta_href":"/collection/under-2000"}'::jsonb, 6);
 
