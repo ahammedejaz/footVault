@@ -38,7 +38,9 @@
     "audit:admin": "tsx scripts/audit/admin-security.ts",
     "audit:admin-pages": "tsx scripts/audit/admin-pages.ts",
     "audit:security-advance": "tsx scripts/audit/security-advance.ts",
-    "audit:literals": "tsx scripts/audit/literals.ts"
+    "audit:literals": "tsx scripts/audit/literals.ts",
+    "audit:actions": "tsx scripts/audit/server-actions.ts",
+    "audit:zero-stock": "tsx scripts/audit/zero-stock.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.7.1",
