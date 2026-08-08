@@ -72,7 +72,7 @@ export default async function AdminProductsPage({
     <>
       <PageHeader
         title="Products"
-        description="Search by name, web address or SKU. Tick several to put them on the shop or take them off in one go."
+        description="What the shop sells. Come here to add a shoe, change its price or photographs, or take it off the shop. For changing how many of a size you have, use Inventory."
       >
         <Button size="sm" asChild>
           <Link href={`${BASE}/new`}>Add a product</Link>

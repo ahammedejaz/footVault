@@ -177,7 +177,21 @@ export function ProductTable({
                 Price
               </SortableTh>
               <Th numeric>Sizes</Th>
-              <Th numeric>In stock</Th>
+              {/*
+                Named for exactly what it counts.
+
+                "In stock" on this page is a *product* total — every size added
+                together — while the same words on /admin/inventory are one
+                size's own count. Two screens showing different numbers under an
+                identical heading is the report that opened Phase 7: "I cannot
+                tell which number is true." Both read `stock_quantity` live and
+                neither is wrong; the heading was.
+              */}
+              <Th numeric>
+                <span title="Every size of this product added together. For one size's own count, open Inventory.">
+                  All sizes
+                </span>
+              </Th>
               <Th>On the shop</Th>
               <SortableTh
                 column="updated_at"

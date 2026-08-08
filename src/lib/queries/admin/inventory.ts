@@ -8,6 +8,7 @@ import {
   type ListParams,
 } from "@/lib/admin/list-params";
 import { pagedRows, rows } from "@/lib/queries/run";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
 export const INVENTORY_SORTS = ["stock_quantity", "sku", "size"] as const;
@@ -157,5 +158,45 @@ export async function getVariantMovements(
     actorName: movement.actor
       ? (names.get(movement.actor) ?? "an admin")
       : null,
+  }));
+}
+
+/**
+ * Variants whose ledger and whose count disagree.
+ *
+ * `reconcile_inventory()` has existed since Phase 5 and was reachable only from
+ * an audit script — which means the one screen that could act on the answer
+ * never asked the question. The brief is direct about it: *"If
+ * `sum(inventory_movements) ≠ stock_quantity` for any variant, show it in the
+ * admin rather than leaving it to a script."*
+ *
+ * Drift is not a cosmetic problem. The ledger is the only account of *why* a
+ * number is what it is, so a variant that has drifted is a size nobody can be
+ * asked about — and the shop finds out when a customer buys something that is
+ * not on the shelf.
+ *
+ * Read through the **service role** rather than the caller's client. The
+ * function is `SECURITY DEFINER` and granted to admins, but it aggregates over
+ * `inventory_movements`, and an admin whose RLS view of that table were ever
+ * narrowed would silently see less drift rather than an error. The page is
+ * already behind `adminActorOrNull()`; this read is not what authorises it.
+ */
+export async function inventoryDrift(): Promise<
+  { variantId: string; sku: string; stock: number; ledgerTotal: number; drift: number }[]
+> {
+  const { data, error } = await createAdminClient().rpc("reconcile_inventory");
+  if (error) {
+    // Surfaced as "we could not check" by the caller rendering nothing, rather
+    // than as "everything is fine". An unreadable reconciliation is not a clean
+    // one, and the distinction is the whole reason this is not a boolean.
+    console.error("[admin] reconcile_inventory failed:", error.message);
+    throw new Error(`inventoryDrift: ${error.message}`);
+  }
+  return (data ?? []).map((row) => ({
+    variantId: row.variant_id,
+    sku: row.sku,
+    stock: row.stock_quantity,
+    ledgerTotal: Number(row.ledger_total),
+    drift: Number(row.drift),
   }));
 }

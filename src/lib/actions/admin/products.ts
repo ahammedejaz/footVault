@@ -650,12 +650,32 @@ export async function deleteVariant(
 /**
  * The gallery is a list, and the top of the list is the primary.
  *
- * "Exactly one primary" is not enforced by a constraint, so it has to be
- * enforced by construction rather than by every caller remembering. Every
- * mutation below ends in `resequence()`, which rewrites `sort_order` as
+ * Every mutation below ends in `resequence()`, which rewrites `sort_order` as
  * 0…n-1 and sets `is_primary` on the first row and no other. That makes the
  * order the owner sees on this page the order the storefront renders — which
  * sorts primary-first — instead of two orderings that agree until they do not.
+ *
+ * **The comment that used to sit here was the bug.** It said "exactly one
+ * primary is not enforced by a constraint, so it has to be enforced by
+ * construction", and on that basis `resequence()` wrote the whole gallery back
+ * as a single multi-row upsert. It *is* enforced by a constraint, and has been
+ * since Phase 1: `product_images_one_primary_idx`, `unique (product_id) where
+ * is_primary`. Postgres checks a unique index per row as it is written, so the
+ * instant the new primary landed before the old one had been cleared there were
+ * two rows with `is_primary` and the whole write was rejected 23505. That is
+ * why "Make main" reported no change and why up/down errored. Reproduced
+ * against the live database:
+ *
+ * ```
+ * set new primary, then clear old  -> BLOCKED 23505 product_images_one_primary_idx
+ * clear all, then set new primary  -> succeeded
+ * ```
+ *
+ * The order is now written by `public.reorder_product_images()`, which clears
+ * every primary and then writes the new positions **in one transaction**. It
+ * has to be a function rather than two PostgREST calls: in between, the gallery
+ * has no primary at all, and a failure in that gap would leave a product whose
+ * card on `/shop` has no photograph to lead with.
  */
 type ImageRow = {
   id: string;
@@ -691,18 +711,21 @@ async function resequence(
   ordered: ImageRow[],
 ): Promise<string | null> {
   if (ordered.length === 0) return null;
-  const { error } = await supabase.from("product_images").upsert(
-    ordered.map((image, index) => ({
-      id: image.id,
-      product_id: image.product_id,
-      url: image.url,
-      sort_order: index,
-      is_primary: index === 0,
-    })),
-  );
+
+  const { error } = await supabase.rpc("reorder_product_images", {
+    p_product_id: ordered[0]!.product_id,
+    p_ids: ordered.map((image) => image.id),
+  });
+
   if (error) {
-    console.error("[admin] image resequence failed:", error.message);
-    return "The photographs did not reorder. Nothing has been changed.";
+    console.error("[admin] image resequence failed:", error.message, error.code);
+    // `GLRYM` means the list we sent did not match the gallery — almost always
+    // two admins editing the same product, or a photograph deleted in another
+    // tab. Worth its own sentence, because "try again" is genuinely the fix and
+    // "nothing has been changed" is genuinely true.
+    return error.code === "GLRYM"
+      ? "These photographs changed while you were arranging them. Reload the page and try again — nothing has been changed."
+      : "The photographs did not reorder. Nothing has been changed.";
   }
   return null;
 }

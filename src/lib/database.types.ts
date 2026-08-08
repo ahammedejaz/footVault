@@ -1685,6 +1685,10 @@ export type Database = {
         Args: { p_older_than_minutes?: number }
         Returns: number
       }
+      reorder_product_images: {
+        Args: { p_ids: string[]; p_product_id: string }
+        Returns: undefined
+      }
     }
     Enums: {
       cart_status: "active" | "converted" | "abandoned"

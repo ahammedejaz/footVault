@@ -20,6 +20,7 @@ import {
 import {
   INVENTORY_SORTS,
   listInventory,
+  inventoryDrift,
   LOW_STOCK_THRESHOLD,
   type InventorySort,
   type StockFilter,
@@ -67,20 +68,74 @@ export default async function AdminInventoryPage({
     : "";
 
   const extras = { stock: stock || undefined };
-  const { rows, total } = await listInventory(
-    params,
-    stock,
-    LOW_STOCK_THRESHOLD,
-  );
+  const [{ rows, total }, drift] = await Promise.all([
+    listInventory(params, stock, LOW_STOCK_THRESHOLD),
+    /**
+     * Checked on every render rather than behind a button, because a button is
+     * a thing nobody presses. It is one aggregate over an indexed table and it
+     * answers zero rows on a healthy shop.
+     *
+     * A failed check renders as a failed check. `null` here means "we could not
+     * ask", which is not the same as "nothing is wrong" and must not look like
+     * it.
+     */
+    inventoryDrift().catch(() => null),
+  ]);
 
   return (
     <>
       <PageHeader
         title="Inventory"
-        description="Tap any number to change it. Every change is recorded with your name and the reason you give."
+        description="How many of each size and colour you have. Come here after a delivery, a stocktake, or when a number looks wrong. Tap any number to change it — every change is recorded with your name and the reason you give. Opens with the sizes you have none of, at the top."
       />
 
       <AdminPage className="space-y-4">
+        {/*
+          Drift means the ledger and the count disagree — the ledger is the only
+          record of *why* a number is what it is, so a drifting size is one
+          nobody can be asked about. It has been detectable since Phase 5 and
+          was only ever reachable from a test script.
+        */}
+        {drift === null ? (
+          <p
+            role="status"
+            className="border-state-low/50 bg-state-low/5 rounded-md border p-3 text-sm text-pretty"
+          >
+            <strong>The stock check could not run.</strong> That is not the same
+            as everything being correct — it means we could not compare the
+            counts against their history just now. Reload in a moment.
+          </p>
+        ) : drift.length > 0 ? (
+          <div
+            role="status"
+            className="border-destructive/50 bg-destructive/5 rounded-md border p-3 text-sm text-pretty"
+          >
+            <p>
+              <strong>
+                {drift.length === 1
+                  ? "One size does not match its history."
+                  : `${drift.length} sizes do not match their history.`}
+              </strong>{" "}
+              The count says one thing and the record of every change says
+              another, so somebody has changed a number outside this screen.
+              Correct the count here and give a reason, and the two agree again.
+            </p>
+            <ul className="mt-2 space-y-1 font-mono text-xs">
+              {drift.slice(0, 8).map((row) => (
+                <li key={row.variantId} className="tabular-nums">
+                  {row.sku} — counted {row.stock}, history says {row.ledgerTotal}{" "}
+                  ({row.drift > 0 ? "+" : ""}
+                  {row.drift})
+                </li>
+              ))}
+            </ul>
+            {drift.length > 8 ? (
+              <p className="text-muted-foreground mt-1 text-xs">
+                …and {drift.length - 8} more.
+              </p>
+            ) : null}
+          </div>
+        ) : null}
         <div className="flex flex-wrap items-center gap-2">
           <SearchField
             label="Search inventory"
@@ -164,7 +219,7 @@ export default async function AdminInventoryPage({
                       numeric
                       initialDir="asc"
                     >
-                      In stock
+                      This size
                     </SortableTh>
                   </tr>
                 </thead>
