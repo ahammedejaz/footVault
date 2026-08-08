@@ -31,6 +31,7 @@ import {
   prepaidDiscountFor,
   type AdvanceRule,
 } from "../../src/lib/payments/advance";
+import { refundFor } from "../../src/lib/orders/refund-policy";
 import { MIN_CHARGEABLE_PAISE } from "../../src/lib/payments/types";
 
 let passed = 0;
@@ -361,12 +362,189 @@ section("7 · prepaid is expressed in the same two numbers");
   );
 }
 
+/* ------------------------------------------------- 8 · the refund table -- */
+
+section("8 · the refund table, row by row");
+
+{
+  // Assertion 5 of the brief. The same order throughout: ₹1,000 goods, ₹200
+  // delivery, Pay on Delivery, advance ₹281.36 = freight ₹139.36 + RTO ₹142.
+  const advance = SURFACE.freight + SURFACE.rto;
+  const prepaidCapture = 120_000;
+  const base = {
+    actualForwardPaise: SURFACE.freight,
+    actualRtoPaise: SURFACE.rto,
+    rtoPolicy: "actual_freight" as const,
+    rtoFlatDeductionPaise: 0,
+  };
+
+  const podBeforeShipment = refundFor({
+    ...base,
+    stage: "before_shipment",
+    cause: "normal",
+    capturedPaise: advance,
+    actualForwardPaise: 0,
+    actualRtoPaise: 0,
+  });
+  check(
+    "cancelled before shipment: the whole advance comes back",
+    podBeforeShipment.refundPaise === advance,
+    rupees(podBeforeShipment.refundPaise),
+  );
+
+  const podAfterAwb = refundFor({
+    ...base,
+    stage: "after_awb_before_pickup",
+    cause: "normal",
+    capturedPaise: advance,
+    actualForwardPaise: 0,
+    actualRtoPaise: 0,
+  });
+  check(
+    "cancelled after AWB but before pickup: still the whole advance",
+    podAfterAwb.refundPaise === advance,
+  );
+
+  const podRto = refundFor({
+    ...base,
+    stage: "refused_rto",
+    cause: "normal",
+    capturedPaise: advance,
+  });
+  check(
+    "refused at the door: nothing back — the advance WAS the round trip",
+    podRto.refundPaise === 0,
+    rupees(podRto.refundPaise),
+  );
+  check(
+    "and it itemises both journeys rather than saying 'nothing'",
+    podRto.deductions.length === 2,
+  );
+
+  const prepaidRto = refundFor({
+    ...base,
+    stage: "in_transit_rto",
+    cause: "normal",
+    capturedPaise: prepaidCapture,
+  });
+  check(
+    "prepaid RTO: total minus the freight actually incurred",
+    prepaidRto.refundPaise === prepaidCapture - (SURFACE.freight + SURFACE.rto),
+    rupees(prepaidRto.refundPaise),
+  );
+
+  const shopError = refundFor({
+    ...base,
+    stage: "refused_rto",
+    cause: "shop_error",
+    capturedPaise: prepaidCapture,
+  });
+  check(
+    "our mistake: everything back, whatever stage it stopped at",
+    shopError.refundPaise === prepaidCapture &&
+      shopError.deductions.length === 0,
+    rupees(shopError.refundPaise),
+  );
+  const shopErrorPod = refundFor({
+    ...base,
+    stage: "refused_rto",
+    cause: "shop_error",
+    capturedPaise: advance,
+  });
+  check(
+    "our mistake on Pay on Delivery: the whole advance back too",
+    shopErrorPod.refundPaise === advance,
+  );
+
+  const delivered = refundFor({
+    ...base,
+    stage: "delivered",
+    cause: "normal",
+    capturedPaise: prepaidCapture,
+  });
+  check(
+    "delivered: a replacement, not money",
+    delivered.refundPaise === 0 && delivered.replacementOnly,
+  );
+
+  // Assertion 7 of the brief. Every branch is clamped to what was captured, so
+  // a refund can never send money the shop never received — which on a
+  // Pay-on-Delivery order is most of the total.
+  const overreach = [
+    "before_shipment",
+    "after_awb_before_pickup",
+    "in_transit_rto",
+    "refused_rto",
+    "undeliverable_rto",
+    "delivered",
+  ].every((stage) =>
+    (["normal", "shop_error"] as const).every((cause) => {
+      const verdict = refundFor({
+        ...base,
+        stage: stage as Parameters<typeof refundFor>[0]["stage"],
+        cause,
+        capturedPaise: advance,
+      });
+      return (
+        verdict.refundPaise <= advance && verdict.refundPaise >= 0
+      );
+    }),
+  );
+  check(
+    "no branch can refund more than was captured, or less than nothing",
+    overreach,
+  );
+
+  const noDeduction = refundFor({
+    ...base,
+    stage: "refused_rto",
+    cause: "normal",
+    capturedPaise: prepaidCapture,
+    rtoPolicy: "none",
+  });
+  check(
+    "the 'refund in full' RTO policy deducts nothing",
+    noDeduction.refundPaise === prepaidCapture,
+  );
+
+  const flat = refundFor({
+    ...base,
+    stage: "refused_rto",
+    cause: "normal",
+    capturedPaise: prepaidCapture,
+    rtoPolicy: "flat",
+    rtoFlatDeductionPaise: 15_000,
+  });
+  check(
+    "the flat RTO policy deducts exactly the flat amount, named",
+    flat.refundPaise === prepaidCapture - 15_000 &&
+      flat.deductions.length === 1,
+    rupees(flat.refundPaise),
+  );
+
+  // A capped advance below the round trip: the customer still gets nothing and
+  // the shop absorbs the shortfall, which is what a cap means. Reached by
+  // arithmetic rather than by a special case.
+  const capped = refundFor({
+    ...base,
+    stage: "refused_rto",
+    cause: "normal",
+    capturedPaise: 20_000,
+  });
+  check(
+    "a capped advance still refunds nothing on a refusal",
+    capped.refundPaise === 0,
+    rupees(capped.refundPaise),
+  );
+}
+
 /* -------------------------------------------------------------- report -- */
 
 console.log(
   `\n\x1b[1m${passed} passed, ${failed} failed\x1b[0m` +
-    "\n\nAssertions 3, 6, 8 and 9 of the brief need the Shiprocket mock or the" +
-    "\ndatabase and live in audit:shipping and audit:checkout.",
+    "\n\nAssertions 3, 6, 8 and 9 of the brief need the Shiprocket mock, a live" +
+    "\nrefund webhook or the database. 3 is in audit:shipping; 6, 8 and 9 are" +
+    "\nnot yet covered anywhere — see the execution report.",
 );
 if (failed > 0) {
   console.log("\nFailures:");
