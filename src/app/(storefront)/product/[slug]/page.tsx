@@ -83,7 +83,6 @@ export default async function ProductPage({
     currency: "INR",
     regions: ["IN"],
   });
-  const returnDays = setting<number>(settings, "return_window_days", 7);
   const price = product.salePrice ?? product.basePrice;
 
   /**
@@ -181,10 +180,11 @@ export default async function ProductPage({
                 className="text-muted-foreground row-span-2 mt-1 size-4 shrink-0"
                 aria-hidden
               />
-              <dt className="font-medium">Returns</dt>
+              <dt className="font-medium">Damage on arrival</dt>
               <dd className="text-muted-foreground col-start-2">
-                Free returns and size exchanges within {returnDays} days, unworn
-                and in the box.
+                Tell us within 24 hours and we replace it. We do not offer
+                refunds or size exchanges — check the size guide before you
+                order, and ask us if you are unsure.
               </dd>
             </div>
             {product.material ? (

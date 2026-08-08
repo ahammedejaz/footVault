@@ -11,7 +11,7 @@ export const siteConfig = {
   name: "Foot Vault",
   tagline: "Every step counts",
   description:
-    "Sneakers, formal shoes, boots and sandals for men, women and kids. Free returns within 7 days.",
+    "Sneakers, formal shoes, boots and sandals for men, women and kids. Delivered across India from our store in Cuddapah.",
   url: process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000",
 } as const;
 

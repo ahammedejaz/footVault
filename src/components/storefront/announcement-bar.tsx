@@ -28,7 +28,10 @@ export async function AnnouncementBar() {
   ]);
 
   const announcement = setting<AnnouncementSettings>(settings, "announcement", {
-    text: "Free returns within 7 days",
+    // Must not promise more than the returns page delivers: this renders
+    // when site_settings is unreachable, which is exactly when nobody is
+    // watching what it says.
+    text: "Damage on arrival? Tell us within 24 hours",
     href: "/page/returns",
     is_active: true,
   });
