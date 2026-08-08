@@ -7,8 +7,11 @@ is the proof: each check below is a query that was run against the live project
 **Two findings came out of this pass, both fixed and re-verified.** They are
 written up in §6, because a checklist that has never failed has not been run.
 §6b re-runs the escalation check at the start of Phase 3 and is **resolved in
-§6b.1** by Phase 4, which runs it over real HTTP; §7 covers the three
-functions Phase 3 added.
+§6b.1** by Phase 4, which runs it over real HTTP; §7 covers the three functions
+Phase 3 added. §9 is Phase 5: how a guest reaches their own order, why the two
+payment tables are readable by nobody, and the complete `SECURITY DEFINER`
+surface with the reasoning for each entry, so the Supabase advisor's standing
+warnings stop being re-investigated every phase.
 
 ## How to run it
 
@@ -78,21 +81,26 @@ select t.tablename, t.rowsecurity,
  order by t.tablename;
 ```
 
-**Result — 21 of 21 tables, `rowsecurity = true`, every one with ≥ 1 policy:**
+**Result — 23 of 23 tables, `rowsecurity = true`, every one with ≥ 1 policy:**
 
 | table | policies | table | policies |
 |---|---|---|---|
 | addresses | 2 | order_status_history | 2 |
-| banners | 2 | orders | 3 |
+| banners | 2 | orders | 4 |
 | brands | 2 | pages | 2 |
-| cart_items | 2 | product_images | 2 |
-| carts | 3 | product_variants | 2 |
-| categories | 2 | products | 2 |
-| collection_products | 2 | profiles | 4 |
-| collections | 2 | reviews | 6 |
-| coupons | 1 | site_settings | 2 |
-| homepage_sections | 2 | wishlist_items | 2 |
-| order_items | 2 | | |
+| cart_items | 2 | payment_events | 1 |
+| carts | 3 | payments | 1 |
+| categories | 2 | product_images | 2 |
+| collection_products | 2 | product_variants | 2 |
+| collections | 2 | products | 2 |
+| coupons | 1 | profiles | 4 |
+| homepage_sections | 2 | reviews | 6 |
+| order_items | 2 | site_settings | 2 |
+| | | wishlist_items | 2 |
+
+`payments` and `payment_events` carry one policy each and it is an **admin
+read**. That is not an oversight in the "at least one policy" sense — see §9.2
+for why a customer is meant to read nothing from either.
 
 `supabase --advisors security` reports **no** missing-RLS or exposed-table
 findings. Its remaining warnings are `SECURITY DEFINER` functions reachable
@@ -420,19 +428,22 @@ the same path a customer takes — and its `user_metadata` carries
 for the `/admin` checks are produced by `@supabase/ssr` itself rather than
 hand-assembled, so the cookie format is the real one and not a guess.
 
-**One honest caveat.** Google OAuth is not yet enabled on the project, so these
-sessions are minted with a password grant. That does not weaken the test:
-PostgREST sees the same JWT shape whichever provider issued it — `role:
-authenticated`, `sub: <uid>` — and no policy can tell them apart. The one thing
-that genuinely *is* provider-specific is what lands in `raw_user_meta_data`,
-which is the first check in the list. Re-run once Google is enabled to close
-even that gap.
+**One caveat, now closed.** When this was written Google OAuth was not enabled on
+the project, so these sessions were minted with a password grant. That never
+weakened the test — PostgREST sees the same JWT shape whichever provider issued
+it (`role: authenticated`, `sub: <uid>`) and no policy can tell them apart — and
+the one genuinely provider-specific thing, what lands in `raw_user_meta_data`,
+is the first check in the list. **Google is now enabled** and real accounts have
+been created through it, so the substitution no longer stands between this
+document and the real path. The harness still signs up with a password grant,
+because a scripted consent screen is not a thing.
 
-**Three checks still skipped**, and reported as SKIP rather than quietly not run:
-promoting to admin, `is_admin()` returning true, and `/admin` returning 200 all
-need elevated access, and `SUPABASE_SERVICE_ROLE_KEY` is empty in `.env.local`.
-They were verified separately against the live database through the real
-bootstrap function:
+**Three checks were skipped at the time**, and reported as SKIP rather than
+quietly not run: promoting to admin, `is_admin()` returning true, and `/admin`
+returning 200 all need elevated access, and `SUPABASE_SERVICE_ROLE_KEY` was
+empty in `.env.local`. **It now has a value**, so re-running `npm run audit:auth`
+turns those three skips into checks. They were verified separately at the time
+against the live database through the real bootstrap function:
 
 ```sql
 select private.promote_to_admin('fv-test-other.msj6sfa7@example.com');
@@ -445,7 +456,7 @@ PASS  /admin is 200 for an admin                         HTTP 200
 PASS  the admin page actually rendered
 ```
 
-Fill in the service-role key and the skips become checks.
+The service-role key is now filled in, so those skips are checks on the next run.
 
 ### 6b.2 · The admin route now exists, so the 404 means something
 
@@ -502,3 +513,151 @@ delete from public.carts where user_id is null and guest_token is not null;
 Verified after teardown: 32 products, 384 variants, and zero rows in `orders`,
 `carts`, `coupons`, `profiles` and `reviews` — the seeded catalog, and nothing
 left over from the checks.
+
+**Phase 5** added two harnesses that write real orders, real payment rows and
+real ledger rows against the live database (`npm run audit:checkout`,
+`npm run audit:security`). Both sweep after themselves: every order is
+cancelled, restocked and deleted, every cart and `payment_events` row is
+removed, and every pinned stock level is put back, with the counts printed at
+the end so the sweep can be checked rather than believed. `npm run audit:teardown`
+(`scripts/audit/teardown.ts`) is the catch-all for anything a crashed run left
+behind.
+
+---
+
+## 9 · Phase 5 — orders you do not need an account to read, and money nobody reads
+
+### 9.1 A guest reads their own order, by token and never by number
+
+A guest checkout produces an order with no `user_id`, so `user_id = auth.uid()`
+cannot describe it and the Phase 4 policies leave it unreadable by the person
+who placed it. The fix is the mechanism the cart already uses: the opaque token
+in the httpOnly cookie, forwarded as `x-guest-token` and read by
+`public.current_guest_token()`.
+
+**The policy keys on the token, and it must never key on the order number.**
+Order numbers come from a sequence, so `FV-2026-00042` tells you that
+`FV-2026-00041` and `FV-2026-00043` both exist. "You may read the order whose
+number you can name" is "anyone may read every order" written optimistically.
+The token is 32 bytes of randomness in a cookie the page's own JavaScript cannot
+see; guessing it is guessing a session.
+
+The application side matches the policy rather than duplicating it.
+`getOrderForViewer()` reads through the RLS client, so a `null` means "not
+yours, **or** no such order" and the two are indistinguishable by construction.
+`/order/[orderNumber]` turns that null into **404**, not 403: "you are not
+authorised to view this order" confirms the order exists, which is the entire
+prize for somebody walking the number space.
+
+This is not a paste-in block. It is scripted, because it is the check in this
+document most worth re-running: `npm run audit:checkout` §2 covers it against
+the live database, and `npm run audit:security` attacks it again over real HTTP
+through the pages themselves.
+
+| what | expected | result |
+|---|---|---|
+| guest reads their own order by number, with the token | 1 row | **1** ✅ |
+| guest reads it by id, with the token | 1 row | **1** ✅ |
+| same order, no `x-guest-token` header | 0 rows | **0** ✅ |
+| same order, a *different* guest's token | 0 rows | **0** ✅ |
+| a signed-in customer reads a guest order they did not place | 0 rows | **0** ✅ |
+| `/order/<somebody else's number>` over HTTP | HTTP 404 | **404** ✅ |
+| order-number enumeration around a known order | nothing readable | **nothing** ✅ |
+
+### 9.2 The payment tables are readable by nobody but an admin
+
+`payments` and `payment_events` are RLS-enabled with an admin-read policy and
+**nothing else**. There is no `anon` policy and no `authenticated` policy, so a
+customer reading either gets zero rows, always.
+
+That is deliberate rather than unfinished. A customer needs to know one thing
+about money — whether their order is paid — and `orders.payment_status` says it
+in a word they can act on. Everything in these two tables is provider
+vocabulary, attempt history and internal identifiers; exposing it would leak the
+shape of failed attempts (a declined card is nobody else's business, including
+the customer's other devices) and hand an attacker a way to enumerate provider
+order ids.
+
+The **grants** are tightened alongside the policies, and the distinction matters:
+RLS decides which rows, a `GRANT` decides whether the verb exists at all, so a
+future policy added in haste cannot resurrect a privilege that was revoked here.
+
+| role | `payments` / `payment_events` |
+|---|---|
+| `anon` | everything revoked |
+| `authenticated` | `SELECT` only — kept because the admin policy is *evaluated as* this role, so revoking it would mean admins read nothing. `INSERT`, `UPDATE`, `DELETE`, `TRUNCATE`, `REFERENCES`, `TRIGGER` all revoked |
+| `service_role` | untouched. This is how the server writes both tables |
+
+### 9.3 The `SECURITY DEFINER` surface, verified independently
+
+Queried from `pg_proc` directly rather than taken on trust, and cross-checked
+against Supabase's own advisor. **Phase 5 added exactly one new `SECURITY
+DEFINER` function.** It modified one other: `owns_order(uuid)`, widened to accept
+a guest token as well as `auth.uid()` — `create or replace` preserves grants, so
+it kept its Phase 1 ACL.
+
+| Function | Owner | `search_path` | Who may execute | Why it is correct |
+|---|---|---|---|---|
+| `can_access_cart(uuid)` | postgres | `""` pinned | anon, authenticated | Called from the `carts` and `cart_items` policies. A policy expression runs as the *calling* role, so the grant is load-bearing — revoke it and anonymous carts stop working entirely. Answers one boolean about the caller |
+| `owns_order(uuid)` | postgres | `""` pinned | anon, authenticated | Same, for `order_items` and `order_status_history`. Widened in Phase 5; still answers only "is this row mine", and a non-owner gets `false`, which is what the row itself would have told them |
+| `is_admin()` | postgres | `""` pinned | anon, authenticated | Same, for every admin policy in the schema |
+| `product_is_live(uuid)` | postgres | `""` pinned | anon, authenticated | Same; the answer is public catalog data anyway |
+| `discontinued_product_hint(text)` | postgres | `""` pinned | anon, authenticated | Deliberately narrow: one slug in, three public fields out. No price, no stock, no id, no way to enumerate — it answers only for a slug the caller already typed |
+| `handle_new_user()` | postgres | `""` pinned | **postgres, service_role only** | Trigger on `auth.users`. Pins `role = 'customer'` as a literal |
+| `rls_auto_enable()` | postgres | `pg_catalog` | **postgres, service_role only** | Event trigger. Turns RLS on for any new table, so a forgotten `alter table` cannot leave one open |
+| **`adopt_guest_orders()`** | postgres | `""` pinned | **authenticated, service_role** — not `anon`, no `PUBLIC` | New in Phase 5. See below |
+| `private.promote_to_admin(text)` | postgres | pinned | **postgres only** | Outside the Data API entirely; ACL is `postgres=X/postgres` and nothing else |
+
+The five `anon`-executable entries are all flagged by the advisor as
+`anon_security_definer_function_executable`. **All five are correct as written
+and the grant is load-bearing.** Confirmed behaviourally as well as by ACL:
+`owns_order()` returns `false` for another guest's order and `true` only for the
+token that placed it, and `is_admin()` returns `false` for `anon` and for a
+fresh account that has just tried to `PATCH` its own `profiles.role`.
+
+Every **non**-definer Phase 5 function has `EXECUTE` revoked from `public`,
+`anon` and `authenticated` and granted only to `service_role`. Verified live —
+`42501` on all four: `create_order_with_stock`, `assert_cart_stock`,
+`cancel_order_with_restock`, `next_order_number`. `merge_guest_cart` is
+`authenticated`-only and correctly refuses a `p_guest_token` that does not match
+the request header; parameter spoofing returns `42501` and the victim's cart is
+untouched.
+
+#### Why `adopt_guest_orders()` is `DEFINER`, and why that is not a repeat of §6.1
+
+§6.1 is the reason to be suspicious of `SECURITY DEFINER` in this codebase:
+`guard_profile_role()` was created definer, `current_user` inside it resolved to
+the function's *owner* rather than the role that issued the statement, and the
+guard was silently inert for everybody. So the bar for a new definer function is
+high, and this one clears it for a specific structural reason.
+
+The problem it solves: `authenticated` has **no UPDATE policy on `orders`, and
+must not get one.** A policy letting a customer PATCH their own order rows over
+PostgREST would be a much larger hole than the one being closed — order status,
+totals and addresses all live on that row. So the write happens inside a
+function that owns the privilege, and the function is built so the privilege
+cannot be aimed:
+
+- **It takes no parameters at all.** There is nothing to spoof. The user comes
+  from `auth.uid()` and the token from `public.current_guest_token()`, which
+  reads the `x-guest-token` request header — the same header the cart policies
+  key on, forwarded from an httpOnly cookie the browser's own JavaScript cannot
+  read.
+- **Both of those are *request* facts, not *role* facts**, so `DEFINER` does not
+  change what they return. That is precisely the difference from
+  `guard_profile_role()`, which read `current_user` — a role fact, and therefore
+  exactly the thing `DEFINER` rewrites.
+- **It grants no capability the caller did not already have.** Holding the token
+  already grants read access to those orders through the guest `SELECT` policy;
+  this converts one form of ownership into another. Somebody who could not read
+  an order before cannot adopt it now.
+- **`and user_id is null`** means it can never take an order off an account that
+  already owns one.
+
+Verified independently against the live database: `prosecdef = true`,
+`pronargs = 0`, `search_path = ""`, granted to `authenticated` and
+`service_role` only — not `anon`, and no `PUBLIC`.
+
+This adds one advisor line,
+`authenticated_security_definer_function_executable` on `adopt_guest_orders`.
+It is expected, it is listed here, and it does not need re-investigating.

@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 import { mergeGuestCartIntoAccount } from "@/lib/cart/merge";
+import { adoptGuestOrders } from "@/lib/orders/adopt";
 import { clearGuestToken, readGuestToken } from "@/lib/cart/token";
 import { takePendingIntent } from "@/lib/pending-intent";
 import { saveProduct } from "@/lib/actions/wishlist";
@@ -21,10 +22,22 @@ import { createClient } from "@/lib/supabase/server";
  *
  *   1. exchange the code for a session
  *   2. merge the guest bag into the account's bag        (src/lib/cart/merge.ts)
- *   3. finish whatever the customer was trying to do     (src/lib/pending-intent.ts)
+ *   3. move the guest's *orders* onto the account        (adopt_guest_orders)
+ *   4. finish whatever the customer was trying to do     (src/lib/pending-intent.ts)
  *
- * 2 and 3 run *after* the session exists, so both act as the signed-in user and
- * both are covered by the same RLS policies as any other request.
+ * 2, 3 and 4 run *after* the session exists, so all three act as the signed-in
+ * user and all three are covered by the same RLS policies as any other request.
+ *
+ * Step 3 is not optional and it is not a nicety. The confirmation page for a
+ * guest order invites the customer to create an account; before this existed,
+ * accepting that invitation destroyed their access to the order they had just
+ * paid for. The cart merge reports a checked-out cart as "spent" (it looks for
+ * an *active* bag and a converted one is not that), the cookie is dropped on
+ * the strength of it, and the order was left carrying a token no browser held
+ * any more — unreadable by the guest policy, unreadable by the customer policy,
+ * unreachable forever. Adoption has to happen before the cookie goes, in the
+ * same request, on this same client: it is the only moment that carries both
+ * the new session and the old guest token at once.
  */
 export async function GET(request: NextRequest): Promise<NextResponse> {
   const url = new URL(request.url);
@@ -72,9 +85,23 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     if (outcome.dropped > 0) {
       console.warn(`[cart] merge dropped ${outcome.dropped} line(s) that were no longer sellable`);
     }
-    // Only once the guest bag is actually gone. Dropping the cookie while the
-    // bag still exists would strand it: nothing else can ever address it.
-    if (outcome.guestCartConsumed) await clearGuestToken();
+
+    // Whatever they bought as a guest is theirs now. Its own try, because an
+    // order is worth more than a bag: a failure here must not be swallowed by
+    // the merge's handler, and it must veto the cookie deletion below.
+    let adopted = false;
+    try {
+      const count = await adoptGuestOrders(supabase, guestToken);
+      adopted = true;
+      if (count > 0) console.info(`[orders] attached ${count} guest order(s) to the account`);
+    } catch (adoptError) {
+      console.error("[orders] adopting guest orders on sign-in failed:", adoptError);
+    }
+
+    // Only once the guest bag is gone *and* the orders have somewhere else to
+    // be reached from. Dropping the cookie while either still needs it strands
+    // it — nothing can ever address it again.
+    if (outcome.guestCartConsumed && adopted) await clearGuestToken();
   } catch (mergeError) {
     console.error("[cart] merge on sign-in failed:", mergeError);
   }
@@ -92,11 +119,15 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     console.error("[auth] pending intent failed:", intentError);
   }
 
+  return finish(url, next, merged);
+}
+
+/** The redirect, in one place, so an early return cannot forget the count. */
+function finish(url: URL, next: string, merged: number): NextResponse {
   const destination = new URL(next, url.origin);
   // Told, not silently done: something arrived in their bag during a redirect
   // they did not ask for, and the cart page says so on arrival.
   if (merged > 0) destination.searchParams.set("merged", String(merged));
-
   return NextResponse.redirect(destination);
 }
 

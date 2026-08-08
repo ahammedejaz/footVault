@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import Link from "next/link";
-import { Heart, LogOut, User } from "lucide-react";
+import { Heart, LogOut, Package, User } from "lucide-react";
 
 import { SignInDialog } from "@/components/storefront/sign-in";
 import { Button } from "@/components/ui/button";
@@ -81,6 +81,12 @@ export function AccountMenu({ user }: { user: AccountUser | null }) {
           <span className="mt-0.5 block truncate">{label}</span>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
+        <DropdownMenuItem asChild>
+          <Link href="/account/orders">
+            <Package aria-hidden />
+            Your orders
+          </Link>
+        </DropdownMenuItem>
         <DropdownMenuItem asChild>
           <Link href="/wishlist">
             <Heart aria-hidden />

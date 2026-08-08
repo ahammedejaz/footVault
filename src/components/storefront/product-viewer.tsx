@@ -242,7 +242,9 @@ export function ProductViewer({
                 // A ring rather than a colour change: the chips carry meaning
                 // in their own colour already (available, sold out, chosen),
                 // and recolouring them to say "look here" would overwrite it.
-                needsSize && "ring-state-low/60 ring-2 ring-offset-4 ring-offset-background",
+                // `ring-state-low` was a cut token, so this ring never drew:
+                // "choose a size first" pointed at nothing.
+                needsSize && "ring-destructive/60 ring-2 ring-offset-4 ring-offset-background",
               )}
             >
               <SizeSelector
@@ -310,7 +312,7 @@ export function ProductViewer({
             id="size-required-hint"
             className={cn(
               "mt-2 font-mono text-xs tracking-[0.06em]",
-              needsSize ? "text-state-low" : "text-muted-foreground",
+              needsSize ? "text-destructive" : "text-muted-foreground",
             )}
           >
             {inStock ? "Choose a size to add it to your bag" : "Sold out in every size"}

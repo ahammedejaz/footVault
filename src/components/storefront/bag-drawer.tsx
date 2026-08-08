@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import Link from "next/link";
 import { Dialog } from "radix-ui";
 import { ShoppingBag, X } from "lucide-react";
@@ -36,6 +37,31 @@ export function BagDrawer() {
 
   const swipe = useSwipeDismiss({ side: "right", onDismiss: () => setOpen(false) });
 
+  /**
+   * Where focus goes when the drawer closes.
+   *
+   * Radix restores focus to the `Dialog.Trigger` it opened from — and this
+   * drawer has no trigger. It is opened from the zustand store, by a header
+   * `<Link href="/cart">` that intercepts its own click and by the add-to-bag
+   * button on a product page. With nothing to restore to, Radix dropped focus
+   * on `<body>`, and a keyboard user pressing Escape lost their place entirely:
+   * measured still on `<body>` at +0, +300, +800 and +2000ms. The size guide,
+   * the mobile navigation and the search panel all restore correctly, because
+   * all three do have a trigger — this drawer was the only one that failed.
+   *
+   * So remember whatever had focus at the moment it opened, and put it back.
+   * If that element has since left the document — the customer navigated while
+   * the drawer was open — fall through to Radix's own behaviour rather than
+   * focusing something arbitrary.
+   */
+  const openedFrom = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const active = document.activeElement;
+    openedFrom.current = active instanceof HTMLElement ? active : null;
+  }, [open]);
+
   return (
     <Dialog.Root open={open} onOpenChange={setOpen}>
       <Dialog.Portal>
@@ -43,6 +69,12 @@ export function BagDrawer() {
         <Dialog.Content
           className="bg-background data-open:animate-in data-open:slide-in-from-right-10 data-closed:animate-out data-closed:slide-out-to-right-10 fixed inset-y-0 right-0 z-50 flex w-[min(28rem,92vw)] flex-col border-l shadow-lg"
           style={swipe.style}
+          onCloseAutoFocus={(event) => {
+            const target = openedFrom.current;
+            if (!target?.isConnected) return;
+            event.preventDefault();
+            target.focus();
+          }}
           {...swipe.handlers}
         >
           <div className="border-border flex items-center justify-between border-b px-4 py-3">
@@ -64,7 +96,12 @@ export function BagDrawer() {
             What is in your bag. Swipe right, tap outside or press Escape to close.
           </Dialog.Description>
 
-          <div data-swipe-scroller className="min-h-0 flex-1 overflow-y-auto px-4">
+          <div
+            data-swipe-scroller
+            // A flex column so the leftover height of a one-item bag is a thing
+            // the layout owns rather than a hole at the bottom of a list.
+            className="flex min-h-0 flex-1 flex-col overflow-y-auto px-4"
+          >
             {failed ? (
               <div className="py-16 text-center">
                 <p className="text-base text-pretty">Your bag could not be loaded.</p>
@@ -91,7 +128,58 @@ export function BagDrawer() {
                 </Button>
               </div>
             ) : (
-              <CartLines lines={cart.lines} onChanged={load} compact />
+              <>
+                <CartLines
+                  // Radix renders Dialog.Title as an h2, so the names are h3 here.
+                  headingLevel="h3"
+                  lines={cart.lines}
+                  onChanged={load}
+                  compact
+                  className="shrink-0"
+                />
+
+                {/*
+                  What the empty two-thirds of a one-item drawer is for.
+
+                  A one-item bag leaves two thirds of this panel empty and no
+                  amount of layout removes that — the sheet is full height by
+                  construction. What was missing was an end to the list and a
+                  next move, so the leftover height is now framed rather than
+                  trailing off: the list at the top, a spacer, and the way out
+                  sitting on the mark's tread rule directly above the totals.
+
+                  (The first attempt filled the spacer with `.tread-texture`.
+                  That utility paints white siping and is meant for the navy
+                  surfaces — on a white drawer it is white on white, four per
+                  cent opaque, and did nothing at all.)
+
+                  This panel exists so someone can check what they just added and
+                  carry on browsing — its own opening comment says so — and until
+                  now the only exits were the close button and a trip to /cart.
+                  The count is written out because the one in the title is 12px
+                  mono next to a display heading and reads as decoration.
+
+                  With five items in the bag the spacer collapses to its 16px
+                  minimum and the same block simply follows the list.
+                */}
+                <div className="min-h-4 flex-1" aria-hidden />
+                <div className="shrink-0 pt-6 pb-4">
+                  <div className="tread-rule" aria-hidden />
+                  <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
+                    <p className="text-muted-foreground font-mono text-xs tracking-[0.06em] uppercase tabular-nums">
+                      {cart.count} {cart.count === 1 ? "item" : "items"} in your bag
+                    </p>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      asChild
+                      onClick={() => setOpen(false)}
+                    >
+                      <Link href="/shop">Keep shopping</Link>
+                    </Button>
+                  </div>
+                </div>
+              </>
             )}
           </div>
 

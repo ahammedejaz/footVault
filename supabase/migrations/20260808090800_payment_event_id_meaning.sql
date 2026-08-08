@@ -1,0 +1,31 @@
+-- =============================================================================
+-- 0017a · What payment_events.event_id actually holds
+--
+-- 0017's header says the key is Razorpay's `x-razorpay-event-id` header. That
+-- was wrong on both counts, and the correction matters because the column is
+-- the entire idempotency mechanism — a reader who believes the wrong thing will
+-- eventually "fix" it towards the header.
+--
+-- It is not the header for a structural reason and for a better one.
+--
+--   Structural: `parseWebhook(rawBody, signatureHeader)` is the published
+--   adapter signature and it cannot see arbitrary headers. Widening it so one
+--   provider could reach one header would put a provider's transport detail
+--   into the interface every future provider implements.
+--
+--   Better: a manual resend from the Razorpay dashboard carries a *new* header
+--   event id for the same state change. Keyed on the header, that resend is a
+--   fresh event and gets processed again. Keyed on what happened, it does not.
+--
+-- So the adapter derives `<event type>:<entity id>` — `payment.captured:pay_ABC`
+-- — which names the state change rather than the delivery. Two deliveries of
+-- one capture collapse; two genuinely different events on one payment (an
+-- authorization and then a capture) stay distinct, because the event type is
+-- half the key.
+--
+-- The column comment is the correction that a reader of the database sees; the
+-- migration file it corrects is left exactly as it was applied.
+-- =============================================================================
+
+comment on column public.payment_events.event_id is
+  'Idempotency key, derived by the provider adapter as "<event type>:<entity id>" — e.g. payment.captured:pay_ABC. Deliberately NOT the provider''s delivery id: it names the state change, so a manual resend from the provider dashboard (which carries a new delivery id) still collapses onto the same row.';

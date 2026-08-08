@@ -138,7 +138,8 @@ export function WishlistRow({ product }: { product: ProductSummary }) {
           <div
             className={cn(
               "mt-3 rounded-lg transition-shadow",
-              needsSize && "ring-state-low/60 ring-2 ring-offset-4 ring-offset-background",
+              // Cut token: this ring never drew. Same defect as product-viewer.
+              needsSize && "ring-destructive/60 ring-2 ring-offset-4 ring-offset-background",
             )}
           >
             <p id={`size-label-${product.id}`} className="sr-only">
@@ -167,7 +168,7 @@ export function WishlistRow({ product }: { product: ProductSummary }) {
           </Button>
           <button
             type="button"
-            className="hit-44 text-muted-foreground hover:text-state-low inline-flex min-h-9 items-center rounded-lg text-xs transition-colors"
+            className="hit-44 text-muted-foreground hover:text-foreground inline-flex min-h-9 items-center rounded-lg text-xs transition-colors"
             onClick={() => {
               setGone(true);
               startTransition(async () => {
@@ -187,7 +188,7 @@ export function WishlistRow({ product }: { product: ProductSummary }) {
         </div>
 
         {needsSize ? (
-          <p id={`size-hint-${product.id}`} className="text-state-low mt-2 font-mono text-xs">
+          <p id={`size-hint-${product.id}`} className="text-destructive mt-2 font-mono text-xs">
             Choose a size first
           </p>
         ) : null}

@@ -10,8 +10,8 @@
     </radialGradient>
   </defs>
   <rect width="800" height="1000" fill="url(#bg)"/>
-  <ellipse cx="400" cy="534" rx="210" ry="330" fill="url(#contact)"/>
-  <g transform="translate(259.0 148) scale(0.94)">
+  <ellipse cx="400" cy="500" rx="210" ry="332" fill="url(#contact)"/>
+  <g transform="translate(253.1 118.0) scale(0.9794)">
     <defs><clipPath id="outsole-adidasadiletteslideunisex"><path d="M150 4 C232 4 296 58 296 138 C296 200 282 250 268 292 C252 340 238 372 232 410 C226 452 224 486 230 524 C240 580 244 626 240 668 C234 736 200 776 150 776 C100 776 66 736 60 668 C56 626 60 580 70 524 C76 486 74 452 68 410 C62 372 48 340 32 292 C18 250 4 200 4 138 C4 58 68 4 150 4 Z"/></clipPath></defs>
     <path d="M150 4 C232 4 296 58 296 138 C296 200 282 250 268 292 C252 340 238 372 232 410 C226 452 224 486 230 524 C240 580 244 626 240 668 C234 736 200 776 150 776 C100 776 66 736 60 668 C56 626 60 580 70 524 C76 486 74 452 68 410 C62 372 48 340 32 292 C18 250 4 200 4 138 C4 58 68 4 150 4 Z" fill="#373737"/>
     <g clip-path="url(#outsole-adidasadiletteslideunisex)">
@@ -36,11 +36,4 @@
     </g>
     <path d="M150 4 C232 4 296 58 296 138 C296 200 282 250 268 292 C252 340 238 372 232 410 C226 452 224 486 230 524 C240 580 244 626 240 668 C234 736 200 776 150 776 C100 776 66 736 60 668 C56 626 60 580 70 524 C76 486 74 452 68 410 C62 372 48 340 32 292 C18 250 4 200 4 138 C4 58 68 4 150 4 Z" fill="none" stroke="rgba(255,255,255,0.34)" stroke-width="3"/>
   </g>
-  <g font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="19" letter-spacing="1.8" fill="#596475">
-    <text x="48" y="70">ADIDAS</text>
-    <text x="752" y="70" text-anchor="end">OUTSOLE</text>
-    <text x="48" y="956">BLACK</text>
-  </g>
-  <line x1="48" y1="90" x2="752" y2="90" stroke="#d5dce5" stroke-width="1"/>
-  <line x1="48" y1="928" x2="752" y2="928" stroke="#d5dce5" stroke-width="1"/>
 </svg>

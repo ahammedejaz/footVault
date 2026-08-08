@@ -31,6 +31,22 @@ export const viewport: Viewport = {
   initialScale: 1,
 };
 
+/**
+ * `suppressHydrationWarning` is on the body and nowhere else.
+ *
+ * Password managers and accessibility extensions write attributes onto `<body>`
+ * before React hydrates — `bis_register` and `__processed_<uuid>__` are the two
+ * this project has actually seen reported. React compares the server HTML with
+ * the live DOM, finds attributes the server never sent, and reports a mismatch
+ * that is not ours and cannot be fixed from here.
+ *
+ * This attribute exists for exactly that, and it suppresses exactly one level:
+ * attribute and text differences on `<body>` itself. Every child still reports
+ * mismatches normally, so a real hydration bug anywhere in the tree stays loud.
+ * `scripts/audit/interactions.ts` drives headless Chromium, which has no
+ * extensions, and fails on any console error — so a mismatch that survives
+ * there is by construction a real one rather than this noise.
+ */
 export default function RootLayout({
   children,
 }: {
@@ -38,7 +54,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className={`${fontVariables} h-full`}>
-      <body className="flex min-h-full flex-col">
+      <body className="flex min-h-full flex-col" suppressHydrationWarning>
         {children}
         <Toaster position="bottom-center" />
       </body>

@@ -17,9 +17,17 @@ import { cn } from "@/lib/utils";
  *
  * Focus rings are omitted here on purpose: the composite orange+halo indicator
  * is defined once globally in globals.css so it can never drift per component.
+ *
+ * Which is exactly why there is **no `outline-none`** in the class string, and
+ * why re-adding it from the shadcn default would be a regression. Tailwind puts
+ * that utility in `@layer utilities`, which outranks the `:focus-visible` rule
+ * in `@layer base` — so it silently deleted the 2px orange half of the
+ * indicator and left only the navy halo, while the comment above went on
+ * claiming otherwise. Measured on the header buttons of `/product` and
+ * `/cart` before the fix: `outline-style: none`.
  */
 const buttonVariants = cva(
-  "group/button inline-flex shrink-0 items-center justify-center gap-2 rounded-lg border border-transparent bg-clip-padding font-medium whitespace-nowrap transition-colors outline-none select-none active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-45 aria-invalid:border-destructive [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+  "group/button inline-flex shrink-0 items-center justify-center gap-2 rounded-lg border border-transparent bg-clip-padding font-medium whitespace-nowrap transition-colors select-none active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-45 aria-invalid:border-destructive [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
   {
     variants: {
       variant: {
