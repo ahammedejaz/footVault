@@ -11,7 +11,10 @@ written up in §6, because a checklist that has never failed has not been run.
 Phase 3 added. §9 is Phase 5: how a guest reaches their own order, why the two
 payment tables are readable by nobody, and the complete `SECURITY DEFINER`
 surface with the reasoning for each entry, so the Supabase advisor's standing
-warnings stop being re-investigated every phase.
+warnings stop being re-investigated every phase. §10 is Phase 6, and it exists
+for one reason: `create_order_with_stock` was **dropped and recreated**, which
+throws its privileges away and lets Postgres hand `EXECUTE` back to `PUBLIC`.
+A grant that has to be re-issued is a grant that has to be re-checked.
 
 ## How to run it
 
@@ -81,26 +84,43 @@ select t.tablename, t.rowsecurity,
  order by t.tablename;
 ```
 
-**Result — 23 of 23 tables, `rowsecurity = true`, every one with ≥ 1 policy:**
+**Result — 29 of 29 tables, `rowsecurity = true`. Twenty-six carry ≥ 1 policy;
+three carry none, deliberately:**
 
 | table | policies | table | policies |
 |---|---|---|---|
-| addresses | 2 | order_status_history | 2 |
-| banners | 2 | orders | 4 |
-| brands | 2 | pages | 2 |
-| cart_items | 2 | payment_events | 1 |
-| carts | 3 | payments | 1 |
-| categories | 2 | product_images | 2 |
-| collection_products | 2 | product_variants | 2 |
-| collections | 2 | products | 2 |
-| coupons | 1 | profiles | 4 |
-| homepage_sections | 2 | reviews | 6 |
+| addresses | 2 | pages | 2 |
+| banners | 2 | payment_events | 1 |
+| brands | 2 | payments | 1 |
+| cart_items | 2 | product_images | 2 |
+| carts | 3 | product_variants | 2 |
+| categories | 2 | products | 2 |
+| collection_products | 2 | profiles | 4 |
+| collections | 2 | rate_limits | **0** |
+| coupons | 1 | reviews | 6 |
+| homepage_sections | 2 | shipment_events | 1 |
+| integration_tokens | **0** | shipments | 2 |
+| inventory_movements | 1 | shipping_quotes | **0** |
 | order_items | 2 | site_settings | 2 |
-| | | wishlist_items | 2 |
+| order_status_history | 2 | wishlist_items | 2 |
+| orders | 4 | | |
 
 `payments` and `payment_events` carry one policy each and it is an **admin
 read**. That is not an oversight in the "at least one policy" sense — see §9.2
 for why a customer is meant to read nothing from either.
+
+**The three tables with no policy are the stricter posture, not a gap.** RLS is
+on, `revoke all ... from anon, authenticated` was issued alongside the table, and
+only `service_role` reaches them — `integration_tokens` holds cached Shiprocket
+bearer tokens, `rate_limits` holds fixed-window counters that
+`consume_rate_limit()` owns, and `shipping_quotes` holds the delivery fee a
+customer was shown so that the fee they are charged is the same row. Each is
+refused by the *absence* of a policy rather than by the wording of one, which is
+one fewer sentence that can be got wrong later. The check that matters for them
+is the grant, not the policy, and it is in the migration beside the table.
+
+The claim being re-verified here is the general one, and it still holds: an
+uncovered table is a bug unless somebody wrote down why it is not.
 
 `supabase --advisors security` reports **no** missing-RLS or exposed-table
 findings. Its remaining warnings are `SECURITY DEFINER` functions reachable
@@ -661,3 +681,105 @@ Verified independently against the live database: `prosecdef = true`,
 This adds one advisor line,
 `authenticated_security_definer_function_executable` on `adopt_guest_orders`.
 It is expected, it is listed here, and it does not need re-investigating.
+
+---
+
+## 10 · Phase 6 — a grant that had to be re-issued, and a trigger that gained a verb
+
+Phase 6 adds **no new policy and no new `SECURITY DEFINER` function**. What it
+does is drop and recreate `create_order_with_stock`, which is the single most
+dangerous thing this codebase does to a function, and give
+`record_inventory_movement()` a second trigger. Both are checked below against
+the live project rather than taken on trust.
+
+### 10.1 Dropping a function throws its privileges away
+
+`create_order_with_stock` gained two parameters (`p_advance_amount`,
+`p_cod_handling_fee`). Changing a signature is a `drop` and a `create`, not a
+`create or replace` — and **the drop takes the ACL with it**, after which
+Postgres grants `EXECUTE` on the new function to `PUBLIC` by default, with
+Supabase's default privileges adding `anon`, `authenticated` and `service_role`
+on top. So for the duration of one migration this function is a PostgREST
+endpoint at `/rest/v1/rpc/create_order_with_stock` that any visitor can POST to.
+
+That is not theoretical damage. It is `SECURITY INVOKER`, so RLS still stops
+most of it — but "most" is not a security model, and this signature is worse
+than the old one: a caller now supplies `p_advance_amount`, which is *the amount
+charged online*. A signed-in customer who could reach it would hand it their own
+cart id and an advance of ₹1, and pay ₹1 for a ₹17,000 order.
+
+`20260808120300_create_order_records_advance.sql` therefore re-issues the revoke
+and the grant with the **new** fourteen-argument signature. Verified live from
+`pg_proc` rather than from the migration file:
+
+```sql
+select p.proname,
+       pg_get_function_identity_arguments(p.oid) as args,
+       p.prosecdef, p.proconfig, p.proacl
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+ where n.nspname = 'public' and p.proname = 'create_order_with_stock';
+```
+
+| what | expected | result |
+|---|---|---|
+| argument count | 14, with `p_advance_amount` and `p_cod_handling_fee` trailing | **14** ✅ |
+| `prosecdef` | `false` — invoker, as before | **false** ✅ |
+| `proconfig` | `search_path=""` | **`search_path=""`** ✅ |
+| `proacl` | `postgres` and `service_role` only | **`postgres=X/postgres`, `service_role=X/postgres`** ✅ |
+| `PUBLIC`, `anon`, `authenticated` | absent | **absent** ✅ |
+
+`assert_cart_stock(uuid)` is unchanged and re-confirmed at the same ACL, since
+the two are only useful together.
+
+**The lesson worth keeping:** a `drop function` in a migration is a privilege
+change whether or not the author thought of it that way. Anything that drops one
+must re-issue the grants in the same file, and this section is the place the
+re-issue is checked rather than assumed.
+
+### 10.2 `record_inventory_movement()` gains a trigger, not a caller
+
+The function is `SECURITY DEFINER` — it has to be, because it writes
+`inventory_movements` on behalf of whoever moved the stock — and it now fires on
+`INSERT` as well as `UPDATE`, through a second trigger
+(`product_variants_record_opening`). A new verb on a definer function is worth a
+look, so:
+
+| what | expected | result |
+|---|---|---|
+| `prosecdef` | `true` | **true** ✅ |
+| `proconfig` | `search_path=""` | **`search_path=""`** ✅ |
+| `proacl` | `postgres` and `service_role` only — **not** `anon`, **not** `authenticated`, no `PUBLIC` | **`postgres=X/postgres`, `service_role=X/postgres`** ✅ |
+| triggers on `product_variants` | `record_opening` on insert, `record_movement` on update, both calling it | **both present** ✅ |
+
+The revoke it depends on is `20260807233100_revoke_trigger_function_execute.sql`
+and it is still in force. **A trigger does not need `EXECUTE` to fire** — the
+trigger manager invokes it — so revoking the grant costs nothing and removes an
+RPC endpoint that would let any caller write an arbitrary ledger row with the
+definer's privileges. `reconcile_inventory()` is definer for the same reason and
+carries the same ACL.
+
+This adds **no** new line to the Supabase advisor: neither function is
+executable by `anon` or `authenticated`, so neither can be flagged as
+`*_security_definer_function_executable`. The list in §9.3 is unchanged.
+
+### 10.3 What Phase 6 did *not* change
+
+Stated because the absence is the point, and because each of these is somewhere
+a new column could plausibly have leaked:
+
+- **No new policy on `orders`.** `advance_amount`, `balance_due_on_delivery`,
+  `cod_handling_fee`, `cash_collected_at`, `cash_collected_by` and `delivered_at`
+  are columns on a table whose four policies already decide who sees a row. RLS
+  is row-level; a customer who may read their order may read these, which is
+  correct — the advance and the balance are *their* money, and the account page
+  counts down the replacement window from `delivered_at`.
+- **No customer-facing write path.** There is still no `INSERT` policy on
+  `orders` for anybody, and no `UPDATE` policy outside the admin one. Cash
+  collection is marked by an admin; the advance is written by the checkout
+  transaction through the service role.
+- **`shipping_quotes` keeps its zero policies** and its revokes. The new
+  `shipping_fee_paise` / `cod_handling_paise` split is server-side only — the
+  customer sees the numbers rendered, never the row.
+- **`shipments.cod_collectable_amount` is behind the existing admin policies.**
+  It records what the courier was told to collect, which is an operational fact
+  the shop answers discrepancies with, not something a customer reads.

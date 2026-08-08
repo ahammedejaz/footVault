@@ -638,6 +638,12 @@ export type Database = {
       };
       orders: {
         Row: {
+          delivered_at: string | null;
+          advance_amount: number;
+          balance_due_on_delivery: number;
+          cash_collected_at: string | null;
+          cash_collected_by: string | null;
+          cod_handling_fee: number;
           cart_id: string | null;
           contact_email: string | null;
           contact_phone: string | null;
@@ -663,6 +669,12 @@ export type Database = {
           user_id: string | null;
         };
         Insert: {
+          delivered_at?: string | null;
+          advance_amount?: number;
+          balance_due_on_delivery?: number;
+          cash_collected_at?: string | null;
+          cash_collected_by?: string | null;
+          cod_handling_fee?: number;
           cart_id?: string | null;
           contact_email?: string | null;
           contact_phone?: string | null;
@@ -688,6 +700,12 @@ export type Database = {
           user_id?: string | null;
         };
         Update: {
+          delivered_at?: string | null;
+          advance_amount?: number;
+          balance_due_on_delivery?: number;
+          cash_collected_at?: string | null;
+          cash_collected_by?: string | null;
+          cod_handling_fee?: number;
           cart_id?: string | null;
           contact_email?: string | null;
           contact_phone?: string | null;
@@ -1178,6 +1196,8 @@ export type Database = {
       };
       shipments: {
         Row: {
+          cod_collectable_amount: number;
+          delivered_at: string | null;
           awb_code: string | null;
           courier_id: string | null;
           courier_name: string | null;
@@ -1200,6 +1220,8 @@ export type Database = {
           updated_at: string;
         };
         Insert: {
+          cod_collectable_amount?: number;
+          delivered_at?: string | null;
           awb_code?: string | null;
           courier_id?: string | null;
           courier_name?: string | null;
@@ -1222,6 +1244,8 @@ export type Database = {
           updated_at?: string;
         };
         Update: {
+          cod_collectable_amount?: number;
+          delivered_at?: string | null;
           awb_code?: string | null;
           courier_id?: string | null;
           courier_name?: string | null;
@@ -1255,6 +1279,8 @@ export type Database = {
       };
       shipping_quotes: {
         Row: {
+          cod_handling_paise: number;
+          shipping_fee_paise: number;
           cart_id: string;
           cod_available: boolean;
           cost_forward_paise: number | null;
@@ -1271,6 +1297,8 @@ export type Database = {
           subtotal_paise: number;
         };
         Insert: {
+          cod_handling_paise?: number;
+          shipping_fee_paise?: number;
           cart_id: string;
           cod_available: boolean;
           cost_forward_paise?: number | null;
@@ -1287,6 +1315,8 @@ export type Database = {
           subtotal_paise: number;
         };
         Update: {
+          cod_handling_paise?: number;
+          shipping_fee_paise?: number;
           cart_id?: string;
           cod_available?: boolean;
           cost_forward_paise?: number | null;
@@ -1438,7 +1468,9 @@ export type Database = {
       };
       create_order_with_stock: {
         Args: {
+          p_advance_amount?: number | null;
           p_cart_id: string;
+          p_cod_handling_fee?: number;
           p_contact_email?: string;
           p_contact_phone?: string;
           p_customer_note?: string;
@@ -1455,6 +1487,8 @@ export type Database = {
           p_user_id?: string;
         };
         Returns: {
+          advance_amount: number;
+          balance_due: number;
           grand_total: number;
           item_count: number;
           order_id: string;

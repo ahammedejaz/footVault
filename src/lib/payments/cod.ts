@@ -1,4 +1,9 @@
+import "server-only";
+
+import { razorpayAdapter } from "@/lib/payments/razorpay";
 import type {
+  ClientCallbackClaim,
+  InitiateContext,
   PaymentAdapter,
   PaymentInitiation,
   VerificationResult,
@@ -6,89 +11,91 @@ import type {
 } from "@/lib/payments/types";
 
 /**
- * Cash on delivery.
+ * Pay on Delivery.
  *
- * An adapter with almost nothing in it, which is the point: checkout asks every
- * payment method the same questions, and COD answering "nothing to do" is what
- * lets the order code stay ignorant of which method it is holding. Special-
- * casing COD with an `if` in the checkout action would put provider knowledge
- * back in the place this interface exists to keep it out of.
+ * **This is no longer a method with no provider.** It used to be: `initiate()`
+ * returned `kind: "none"`, the order was written `confirmed` with nothing paid,
+ * and `verifyClientCallback` failed closed because there was nothing to verify.
+ * Order FV-2026-00488 is one of those — `confirmed`, `unpaid`, ₹1,719 of stock
+ * committed against a promise.
  *
- * No `server-only` here, deliberately — there is no secret to protect and
- * nothing to reach. It stays importable from anywhere so that a future
- * "available methods" render path is not forced through the server boundary by
- * this file. (`index.ts` is server-only regardless, because Razorpay is.)
- */
-
-/**
- * The honest words, including the caveat.
+ * The model now: the customer pays an **advance** through Razorpay at checkout
+ * and the courier collects the **balance** in cash. So every payment in this
+ * shop goes through one provider, and this adapter delegates all four of its
+ * money-moving methods to `razorpayAdapter` rather than reimplementing them.
+ * That is the whole design: there is no second payment path to keep in step,
+ * and every guarantee Phase 5 built — idempotency, webhook-as-truth,
+ * compare-and-swap on status, the unique constraint on `razorpay_order_id`,
+ * timing-safe signature comparison — applies to a Pay-on-Delivery order without
+ * a line of new code.
  *
- * `note` says what a customer actually needs to know before choosing: the money
- * is due at the door, in cash, to a courier. Discovering that on the doorstep is
- * how a delivery gets refused.
+ * What stays distinct is the *commercial* meaning: `orders.payment_method` is
+ * still `cod`, because what separates these orders is not who processes the
+ * card but whether a courier is collecting cash at the door. The amount handed
+ * to `initiate()` is the advance, decided by `computeOrderTotals` from the
+ * owner's `cod_advance` rule; this adapter neither knows nor needs to know
+ * which portion of the order it is charging.
+ *
+ * **`server-only` now, where it deliberately was not before.** The old file
+ * avoided it so a render path could import the copy without crossing the server
+ * boundary. Reaching Razorpay means reaching a key secret one import away, so
+ * that trade no longer holds. Nothing outside `./index.ts` imports this file,
+ * and `PaymentMethodCopy` lives in `./types` for anything that needs the words.
  */
 export const codAdapter: PaymentAdapter = {
   method: "cod",
 
+  /**
+   * The honest words.
+   *
+   * **"Cash on Delivery" is gone**, and the rename is not cosmetic: money is due
+   * before the parcel moves, and a label promising otherwise is the single most
+   * misleading string this site could carry. The brief is explicit — never show
+   * a bare "COD" label with no advance disclosed.
+   *
+   * The exact rupee figures are deliberately absent here. They depend on the
+   * bag and the destination — the advance for a ₹1,499 order to one PIN is not
+   * the advance for a ₹17,000 order to another — so the checkout UI renders
+   * "Pay ₹X now…" from the computed totals. Static copy claiming a specific
+   * amount would be wrong for most orders, which is worse than general.
+   */
   copy: {
     method: "cod",
-    label: "Cash on delivery",
+    label: "Pay on Delivery",
     description:
-      "Pay the courier when your order arrives. Nothing is charged now.",
+      "Pay the delivery charge now to confirm your order. Pay the rest in cash when it arrives.",
     note: "Please have the exact amount ready. Our couriers cannot always give change.",
   },
 
   /**
-   * Always. COD needs no keys and no provider.
+   * Available exactly when Razorpay is, because the advance is a Razorpay
+   * payment. A shop with no keys configured cannot take Pay on Delivery either
+   * — and offering it would strand the customer at a modal that cannot open.
    *
-   * If the shop ever needs to switch COD off — a PIN code it does not serve, a
-   * cart above a value threshold — that is a business rule keyed on the order,
-   * not a property of the method, and `isAvailable()` is synchronous and knows
-   * nothing about the cart. It would belong in the checkout action beside the
-   * shipping calculation, reading `site_settings`.
+   * The other two gates live elsewhere and both are per-order rather than per
+   * method: `site_settings.shipping.cod_enabled` is the owner's master switch,
+   * and Shiprocket's serviceability answers whether a courier will collect cash
+   * at that particular PIN. `computeOrderTotals` folds both into `codAvailable`.
    */
   isAvailable(): boolean {
-    return true;
+    return razorpayAdapter.isAvailable();
   },
 
-  /**
-   * There is no provider to initiate with. The order is placed, and that is the
-   * whole transaction as far as payment is concerned; money arrives at the door
-   * and an admin marks it paid. `kind: "none"` is what stops the checkout page
-   * from opening an empty modal.
-   */
-  async initiate(): Promise<PaymentInitiation> {
-    return { kind: "none", method: "cod" };
+  /** The advance, not the order total. The caller decides which number that is. */
+  async initiate(context: InitiateContext): Promise<PaymentInitiation> {
+    return razorpayAdapter.initiate(context);
   },
 
-  /**
-   * Fail closed rather than pretend.
-   *
-   * A COD order has no signature to check, so the only two possible
-   * implementations are "reject" and "return ok without checking anything". The
-   * second is a free order: post the verify action with `paymentMethod: "cod"`
-   * and any three strings, and an unpaid order marks itself paid. Returning
-   * `provider_error` means a caller that reaches here has a routing bug, and it
-   * will find out.
-   */
-  async verifyClientCallback(): Promise<VerificationResult> {
-    console.error(
-      "[cod] verifyClientCallback was called. COD has no payment to verify.",
-    );
-    return {
-      ok: false,
-      reason: "provider_error",
-      message: "Cash on delivery has no online payment to verify.",
-    };
+  async verifyClientCallback(
+    claim: ClientCallbackClaim,
+  ): Promise<VerificationResult> {
+    return razorpayAdapter.verifyClientCallback(claim);
   },
 
-  /** Same reasoning. Nothing sends us COD webhooks, so anything claiming to be one is not. */
-  parseWebhook(): WebhookParseResult {
-    console.error("[cod] parseWebhook was called. COD has no webhooks.");
-    return {
-      ok: false,
-      reason: "unhandled",
-      message: "Cash on delivery has no webhooks.",
-    };
+  parseWebhook(
+    rawBody: string,
+    signatureHeader: string | null,
+  ): WebhookParseResult {
+    return razorpayAdapter.parseWebhook(rawBody, signatureHeader);
   },
 };

@@ -21,6 +21,21 @@
  */
 import type { Cookie, Page } from "playwright";
 
+/**
+ * Wait until the pay button will actually accept a press.
+ *
+ * Nothing may be placed at a price the customer has not been shown, so the
+ * button is `aria-disabled` until a Shiprocket quote lands for the entered pin
+ * code. A harness that clicked immediately was refused and then waited out its
+ * timeout on an assertion about the *next* screen.
+ */
+async function payable(page: Page) {
+  await page
+    .locator('button[type="submit"]:not([aria-disabled="true"])')
+    .last()
+    .waitFor({ state: "visible", timeout: 25_000 });
+}
+
 import type { QaFixture } from "./fixtures";
 import { QA_ADDRESS, QA_EMAIL_PREFIX } from "./fixtures";
 import { RAZORPAY_CHECKOUT_SRC } from "../../src/components/checkout/razorpay";
@@ -91,9 +106,27 @@ export function auditStates(fixture: QaFixture): AuditState[] {
       path: "/checkout",
       as: "guest",
       after: async (page) => {
-        // Client-side only: no round trip, so this state is repeatable at every
-        // width and leaves nothing behind.
-        await page.getByRole("button", { name: /place order|^pay /i }).click();
+        /*
+         * Targeted by role, not by label. The submit button now names the
+         * amount it is about to charge — and on an untouched form it names the
+         * missing thing instead ("Enter a delivery address"), because there is
+         * no figure yet that would be true. Matching on words made this state
+         * unreachable the moment that copy changed.
+         *
+         * `force` because the button is `aria-disabled` until a courier quote
+         * exists, and Playwright treats that as disabled and refuses to click.
+         * A real person is not stopped by it — the control stays focusable and
+         * activatable on purpose, so that pressing it validates the form and
+         * shows what is missing rather than doing nothing. Forcing the click is
+         * simulating the real user, not defeating a guard.
+         *
+         * Client-side only: no round trip, so it is repeatable at every width
+         * and leaves nothing behind.
+         */
+        await page
+          .locator('button[type="submit"]')
+          .last()
+          .click({ force: true });
         await page
           .locator("#checkout-recipientName-error")
           .waitFor({ timeout: 10_000 });
@@ -106,7 +139,10 @@ export function auditStates(fixture: QaFixture): AuditState[] {
       after: async (page) => {
         await fillAddress(page, true);
         await page.locator('input[name="paymentMethod"][value="cod"]').check();
-        await page.getByRole("button", { name: /place order/i }).click();
+        await payable(page);
+        // The label is the amount now — "Pay ₹349 now" — since Pay on Delivery
+        // takes an advance. Matched loosely so a rate change does not break it.
+        await page.getByRole("button", { name: /place order|^pay /i }).click();
         await page
           .getByText(/reached the last pair first/i)
           .waitFor({ timeout: 30_000 });
@@ -155,6 +191,7 @@ export function auditStates(fixture: QaFixture): AuditState[] {
         await page
           .locator('input[name="paymentMethod"][value="razorpay"]')
           .check();
+        await payable(page);
         await page.getByRole("button", { name: /^pay /i }).click();
         await page
           .getByText(/the payment window did not open/i)

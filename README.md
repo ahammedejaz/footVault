@@ -19,7 +19,8 @@ homepage, without touching code.
 | Auth | Supabase Auth — **Google only**, PKCE, sessions in cookies |
 | Cart | Rows in `carts`, keyed by an httpOnly `guest_token` cookie. Never localStorage |
 | Orders | One Postgres transaction. Prices recomputed server-side; stock claimed at checkout |
-| Payments | Cash on delivery and Razorpay, behind one `PaymentAdapter`. `fetch` + `node:crypto`, **no SDK** |
+| Payments | Prepaid and **Pay on Delivery**, both through Razorpay, behind one `PaymentAdapter`. `fetch` + `node:crypto`, **no SDK** |
+| Delivery | Rates quoted live from the Shiprocket API. Nothing hardcoded; the thresholds are admin settings |
 | Email | Behind an `EmailAdapter`. Console adapter until a provider is configured |
 | Scheduled work | `pg_cron`, inside Supabase. One job: the abandoned-order sweep |
 | Client UI state | Zustand — the bag drawer, and nothing the server owns |
@@ -63,6 +64,9 @@ Open http://localhost:3000. The design system renders at `/style-guide`.
 | `npm run audit:bag` | The whole purchase path in Chromium at 390px |
 | `npm run audit:signedin` | The signed-in storefront: saved list, account menu, account cart |
 | `npm run audit:checkout` | Checkout, orders and webhook idempotency against the live database |
+| `npm run audit:shipping` | Shiprocket end to end, mocked: token cache, serviceability, the fee split, and that the COD collectable is the balance |
+| `npm run audit:totals` | The advance arithmetic in isolation — 15 assertions, no database and no browser |
+| `npm run audit:admin` | The admin surface: role gate, inventory ledger, reconciliation |
 | `npm run audit:security` | The adversarial regression suite, through the real webhook route over HTTP |
 | `npm run audit:lighthouse` | Performance on a local production build, `--throttling-method=devtools` |
 | `npm run audit:shots` | Full-page screenshots at all six widths |
@@ -148,6 +152,16 @@ See `.env.example` for the full list and the reasoning attached to each one.
 | `RAZORPAY_WEBHOOK_SECRET` | A **different** secret. HMAC key for `x-razorpay-signature`, and only that |
 | `EMAIL_API_KEY`, `EMAIL_FROM` | Names only. Nothing reads them yet; the console adapter is what ships |
 | `SITE_INDEXABLE` | Only the exact string `true` lets search engines in. Anything else is noindex. Changing it needs a **fresh build**, not a redeploy — the header is baked into the build manifest |
+| `SHIPROCKET_EMAIL`, `SHIPROCKET_PASSWORD` | An **API user** created in the Shiprocket panel, not the panel login. `/v1/external/auth/login` trades them for a JWT valid 240 hours. **Not** a static API key — there is no `SHIPROCKET_API_KEY` and the one that used to sit in `.env.local` authenticated nothing |
+| `SHIPROCKET_PICKUP_LOCATION` | The pickup nickname exactly as spelled in the panel. Unset falls back to `"Primary"`, which this account is not called, so it fails when a real parcel is created rather than at boot |
+
+Leaving the Shiprocket pair unset turns the integration off rather than
+breaking it: checkout still works, Pay on Delivery is still offered, and the
+delivery charge falls back to `site_settings.shipping.fallback_fee_paise`. **No
+rate is ever hardcoded.** Every real delivery price comes from the Shiprocket
+API; the fallback exists because refusing to sell during a courier outage is
+worse than mispricing a handful of orders, and it is a setting so the owner can
+correct it without a deploy.
 
 **There is deliberately no `NEXT_PUBLIC_RAZORPAY_KEY_ID`.** The key id is
 publishable, but a `NEXT_PUBLIC_` variable is inlined into every page in the
@@ -166,23 +180,31 @@ can never verify a production event.
 npm run build && npm start          # the audits need a production build
 ```
 
-Then `/cart` → **Checkout**. Two ways through it:
+Then `/cart` → **Checkout**. Two ways through it, and **both need Razorpay
+keys** — that is the Phase 6 change, and it is the whole of the new payment
+model:
 
-**Cash on delivery** needs nothing configured. The order is `confirmed` the
-moment it is placed, its stock is decremented in the same transaction, and the
-confirmation email is printed to your terminal by the console email adapter.
+**Prepaid** settles the grand total online. **Pay on Delivery** charges an
+*advance* online at checkout and the courier collects the balance in cash. Both
+go through the same adapter, so a shop with no keys configured offers neither —
+`codAdapter.isAvailable()` is `razorpayAdapter.isAvailable()`.
 
-**Razorpay** needs `RAZORPAY_KEY_ID` and `RAZORPAY_KEY_SECRET` from a **test
-mode** account:
+Neither is confirmed before money moves. Both orders are written `pending` and
+`unpaid` with their stock already claimed, and only a captured payment moves
+them to `confirmed`. Nothing is `confirmed` at the moment it is placed any more:
+that path is what produced `FV-2026-00488`, a confirmed and unpaid order holding
+₹1,719 of stock against a promise.
+
+`RAZORPAY_KEY_ID` and `RAZORPAY_KEY_SECRET` come from a **test mode** account:
 
 1. <https://dashboard.razorpay.com> → toggle to **Test Mode** (top of the
    sidebar; test keys start `rzp_test_`).
 2. *Account & Settings* → *API Keys* → **Generate Test Key**. You are shown the
    secret once.
 3. Put both in `.env.local`. Neither takes a `NEXT_PUBLIC_` prefix.
-4. Restart. Razorpay now appears as a payment choice — with no keys it is
-   filtered out of the list entirely, on purpose, because a customer who picks a
-   method that 500s has been failed twice.
+4. Restart. Both methods now appear — with no keys the list is empty, on
+   purpose, because a customer who picks a method that 500s has been failed
+   twice.
 5. Test cards are in Razorpay's docs; `4111 1111 1111 1111` with any future
    expiry and any CVV succeeds.
 
@@ -222,8 +244,12 @@ src/
     actions/          server actions, grouped by domain
     queries/          server-only reads; cached.ts holds the LCP-path cache
     cart/             the bag's token and the merge
-    orders/           the state machine, and the only writer of order state
-    payments/         the PaymentAdapter seam; cod.ts and razorpay.ts behind it
+    orders/           the state machine, the only writer of order state, and
+                        totals.ts — the one place a total is computed
+    payments/         the PaymentAdapter seam; cod.ts and razorpay.ts behind it.
+                        advance.ts is the pure advance/balance split
+    shipping/         Shiprocket: token, serviceability, the fee rules,
+                        fulfilment, and the settings the owner tunes
     email/            the EmailAdapter seam; console adapter until a provider exists
     validations/      Zod schemas, shared client and server
     indexing.ts       the noindex gate, dependency-free for next.config.ts
@@ -287,7 +313,9 @@ subscribed to `payment.captured`, `payment.failed`, `payment.authorized` and
 `order.paid`, then set the same string in Vercel for Preview and Production
 separately and redeploy. Until it exists, the webhook route rejects everything
 with a 400, which is the correct direction to fail but means a customer whose
-browser never comes back is charged and left `pending`.
+browser never comes back is charged and left `pending`. **That now applies to
+every order rather than to the prepaid ones**: Pay on Delivery takes its advance
+through Razorpay too, so both methods depend on the same confirmation.
 
 **2. No real Razorpay payment has ever completed.** Every branch around it is
 proven — dismissal, blocked script, resume, webhook capture, signature forgery,
@@ -319,5 +347,5 @@ while sign-in is Google-only, and free to turn on.
 | 5 | Checkout, orders and payments | Done — see [`claudeExecutionReport/phase-5-checkout-payments.md`](claudeExecutionReport/phase-5-checkout-payments.md) |
 | 6 | Admin CRUD | |
 | 7 | Admin appearance and CMS | |
-| 8 | Reviews, coupons, refunds, dashboard, polish | |
+| 8 | Reviews, coupons, dashboard, polish | Refunds were listed here and are not planned: the shop does not offer them. Cancelling a paid order still needs an answer — see `docs/admin-guide.md` |
 | 9 | Production deploy and owner documentation | |

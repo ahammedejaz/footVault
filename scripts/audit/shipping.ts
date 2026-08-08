@@ -511,8 +511,25 @@ async function main() {
   /* ═══ 5b · the delivery fee the customer pays ════════════════════════════ */
   section("5b · Delivery pricing");
   {
-    const { deliveryFee, FREE_DELIVERY_THRESHOLD_PAISE, FALLBACK_FEE_PAISE } =
-      await import("@/lib/shipping/fee");
+    const { deliveryFee } = await import("@/lib/shipping/fee");
+
+    /**
+     * The thresholds, stated here rather than read from the database.
+     *
+     * They are the shop's numbers and they move — the owner edits them in
+     * /admin/settings — so a suite that read them would assert whatever the
+     * database happened to hold and prove nothing. Pinning them keeps this
+     * testing the *rules*, which is the part that must not change silently.
+     * `shippingSettings()` is covered separately by its own parse fallbacks.
+     */
+    const SETTINGS = {
+      freeAbovePaise: 249_900,
+      fallbackFeePaise: { razorpay: 19_900, cod: 34_900 },
+      codEnabled: true,
+      codAdvanceMode: "greater_of" as const,
+      codAdvanceMinimumPaise: 9_900,
+      codAdvanceFixedPaise: 9_900,
+    };
 
     // Measured against the live account: Delhivery Surface, Cuddapah to
     // Bengaluru, 0.9kg. rate already includes the cash-collection fee.
@@ -531,6 +548,7 @@ async function main() {
       method: "razorpay",
       subtotalPaise: 199900,
       verdict: live,
+      settings: SETTINGS,
     });
     check(
       "prepaid under the threshold pays the forward rate, rounded up to Rs 10",
@@ -540,8 +558,9 @@ async function main() {
 
     const prepaidOver = deliveryFee({
       method: "razorpay",
-      subtotalPaise: FREE_DELIVERY_THRESHOLD_PAISE,
+      subtotalPaise: SETTINGS.freeAbovePaise,
       verdict: live,
+      settings: SETTINGS,
     });
     check(
       "prepaid at exactly Rs 2,499 is free",
@@ -553,6 +572,7 @@ async function main() {
       method: "cod",
       subtotalPaise: 199900,
       verdict: live,
+      settings: SETTINGS,
     });
     check(
       "COD pays forward PLUS the return leg — 205.33 + 142 rounds to Rs 350",
@@ -564,6 +584,7 @@ async function main() {
       method: "cod",
       subtotalPaise: 500000,
       verdict: live,
+      settings: SETTINGS,
     });
     check(
       "COD gets NO free threshold, however large the order",
@@ -575,6 +596,7 @@ async function main() {
       method: "cod",
       subtotalPaise: 199900,
       verdict: { ...live, rtoCostPaise: null },
+      settings: SETTINGS,
     });
     check(
       "a missing return cost is assumed to equal the forward one, never zero",
@@ -586,10 +608,12 @@ async function main() {
       method: "cod",
       subtotalPaise: 199900,
       verdict: { ...UNKNOWN, forwardCostPaise: null },
+      settings: SETTINGS,
     });
     check(
       "an outage falls back to the COD flat rate, not the prepaid one",
-      outage.feePaise === FALLBACK_FEE_PAISE.cod && outage.basis === "fallback",
+      outage.feePaise === SETTINGS.fallbackFeePaise.cod &&
+        outage.basis === "fallback",
       String(outage.feePaise),
     );
 
@@ -597,6 +621,7 @@ async function main() {
       method: "razorpay",
       subtotalPaise: 300000,
       verdict: { ...UNKNOWN, forwardCostPaise: null },
+      settings: SETTINGS,
     });
     check(
       "and an outage never costs a customer their earned free delivery",
@@ -608,11 +633,39 @@ async function main() {
       method: "razorpay",
       subtotalPaise: 199900,
       verdict: { ...UNKNOWN, deliverable: false, forwardCostPaise: null },
+      settings: SETTINGS,
     });
     check(
       "an undeliverable pin code is reported as such rather than priced",
       dead.deliverable === false,
       JSON.stringify(dead.deliverable),
+    );
+
+    /**
+     * The COD extra is a named line, which is the owner's condition for keeping
+     * the surcharge at all: the difference between a prepaid total and a
+     * Pay-on-Delivery one must be something a customer can see and point at.
+     */
+    check(
+      "the COD extra is split out as its own line",
+      codUnder.shippingFeePaise === 21000 &&
+        codUnder.codHandlingPaise === 14000,
+      `${codUnder.shippingFeePaise} + ${codUnder.codHandlingPaise}`,
+    );
+    check(
+      "prepaid never carries a COD handling line",
+      prepaidUnder.codHandlingPaise === 0 && prepaidOver.codHandlingPaise === 0,
+    );
+    check(
+      "the split always reconstitutes the fee actually charged",
+      [prepaidUnder, prepaidOver, codUnder, codOver, noRto, outage, outageFree].every(
+        (f) => f.shippingFeePaise + f.codHandlingPaise === f.feePaise,
+      ),
+    );
+    check(
+      "splitting did not change what the customer pays",
+      codUnder.feePaise === 35000 && prepaidUnder.feePaise === 21000,
+      `${codUnder.feePaise} / ${prepaidUnder.feePaise}`,
     );
   }
 
@@ -626,10 +679,16 @@ async function main() {
     let creates = 0;
     let awbs = 0;
     let pickups = 0;
-    handler = (url) => {
+    /** The adhoc payload as Shiprocket would have received it. */
+    let adhocBody: Record<string, unknown> | null = null;
+    handler = (url, init) => {
       if (url.endsWith("/auth/login")) return json({ token: TOKEN });
       if (url.includes("/orders/create/adhoc")) {
         creates += 1;
+        adhocBody =
+          typeof init?.body === "string"
+            ? (JSON.parse(init.body) as Record<string, unknown>)
+            : null;
         return json({ order_id: 900001, shipment_id: 800001 });
       }
       if (url.includes("/courier/assign/awb")) {
@@ -688,6 +747,16 @@ async function main() {
         subtotal: orderRow.subtotal,
         shippingFee: orderRow.shipping_fee,
         grandTotal: orderRow.grand_total,
+        /**
+         * Deliberately equal to none of the other three figures.
+         *
+         * With the default `greater_of` advance rule the balance happens to
+         * equal the goods subtotal, so a fixture built that way would pass
+         * whether the code read the balance or the subtotal. A fixed ₹99
+         * advance against a ₹220 delivery separates them, which is the only
+         * way this assertion can actually fail when the code is wrong.
+         */
+        balanceDueOnDelivery: orderRow.grand_total - 9_900,
         contactEmail: orderRow.contact_email,
         address: {
           recipientName: "Audit Probe",
@@ -715,6 +784,54 @@ async function main() {
         created.ok === true,
         JSON.stringify(created),
       );
+
+      /**
+       * The single most expensive mistake available in this phase.
+       *
+       * Shiprocket treats `sub_total` on a COD shipment as **the amount to
+       * collect at the door**. Handing it the order total makes the courier
+       * collect the delivery fee a second time from a customer who has already
+       * paid it online — and it is discovered by complaint, one customer at a
+       * time, after the money has changed hands.
+       *
+       * All three figures are asserted, not just the right one: a test that
+       * only checked "equals the balance" would still pass if the balance
+       * happened to equal the subtotal, which under the default advance rule it
+       * does.
+       */
+      {
+        const body = adhocBody as Record<string, unknown> | null;
+        const sent = body?.sub_total;
+        const expected = Math.round(order.balanceDueOnDelivery / 100);
+        check(
+          "the COD collectable is the balance, not the order total",
+          sent === expected,
+          `sent ${String(sent)}, expected ${expected}`,
+        );
+        check(
+          "and is not the grand total",
+          sent !== Math.round(order.grandTotal / 100),
+          `grand total is ${Math.round(order.grandTotal / 100)}`,
+        );
+        check(
+          "and is not the goods subtotal",
+          sent !== Math.round(order.subtotal / 100),
+          `subtotal is ${Math.round(order.subtotal / 100)}`,
+        );
+        const stored = await maybeRow<{ cod_collectable_amount: number }>(
+          "audit.shipment.collectable",
+          admin
+            .from("shipments")
+            .select("cod_collectable_amount")
+            .eq("order_id", order.id)
+            .maybeSingle(),
+        );
+        check(
+          "the shipment records what the courier was asked to collect",
+          stored?.cod_collectable_amount === order.balanceDueOnDelivery,
+          `stored ${String(stored?.cod_collectable_amount)}, expected ${order.balanceDueOnDelivery}`,
+        );
+      }
       const againCreated = await createShipment(admin, order);
       check(
         "pressing create twice does not create a second Shiprocket order",

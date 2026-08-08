@@ -216,7 +216,7 @@ export default async function AdminOrdersPage({
                           }
                         >
                           {order.paymentMethod === "cod"
-                            ? "COD"
+                            ? "On delivery"
                             : order.paymentStatus}
                         </Chip>
                       </Td>
@@ -234,7 +234,21 @@ export default async function AdminOrdersPage({
                           </span>
                         ) : null}
                       </Td>
-                      <Td numeric>{formatPaise(order.grandTotal)}</Td>
+                      {/*
+                        The total, and underneath it what the courier still has
+                        to collect. The owner scans this column to know what
+                        cash is owed on the round, so the balance belongs beside
+                        the total rather than one click away.
+                      */}
+                      <Td numeric>
+                        {formatPaise(order.grandTotal)}
+                        {order.balanceDueOnDelivery > 0 ? (
+                          <span className="text-muted-foreground block text-xs whitespace-nowrap">
+                            {formatPaise(order.advanceAmount)} paid ·{" "}
+                            {formatPaise(order.balanceDueOnDelivery)} at door
+                          </span>
+                        ) : null}
+                      </Td>
                       <Td>
                         <Button variant="outline" size="sm" asChild>
                           <Link href={`/admin/orders/${order.id}`}>Open</Link>

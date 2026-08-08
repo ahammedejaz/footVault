@@ -7,6 +7,8 @@ import { OrderDetail } from "@/components/checkout/order-detail";
 import { formatOrderDate } from "@/components/checkout/order-format";
 import { StatusChip } from "@/components/checkout/status-chip";
 import { getOrderForViewer } from "@/lib/queries/orders";
+import { cachedSiteSettings } from "@/lib/queries/cached";
+import { setting, type ContactSettings } from "@/lib/queries/content";
 
 export const metadata: Metadata = {
   title: "Order",
@@ -58,7 +60,28 @@ export default async function AccountOrderPage({
         <time dateTime={order.placedAt}>{formatOrderDate(order.placedAt)}</time>
       </p>
 
-      <OrderDetail order={order} />
+      <OrderDetail order={order} contact={await shopContact()} />
     </div>
   );
+}
+
+/**
+ * Where to reach the shop, for the replacement window.
+ *
+ * The store's policy is that a damaged parcel is reported by contacting them
+ * directly — there is no self-service path by design — so the contact details
+ * have to travel with the order, not sit in the footer.
+ */
+async function shopContact() {
+  const settings = await cachedSiteSettings();
+  const contact = setting<ContactSettings>(settings, "contact", {
+    email: "",
+    phone: "",
+    whatsapp: "",
+    address: "",
+  });
+  return {
+    phone: contact.phone || null,
+    whatsapp: contact.whatsapp || null,
+  };
 }

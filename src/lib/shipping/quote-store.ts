@@ -4,6 +4,7 @@ import type { PaymentMethod } from "@/lib/payments/types";
 import { maybeRow } from "@/lib/queries/run";
 import { deliveryFee, type DeliveryFee } from "@/lib/shipping/fee";
 import { quoteDelivery, shippingDefaults } from "@/lib/shipping/quote";
+import { shippingSettings } from "@/lib/shipping/settings";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 /**
@@ -64,6 +65,10 @@ export async function quoteFor(input: {
     method: input.method,
     subtotalPaise: input.subtotalPaise,
     verdict,
+    // The thresholds are the shop's, not the courier's — free-delivery minimum
+    // and the amounts used when Shiprocket cannot be reached. Read here rather
+    // than inside `deliveryFee` so that function stays pure and testable.
+    settings: await shippingSettings(),
   });
 
   await storeQuote(input, fee);
@@ -96,6 +101,8 @@ async function readQuote(input: {
 }): Promise<DeliveryFee | null> {
   const row = await maybeRow<{
     fee_paise: number;
+    shipping_fee_paise: number;
+    cod_handling_paise: number;
     deliverable: boolean;
     cod_available: boolean;
     estimated_days: number | null;
@@ -110,7 +117,8 @@ async function readQuote(input: {
     createAdminClient()
       .from("shipping_quotes")
       .select(
-        `fee_paise, deliverable, cod_available, estimated_days, courier_name,
+        `fee_paise, shipping_fee_paise, cod_handling_paise, deliverable,
+         cod_available, estimated_days, courier_name,
          cost_forward_paise, cost_rto_paise, subtotal_paise, source, quoted_at`,
       )
       .eq("cart_id", input.cartId)
@@ -128,6 +136,8 @@ async function readQuote(input: {
 
   return {
     feePaise: row.fee_paise,
+    shippingFeePaise: row.shipping_fee_paise,
+    codHandlingPaise: row.cod_handling_paise,
     deliverable: row.deliverable,
     codAvailable: row.cod_available,
     estimatedDays: row.estimated_days,
@@ -157,6 +167,8 @@ async function storeQuote(
       payment_method: input.method,
       subtotal_paise: input.subtotalPaise,
       fee_paise: fee.feePaise,
+      shipping_fee_paise: fee.shippingFeePaise,
+      cod_handling_paise: fee.codHandlingPaise,
       deliverable: fee.deliverable,
       cod_available: fee.codAvailable,
       estimated_days: fee.estimatedDays,

@@ -88,6 +88,38 @@ export type CheckoutFlowProps = {
 const NEW_ADDRESS = "new";
 
 /**
+ * Quotes, keyed by `${pin}:${method}` and held outside the component.
+ *
+ * They are cached here rather than only in state because losing one is not a
+ * cosmetic problem any more: nothing can be placed at a price the customer has
+ * not been shown, so a quote that vanishes leaves the Place Order button
+ * disabled with no way forward. `npm run audit:keyboard-checkout` reproduces
+ * exactly that — a quote lands, and by the payment step it is gone, leaving a
+ * signed-in customer with a saved address stuck on "Checking delivery…"
+ * indefinitely.
+ *
+ * A module-level map makes that class of failure impossible by construction:
+ * whatever unmounts, the answer for a given destination and method survives it.
+ * It is not a source of truth — `shipping_quotes` is, and `placeOrder` charges
+ * from that row — so a stale entry costs a re-quote at worst, and the entry is
+ * keyed by the exact pair it was fetched for, so it can never be shown against
+ * a different address.
+ */
+const QUOTE_CACHE = new Map<string, StoredQuoteView>();
+
+type StoredQuoteView = {
+  key: string;
+  feePaise: number;
+  codHandlingPaise: number;
+  advancePaise: number;
+  balanceDuePaise: number;
+  grandTotalPaise: number;
+  deliverable: boolean;
+  codAvailable: boolean;
+  estimatedDays: number | null;
+};
+
+/**
  * What the form hands the schema — the schema's own input type, with the two
  * fields a half-filled form is allowed to disagree with it about.
  */
@@ -166,15 +198,10 @@ export function CheckoutFlow({
    * `src/lib/shipping/quote-store.ts`. That is the whole reason the fee is
    * fetched here rather than estimated here.
    */
-  const [quoted, setQuoted] = useState<{
-    /** The (pin code, method) this answer belongs to. See `quote` below. */
-    key: string;
-    feePaise: number;
-    deliverable: boolean;
-    codAvailable: boolean;
-    estimatedDays: number | null;
-  } | null>(null);
+  const [quoted, setQuoted] = useState<StoredQuoteView | null>(null);
   const [quoting, setQuoting] = useState(false);
+  /** Set when the lookup itself failed, so "still checking" and "could not check" read differently. */
+  const [quoteFailed, setQuoteFailed] = useState(false);
 
   const postalCode = usingNewAddress
     ? draft.postalCode
@@ -191,42 +218,60 @@ export function CheckoutFlow({
    * to the *previous* address before correcting itself. Comparing keys during
    * render means a stale answer is simply never shown.
    */
-  const quote = quoted && quoted.key === quoteKey ? quoted : null;
+  const quote =
+    (quoted && quoted.key === quoteKey ? quoted : null) ??
+    QUOTE_CACHE.get(quoteKey) ??
+    null;
 
   useEffect(() => {
     if (!/^\d{6}$/.test(pin) || !method) return;
 
-    let cancelled = false;
-    // Debounced: a pin code is typed a digit at a time and only the sixth
-    // keystroke is worth a round trip. `setQuoting` lives inside the timer so
-    // nothing writes state synchronously from the effect body.
+    /**
+     * Debounced: a pin code is typed a digit at a time and only the sixth
+     * keystroke is worth a round trip. `setQuoting` lives inside the timer so
+     * nothing writes state synchronously from the effect body.
+     *
+     * **An answer that arrives is never thrown away.** This used to abandon the
+     * response when the effect had been cleaned up in the meantime, which meant
+     * a re-run could leave `quoting` stuck true and no quote at all — and once
+     * the Place Order button started gating on a quote, that stopped being
+     * cosmetic and became a checkout nobody could complete.
+     *
+     * Staleness is already handled where it belongs: the answer is stored under
+     * the `(pin, method)` it was fetched for, and the render only shows it when
+     * that key still matches what the customer is looking at. So a late reply
+     * for a previous address costs a map entry and is never displayed, and a
+     * reply for the *current* one is kept whatever the effect did in between.
+     */
     const timer = setTimeout(async () => {
-      if (cancelled) return;
       setQuoting(true);
       const result = await quoteShipping({
         postalCode: pin,
         paymentMethod: method,
       });
-      if (cancelled) return;
       setQuoting(false);
+      setQuoteFailed(!result.ok);
       // A failed quote leaves whatever is on screen alone. `placeOrder` prices
       // the order regardless, and a shipping row that empties itself mid
       // checkout reads as broken.
       if (result.ok) {
-        setQuoted({
+        const answer = {
           key: `${pin}:${method}`,
           feePaise: result.feePaise,
+          codHandlingPaise: result.codHandlingPaise,
+          advancePaise: result.advancePaise,
+          balanceDuePaise: result.balanceDuePaise,
+          grandTotalPaise: result.grandTotalPaise,
           deliverable: result.deliverable,
           codAvailable: result.codAvailable,
           estimatedDays: result.estimatedDays,
-        });
+        };
+        QUOTE_CACHE.set(answer.key, answer);
+        setQuoted(answer);
       }
     }, 400);
 
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
+    return () => clearTimeout(timer);
   }, [pin, method]);
 
   /**
@@ -244,15 +289,52 @@ export function CheckoutFlow({
     setMethod("razorpay");
   }
 
+  /**
+   * The totals as shown, taken from the quote wholesale.
+   *
+   * Every figure here was computed by `computeOrderTotals` on the server — the
+   * same function `placeOrder` calls — rather than reassembled from parts in
+   * the browser. The old code added the fee to the subtotal here, which made
+   * this a fourth place that money was calculated and a fourth chance to
+   * disagree with the other three.
+   */
   const shownTotals = quote
     ? {
         ...totals,
         shippingFee: quote.feePaise,
-        grandTotal: totals.subtotal - totals.discountTotal + quote.feePaise,
+        codHandlingFee: quote.codHandlingPaise,
+        grandTotal: quote.grandTotalPaise,
+        advanceAmount: quote.advancePaise,
+        balanceDueOnDelivery: quote.balanceDuePaise,
       }
     : totals;
 
-  /** COD is hidden where no courier will collect cash. */
+  /**
+   * **Nothing may be placed at a price the customer has not been shown.**
+   *
+   * Owner-reported: the Place Order button was always enabled, so an order
+   * could be submitted while the courier lookup was still in flight — the
+   * customer pressing pay without ever seeing what delivery costs. `placeOrder`
+   * would have priced it correctly and charged a number that had never been on
+   * screen, which is the one failure the stored-quote design exists to prevent.
+   *
+   * Note what this does *not* gate on. A Shiprocket outage still returns a
+   * quote — the fallback amount from settings — so the button stays live and
+   * the sale goes through. Disabled here means "we do not know yet", never "we
+   * could not reach the courier".
+   */
+  const pinComplete = /^\d{6}$/.test(pin);
+  /**
+   * No quote, no order — whether or not an address has been typed yet.
+   *
+   * Gating on `pinComplete` was not enough and produced the original bug in a
+   * second form: with the address step untouched there is no pin code, so
+   * nothing was "awaited", and the button sat enabled offering to charge the
+   * bag subtotal as an advance. Every order needs a destination and a courier
+   * rate, so the honest condition is simply whether we have one.
+   */
+  const awaitingQuote = !quote;
+
   const offeredMethods = methods.filter(
     (entry) => entry.method !== "cod" || quote?.codAvailable !== false,
   );
@@ -262,6 +344,28 @@ export function CheckoutFlow({
    * server. The server refuses it too — this is the courtesy, not the control.
    */
   const undeliverable = quote?.deliverable === false;
+
+  /**
+   * Why the order cannot be placed yet, or null when it can.
+   *
+   * A reason rather than a boolean, so the button, the screen reader and the
+   * sentence under it all say the same thing — and so the customer never has to
+   * press a dead control to find out what is wrong.
+   */
+  const blockedReason =
+    offeredMethods.length === 0
+      ? "No payment method is available right now."
+      : undeliverable
+        ? `No courier will carry to ${pin} from our store.`
+        : awaitingQuote
+          ? !pinComplete
+            ? "Add a delivery address so we can price delivery."
+            : // A lookup that has come back empty reads differently from one
+              // still in flight, and only the first is worth acting on.
+              quoteFailed && !quoting
+              ? `We could not price delivery to ${pin}. Change the pin code or try again in a moment — nothing has been placed.`
+              : `Checking what delivery costs to ${pin}…`
+          : null;
 
   // Focus the failure so a keyboard or screen-reader customer is not left at
   // the bottom of a form wondering what the button did. Focus rather than a
@@ -398,6 +502,23 @@ export function CheckoutFlow({
     }
 
     setErrors({});
+
+    /**
+     * Only now, after the form has had its say.
+     *
+     * The button is `aria-disabled` rather than `disabled` in these states, so
+     * it can still be pressed — and the order matters. Refusing *before*
+     * validation meant somebody who pressed pay on an empty form was told
+     * "add a delivery address so we can price delivery" and shown no field
+     * errors at all, when what they needed was the six boxes highlighted. The
+     * form answers first; the quote gate is the last thing between a complete
+     * form and an order.
+     *
+     * It refuses quietly because the reason is already on screen under the
+     * button and wired to it through `aria-describedby`; a second copy would
+     * just be noise.
+     */
+    if (blockedReason) return;
 
     /**
      * `line2` goes over the wire as `""`, never as `null`, and that is not a
@@ -623,10 +744,26 @@ export function CheckoutFlow({
     );
   }
 
-  const payLabel =
-    method === "razorpay"
-      ? `Pay ${formatPaise(totals.grandTotal)}`
-      : "Place order";
+  /**
+   * What the button promises to take.
+   *
+   * Two corrections here. It read `totals.grandTotal` — the *preview* total,
+   * before a courier rate was known — so the button could offer to charge one
+   * figure while the order charged another; it now reads the quoted totals like
+   * everything else. And "Place order" was the Pay-on-Delivery label back when
+   * that method took no money. It takes an advance now, so the button says so:
+   * the last thing a customer reads before pressing it should be the amount
+   * about to leave their account.
+   */
+  const payLabel = !quote
+    ? // Before a destination is known there is no figure that would be true,
+      // so the button asks for the missing thing instead of naming a number.
+      pinComplete
+      ? "Checking delivery…"
+      : "Enter a delivery address"
+    : method === "cod"
+      ? `Pay ${formatPaise(shownTotals.advanceAmount)} now`
+      : `Pay ${formatPaise(shownTotals.grandTotal)}`;
 
   return (
     <form onSubmit={submit} noValidate>
@@ -808,13 +945,42 @@ export function CheckoutFlow({
                       checked={method === entry.method}
                       onSelect={(value) => setMethod(value as PaymentMethod)}
                       title={entry.label}
-                      description={entry.description}
+                      /*
+                       * The exact figures, interpolated, once a quote exists.
+                       * The adapter's static copy cannot name them — the advance
+                       * for a ₹1,499 bag to one pin code is not the advance for
+                       * a ₹17,000 bag to another — and the brief is explicit
+                       * that a Pay-on-Delivery option must never be shown
+                       * without its advance disclosed.
+                       */
+                      description={
+                        entry.method === "cod" && quote
+                          ? `Pay ${formatPaise(quote.advancePaise)} now to confirm your order. ` +
+                            `Pay the remaining ${formatPaise(quote.balanceDuePaise)} in cash when it arrives.`
+                          : entry.description
+                      }
                       note={entry.note}
                     />
                   ))}
                 </div>
               </fieldset>
             )}
+
+            {/*
+              Disclosed where it is acted on, not buried in the footer.
+              The policy is narrow and a customer is entitled to know it before
+              they pay rather than after something arrives broken.
+            */}
+            <p className="text-muted-foreground mt-4 text-sm text-pretty">
+              Replacements are for shipping damage only, reported within 24
+              hours of delivery. We do not offer refunds or returns.{" "}
+              <Link
+                href="/page/returns"
+                className="underline underline-offset-2"
+              >
+                Read the policy
+              </Link>
+            </p>
 
             {errors["paymentMethod"] ? (
               <p className="text-destructive mt-2 text-xs text-pretty">
@@ -883,14 +1049,34 @@ export function CheckoutFlow({
             </ul>
 
             <div className="border-border mt-4 border-t pt-4">
-              <Totals totals={shownTotals} itemCount={itemCount} />
+              <Totals
+                totals={shownTotals}
+                itemCount={itemCount}
+                pendingDelivery={!quote}
+              />
             </div>
 
+            {/*
+              `aria-disabled`, not `disabled`, for everything except work that
+              is genuinely in flight.
+              
+              A `disabled` button is removed from the tab order entirely, so a
+              keyboard or screen-reader customer tabs past the one control they
+              are looking for and is told nothing about why they cannot finish.
+              `aria-disabled` keeps it reachable and announces it as
+              unavailable, and pressing it explains the reason rather than
+              doing nothing. `busy` keeps the real attribute: that state lasts
+              a moment and re-entry into it is meaningless.
+            */}
             <Button
               type="submit"
               size="lg"
-              className="mt-5 w-full"
-              disabled={busy || offeredMethods.length === 0 || undeliverable}
+              className="mt-5 w-full aria-disabled:opacity-60"
+              disabled={busy}
+              aria-disabled={blockedReason !== null || undefined}
+              aria-describedby={
+                blockedReason ? "checkout-submit-status" : undefined
+              }
             >
               {placing
                 ? "Placing your order…"
@@ -916,9 +1102,13 @@ export function CheckoutFlow({
                 </span>{" "}
                 after dispatch.
               </p>
-            ) : quoting ? (
-              <p className="text-muted-foreground mt-3 text-center text-sm">
-                Checking delivery to {pin}…
+            ) : blockedReason ? (
+              <p
+                id="checkout-submit-status"
+                role="status"
+                className="text-muted-foreground mt-3 text-center text-sm text-pretty"
+              >
+                {blockedReason}
               </p>
             ) : null}
 

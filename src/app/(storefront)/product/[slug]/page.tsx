@@ -14,6 +14,7 @@ import {
 } from "@/lib/queries/cached";
 import { getSavedProductIds } from "@/lib/queries/wishlist";
 import { setting, type ShippingSettings } from "@/lib/queries/content";
+import { DeliveryCheck } from "@/components/storefront/delivery-check";
 import { formatPaise } from "@/lib/format";
 import { SITE_URL } from "@/lib/env";
 import { staticParamsOr } from "@/lib/static-params";
@@ -78,7 +79,6 @@ export default async function ProductPage({
   ]);
   const saved = savedIds.has(product.id);
   const shipping = setting<ShippingSettings>(settings, "shipping", {
-    flat_fee_paise: 19900,
     free_above_paise: 249900,
     currency: "INR",
     regions: ["IN"],
@@ -170,9 +170,9 @@ export default async function ProductPage({
               />
               <dt className="font-medium">Delivery</dt>
               <dd className="text-muted-foreground col-start-2">
-                2–4 working days to metros. Free over{" "}
-                {formatPaise(shipping.free_above_paise)},{" "}
-                {formatPaise(shipping.flat_fee_paise)} below.
+                Free over {formatPaise(shipping.free_above_paise)}. Below that,
+                the courier&rsquo;s own rate to your pin code, shown at
+                checkout.
               </dd>
             </div>
             <div className="grid grid-cols-[1rem_1fr] gap-x-3">
@@ -200,6 +200,16 @@ export default async function ProductPage({
               </div>
             ) : null}
           </dl>
+
+          {/*
+            Outside the <dl>, deliberately. A definition list may contain only
+            dt/dd groups (optionally wrapped in a div), and axe is right to
+            reject a <form> smuggled in as one — I put it there first and the
+            audit caught it. Availability is not a term-and-definition anyway.
+          */}
+          <div className="mt-6">
+            <DeliveryCheck />
+          </div>
 
           {product.description ? (
             <div className="border-border mt-8 border-t pt-6">

@@ -69,6 +69,10 @@ type RawOrder = {
   shipping_fee: number;
   tax_total: number;
   grand_total: number;
+  cod_handling_fee: number;
+  advance_amount: number;
+  balance_due_on_delivery: number;
+  delivered_at: string | null;
   shipping_address: unknown;
   contact_email: string | null;
   contact_phone: string | null;
@@ -177,6 +181,7 @@ export async function getOrderForViewer(
   const query = supabase.from("orders").select(
     `id, order_number, status, payment_status, payment_method, placed_at,
        subtotal, discount_total, shipping_fee, tax_total, grand_total,
+       cod_handling_fee, advance_amount, balance_due_on_delivery, delivered_at,
        shipping_address, contact_email, contact_phone, customer_note, user_id,
        items:order_items (
          id, product_name, product_slug, size, color, sku,
@@ -206,9 +211,14 @@ export async function getOrderForViewer(
       subtotal: row.subtotal,
       discountTotal: row.discount_total,
       shippingFee: row.shipping_fee,
+      codHandlingFee: row.cod_handling_fee,
       taxTotal: row.tax_total,
       grandTotal: row.grand_total,
+      advanceAmount: row.advance_amount,
+      balanceDueOnDelivery: row.balance_due_on_delivery,
     },
+    deliveredAt: row.delivered_at,
+    tracking: await trackingFor(row.id),
     lines: toLines(row.items ?? []),
     shippingAddress: toShippingAddress(row.shipping_address),
     contactEmail: row.contact_email,
@@ -279,4 +289,37 @@ export async function listOrdersForCustomer(): Promise<OrderSummary[]> {
       .slice(0, 3)
       .map((item) => ({ url: item.image_url, alt: item.product_name })),
   }));
+}
+
+/**
+ * The parcel, as much of it as the customer owns.
+ *
+ * Read through the caller's own RLS client, so the `customers read their own
+ * shipment` policy is what decides visibility — a guest with the right token
+ * sees theirs, and nobody sees anybody else's. A second small query rather than
+ * a join, because most orders have no shipment and the join would widen every
+ * order read to pay for the few that do.
+ */
+async function trackingFor(orderId: string): Promise<OrderView["tracking"]> {
+  const supabase = await createClient();
+  const row = await maybeRow<{
+    awb_code: string | null;
+    courier_name: string | null;
+    status: string;
+    tracked_at: string | null;
+  }>(
+    "orders.tracking",
+    supabase
+      .from("shipments")
+      .select("awb_code, courier_name, status, tracked_at")
+      .eq("order_id", orderId)
+      .maybeSingle(),
+  );
+  if (!row) return null;
+  return {
+    awb: row.awb_code,
+    courier: row.courier_name,
+    status: row.status,
+    checkedAt: row.tracked_at,
+  };
 }

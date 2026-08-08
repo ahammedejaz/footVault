@@ -245,9 +245,13 @@ wrong.
 
 `pending` means the order row exists and **its stock is already claimed** — the
 decrement happens in the same transaction as the insert — but money has not
-settled. A COD order is `confirmed` the moment it is placed, because there is
-nothing to wait for. A Razorpay order stays `pending` until the webhook says
-captured, and the webhook is the only thing allowed to confirm it.
+settled. **Every order starts here now, whichever method paid for it.** Pay on
+Delivery used to be written `confirmed` at the moment it was placed, on the
+reasoning that there was nothing to wait for. There is now — it charges an
+advance online — and the old path is what produced `FV-2026-00488`: `confirmed`,
+`unpaid`, ₹1,719 of stock committed against a promise. The webhook is the only
+thing allowed to confirm an order, and it confirms nothing until a capture
+arrives.
 
 Nothing leaves `delivered` except into `returned`, and nothing leaves
 `cancelled` or `returned` at all. An order that has to come back from either is
@@ -280,10 +284,26 @@ snapshots, write the first history row, mark the cart `converted`. All of it or
 none of it. Split across two round trips, two customers buying the last pair
 both succeed and the shop owes a shoe it does not have.
 
-**No price is an argument.** The only money that goes in is the shipping
-*policy* — the flat fee and the free-above threshold, read from `site_settings`
-by the server — and it is applied to a subtotal the function computed itself. A
-price parameter is a price an attacker eventually supplies.
+**No item price is an argument, and the money that does go in cannot be
+aimed.** Every unit price is re-read from the catalog inside the function, under
+the lock; a price parameter is a price an attacker eventually supplies. Three
+figures are passed — the delivery total, the free-above threshold and the
+advance — and each is clamped rather than trusted: the COD handling fee is
+capped at the delivery charge it breaks down, and the advance is clamped into
+`[0, grand_total]`. The function is `SECURITY INVOKER` and executable by
+`service_role` only, so our own server is the only thing that can supply them.
+A customer who could reach it over PostgREST would otherwise pay ₹1 for a
+₹17,000 order.
+
+**The balance is derived, never passed**, and that is the difference between a
+checkout that survives a price change and one that does not. `grand_total` is
+recomputed under the row lock and can differ from what the checkout page saw; an
+advance and a balance supplied independently would then fail the
+`advance_amount + balance_due_on_delivery = grand_total` check constraint and
+take the whole checkout down with an opaque error at the pay button. Derived as
+`grand_total - advance`, the invariant holds by construction, the customer is
+charged online exactly what the modal showed them, and any drift lands where it
+belongs — on the amount the courier collects.
 
 The stock check lives in a *second* function, `public.assert_cart_stock()`,
 called from inside the first. The split is not architectural taste: the Supabase
@@ -337,12 +357,160 @@ from the repo. `select * from cron.job` is the only place it exists — see
 
 ---
 
+## Delivery pricing, and the money split
+
+### Rates come from the courier; thresholds come from the owner
+
+The instruction this section exists to enforce, given on 2026-08-08:
+
+> "Delivery charges should be picked up from shiprocket api we will not
+> hardcode anything. Min order value is decided by us or admin from admin
+> panel."
+
+So a **rate** is never written down in this codebase, and a **threshold** never
+lives anywhere but `site_settings`, where the owner can change it without asking
+an engineer to edit a constant.
+
+```
+src/lib/shipping/settings.ts   the numbers the shop owns — thresholds, not prices
+src/lib/shipping/fee.ts        the rules, priced from a live Shiprocket quote
+src/lib/payments/advance.ts    the advance/balance split. Pure, no I/O
+src/lib/orders/totals.ts       computeOrderTotals() — the single authority
+```
+
+| Key in `site_settings.shipping` | What it decides |
+|---|---|
+| `free_above_paise` | Prepaid delivery is free at or above this. `0` disables the free tier entirely |
+| `cod_enabled` | The master switch for Pay on Delivery, independent of PIN-code serviceability |
+| `cod_advance_mode` | `shipping_fee`, `fixed` or `greater_of` |
+| `cod_advance_minimum_paise` | The advance never falls below this. ₹99 |
+| `cod_advance_fixed_paise` | Used only when the mode is `fixed` |
+| `fallback_fee_paise` | Per method. Reached **only** when Shiprocket cannot be reached |
+
+`shipping.flat_fee_paise` was **deleted rather than corrected**, so it cannot
+come back. It was the cause of a real drift: the cart and the product page read
+the flat fee and showed ₹199 while checkout charged a live courier rate. Orders
+`FV-2026-00487` and `FV-2026-00488` carry identical ₹1,499 subtotals and
+different delivery — ₹199 against ₹220 — which is what the owner reported as
+"totals differ between COD and pay-online", and the checkout page displayed a
+third number again.
+
+`fallback_fee_paise` is not a price list and is not a rate. It is reached only
+when the courier API is unreachable, because refusing to sell during a courier
+outage is a worse outcome than mispricing a handful of orders. It is a setting
+rather than a constant so the owner can correct it without a deploy.
+
+### One function computes a total; everything else reads the answer
+
+`computeOrderTotals()` in `src/lib/orders/totals.ts` is that function, and the
+brief asked for it by name because three surfaces were computing delivery
+independently. **The rule it enforces: any difference between what two payment
+methods cost must be a named line item, never an artefact of two code paths that
+drifted.** There is exactly one such difference — `codHandlingFee` — and it is
+returned separately so it can be drawn as its own row.
+
+`shippingFee` is the **total** charged for delivery and `codHandlingFee` says
+how much of that total is the Pay-on-Delivery extra. Modelled as "total, of
+which" rather than as two addends on purpose: `grandTotal` arithmetic is
+identical to what it has always been, it matches `orders.shipping_fee`, and no
+read site has to remember to add two columns together. `Totals` is the only
+place that subtracts them apart.
+
+Nothing here trusts the browser. The subtotal and unit count are resolved from
+the caller's own cart under RLS; the postcode is the only customer-supplied
+input and it only selects a courier rate. A caller who could post their own
+subtotal could quote themselves free delivery.
+
+The rules `deliveryFee()` applies, all of them the owner's:
+
+| Case | Charged |
+|---|---|
+| Prepaid, at or above `free_above_paise` | Free — decided before the courier lookup, so an outage cannot cost a customer their free delivery |
+| Prepaid, below it | The cheapest courier's forward rate, excluding India Post, rounded up to the nearest ₹10 |
+| Pay on Delivery, any value | The forward rate **plus the return leg**. No free threshold at all |
+
+**Why Pay on Delivery has no free tier and pays for the return.** A COD parcel
+can be refused at the door; the shop then pays to send it, pays again to get it
+back, and collects nothing — measured against this account, ₹205 out and ₹142
+back on a single pair to Bengaluru. A free-delivery COD order that is rejected
+is a pure loss of roughly ₹350, and it is precisely the large orders a threshold
+would exempt that hurt most.
+
+**The total is rounded once and then split**, rather than each leg rounded
+separately. Rounding twice would quietly raise the price: ₹205 and ₹142 become
+₹210 and ₹150 — ₹360 instead of ₹350. The customer pays exactly what the old
+single-figure calculation charged, and the named line carries the remainder. A
+missing RTO figure from Shiprocket falls back to the forward cost rather than to
+zero, because a return whose cost is unknown is not a free return.
+
+### The advance, and what the courier collects
+
+Pay on Delivery charges an **advance** through Razorpay at checkout; the courier
+collects the **balance** in cash. `advanceFor()` decides the split and is
+deliberately pure — no settings reader, no cart, no order, three numbers in and
+two out — so the checkout UI can import the rule to *display* a split without
+dragging a Supabase client into the browser bundle, which is the failure CI
+already caught once. It is exhaustively tested by `npm run audit:totals`.
+
+The floor is applied twice, because the two floors answer different questions.
+The **configured minimum** is the shop's answer to "delivery came out free, so
+how much do we still take to secure the order?" — without it an order over the
+free-delivery threshold produces an advance of zero, which is the unsecured COD
+this model removes. **Razorpay's floor** of 100 paise is the provider's answer
+and is not negotiable: an order below it cannot be created at all, so an owner
+who types `0` into the minimum field gets a working checkout rather than a
+broken one.
+
+The advance is then clamped to the grand total. That is reachable rather than
+theoretical: a ₹150 pair of flip-flops to a remote PIN can genuinely cost more
+to send than it sells for, and an advance larger than the order would leave the
+courier a negative amount to "collect". The whole order is simply taken online
+and the courier collects nothing.
+
+Prepaid is expressed in the same two numbers rather than with a null — its
+advance is the whole order and its balance is zero. So every order in the system
+answers the same two questions, and one invariant covers both methods:
+
+```
+advance_amount + balance_due_on_delivery = grand_total
+```
+
+It is a **check constraint**, not a convention. A courier collecting the wrong
+amount is discovered by customer complaint, which is far too late and far too
+expensive.
+
+**Shiprocket is told the balance, never the total.** `createShipment` sets the
+COD collectable from `balance_due_on_delivery` and records what it sent in
+`shipments.cod_collectable_amount`, so a discrepancy is answerable from our own
+data rather than from the Shiprocket panel. Passing `grand_total` would have the
+courier collect, at the door, money the customer has already paid online — and
+we would find out one complaint at a time. It previously passed the goods
+subtotal, which was very nearly right by coincidence: under the default
+`greater_of` rule the advance *is* the whole delivery charge, so the balance
+equals the subtotal. Under a fixed ₹99 advance against a ₹220 delivery it
+under-collects by ₹121 on every parcel. `npm run audit:shipping` asserts the
+sent figure equals the balance and is neither the grand total nor the subtotal,
+against a fixture built so those three numbers differ.
+
+**Delivery time comes from the courier's own clock.** `fetchTracking` reads the
+delivery timestamp out of the tracking activity list, writes it once, and mirrors
+it onto the order. Shiprocket returns `YYYY-MM-DD HH:MM:SS` in IST with **no
+offset**, so `new Date()` on that string reads it as the server's local time —
+UTC on Vercel — putting delivery five and a half hours early and shortening
+every customer's replacement window by that much. The `+05:30` is therefore
+explicit. `now()` is used only when the courier gave nothing parseable, which
+errs towards the customer, and the value is never rewritten: a parcel is
+delivered once, and a later fetch that still says "Delivered" must not restart
+the clock.
+
+---
+
 ## Payments
 
 ### The seam, and why no provider type may cross it
 
 `src/lib/payments/types.ts` declares `PaymentAdapter` and nothing else declares
-a payment. Two methods ship — Cash on Delivery and Razorpay — and the order code
+a payment. Two methods ship — prepaid and Pay on Delivery — and the order code
 must not be able to tell which one it is holding. **A `RazorpayOrder` appearing
 in an order signature is the failure this interface exists to prevent**, because
 the moment one leaks the state machine starts growing per-provider branches and
@@ -357,13 +525,38 @@ The rule is enforced in three places at once:
 - Everything outside `src/lib/payments/` imports from `./index` or `./types`,
   never from `./razorpay`, so a second card provider is one entry in a record.
 
-`./index.ts` and `./config.ts` are `server-only`; `./types.ts` and `./cod.ts`
-deliberately are not. The checkout page needs `PAYMENT_METHODS` to render the
-choice and `PaymentInitiation` to drive the modal, and a Client Component that
-imports a type from a `server-only` module compiles fine today and pulls the
-Supabase server client into the browser bundle one edit later. So
+**`cod.ts` is no longer a method with no provider.** It used to return
+`kind: "none"` from `initiate()`, write the order `confirmed` with nothing paid,
+and fail `verifyClientCallback` closed because there was nothing to verify. It
+now delegates all four money-moving methods to `razorpayAdapter`, because the
+advance *is* a Razorpay payment. That is the whole design: there is no second
+payment path to keep in step, and every guarantee Phase 5 built — idempotency,
+webhook-as-truth, compare-and-swap on status, the unique constraint on
+`razorpay_order_id`, timing-safe signature comparison — applies to a
+Pay-on-Delivery order without a line of new code. What stays distinct is the
+*commercial* meaning: `orders.payment_method` is still `cod`, because what
+separates these orders is not who processes the card but whether a courier is
+collecting cash at the door.
+
+`./index.ts`, `./config.ts` and — **now** — `./cod.ts` are `server-only`;
+`./types.ts` deliberately is not. `cod.ts` was the exception so a render path
+could import its copy without crossing the server boundary; reaching Razorpay
+means reaching a key secret one import away, so that trade no longer holds and
+`PaymentMethodCopy` moved to `./types` for anything that needs the words. The
+checkout page needs `PAYMENT_METHODS` to render the choice and
+`PaymentInitiation` to drive the modal, and a Client Component that imports a
+type from a `server-only` module compiles fine today and pulls the Supabase
+server client into the browser bundle one edit later. So
 `availablePaymentMethods()` is called in a Server Component and its result —
 plain serialisable `PaymentMethodCopy` — is passed down as a prop.
+
+The label is part of the design, not decoration. **"Cash on Delivery" is gone**
+and the rename is not cosmetic: money is due before the parcel moves, and a
+label promising otherwise is the single most misleading string this site could
+carry. No surface shows a bare "COD" with the advance undisclosed. The rupee
+figures are deliberately absent from the static copy — the advance for a ₹1,499
+order to one PIN is not the advance for a ₹17,000 order to another — so the
+checkout renders them from the computed totals instead.
 
 **There is no `NEXT_PUBLIC_RAZORPAY_KEY_ID`, and there must not be one.** The key
 id is publishable, but a `NEXT_PUBLIC_` variable is inlined into every page in
@@ -455,8 +648,53 @@ Two deliberate asymmetries in `decide()`:
   paid at least what was owed and must not be stranded because we owe them
   change.
 
-`decide()` reads `orders.grand_total`, never `payments.amount`, so the check
-cannot be pointed at a figure that has drifted.
+**What "under-payment" means changed, and getting it wrong would have been
+silent and total.** `decide()` compares the capture against
+`orders.advance_amount` — what was owed *online* — rather than against
+`grand_total`. Under Pay on Delivery a capture is *supposed* to be short: ₹220
+against a ₹1,719 order. Measured against the total, the guard would have fired
+on the happy path and left **every** such order stranded `pending` until the
+abandonment sweep cancelled it, with the customer already charged and their
+order quietly gone. The fix is not a weaker guard but the right expectation —
+`advance_amount` equals `grand_total` for a prepaid order, so prepaid behaviour
+is unchanged, and anything short of the advance is still refused. It is read
+from the order row and never from `payments.amount`, so the check cannot be
+pointed at a figure that has drifted.
+
+---
+
+## Returns, and a window that has to be provable
+
+The policy is narrow and is stated the same way everywhere: **no refunds, no
+online returns.** A replacement is offered for damage in shipment only, reported
+within 24 hours of delivery, by contacting the shop. `site_settings.return_window_days`
+is `1`, and there is deliberately no self-service path to request a
+replacement — the decision is the shop's, taken by a human.
+
+What that policy needs from the architecture is a *timestamp it can be held to*.
+`orders.delivered_at` is it, taken from the courier's own tracking rather than
+from `now()`: tracking is fetched when somebody opens a page, which may be hours
+after the parcel arrived, so stamping `now()` would hand one customer a window
+running from whenever an admin happened to look and another two extra days.
+Without the column the policy is unenforceable and unprovable, which is to say
+decorative.
+
+`src/components/account/replacement-window.tsx` renders it as a **deadline
+rather than as legal text** — "contact us before 4:30 PM tomorrow", not "within
+24 hours of delivery", because the customer does not know when the courier
+marked it delivered and should not have to work it out. It ticks, because a page
+left open at 4:29 must not still promise time at 4:31, and it swaps to phone and
+WhatsApp buttons once the window lapses. If contacting the shop is the only way
+to claim a replacement, that contact cannot be a footer link.
+
+The clock is a `useSyncExternalStore`, not `setState` in an effect. Time is
+genuinely an external system, and the server snapshot comes out `null` — so a
+component whose whole job is to disagree with the past does not produce a
+hydration mismatch doing it.
+
+`returned` still does not restock, and `inventory_movement_reason` gained
+`replacement` so a replacement leaves a named row in the ledger rather than an
+`admin_adjustment` nobody can interpret later.
 
 ---
 
@@ -524,6 +762,9 @@ in CI, because it needs neither.
 | `bag-flow` | the whole purchase path in Chromium at 390px |
 | `signed-in` | the signed-in storefront: saved list, account menu, account cart |
 | `checkout-orders` | checkout, orders and idempotency against the live database |
+| `shipping` | Shiprocket against a mock: token cache and refresh, serviceability, the fee split, and that the COD collectable is the balance — 54 assertions |
+| `totals` | the advance rule and its invariants, in isolation — 15 assertions, no database and no browser |
+| `admin-security` | the admin surface: the role gate, the inventory ledger and reconciliation |
 | `security-checkout` | the adversarial regression suite, through the real webhook route over HTTP |
 | `lighthouse` | performance, on a local production build with device throttling |
 | `screenshots` | full-page captures at all six widths, for the eye |
@@ -538,6 +779,17 @@ posts to `/api/payments/razorpay/webhook` with a real HMAC it computes itself
 rather than by importing `verifyHexSignature`, so it proves the two idempotency
 schemes agree at the seam and that a test signing with the code under test
 cannot pass by agreeing with itself.
+
+`totals` is the one suite that needs nothing at all — no build, no browser, no
+database — because `advanceFor()` takes the rule and two amounts and returns the
+split. It is worth its own suite because every number in it is money a real
+customer either pays online or hands to a courier, and both failure modes are
+silent: an advance below Razorpay's 100-paise floor produces an order that
+cannot be paid for, and an advance and balance that do not sum to the total
+produce a courier collecting the wrong amount. `shipping` covers the half that
+needs the Shiprocket mock, including a COD fixture built so that the balance,
+the grand total and the goods subtotal are three different numbers — otherwise
+the assertion would pass whichever one the code read.
 
 ### The shape snapshot
 

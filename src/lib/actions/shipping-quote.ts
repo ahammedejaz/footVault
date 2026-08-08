@@ -5,7 +5,7 @@ import { z } from "zod";
 import { getCart } from "@/lib/queries/cart";
 import { callerIdentity, consumeRateLimit } from "@/lib/rate-limit";
 import { getCurrentUser } from "@/lib/auth";
-import { quoteFor } from "@/lib/shipping/quote-store";
+import { computeOrderTotals } from "@/lib/orders/totals";
 
 /**
  * What the checkout page asks when a customer finishes typing their pin code.
@@ -33,10 +33,27 @@ const schema = z.object({
   paymentMethod: z.enum(["cod", "razorpay"]),
 });
 
+/**
+ * The whole money picture for this bag, this destination and this method.
+ *
+ * It returns the totals rather than just a fee because the checkout page has to
+ * show three numbers a Pay-on-Delivery customer must not be able to
+ * misunderstand — pay now, pay on delivery, order total — and computing any of
+ * them in the browser would be a fourth place that money is calculated. The
+ * server sends the answer; the client renders it.
+ */
 export type ShippingQuoteResult =
   | {
       ok: true;
+      /** The total charged for delivery, including any COD handling. */
       feePaise: number;
+      /** The Pay-on-Delivery extra, as its own named line. 0 for prepaid. */
+      codHandlingPaise: number;
+      /** Charged online now. For prepaid this is the whole order. */
+      advancePaise: number;
+      /** Collected in cash by the courier. */
+      balanceDuePaise: number;
+      grandTotalPaise: number;
       /** False means no courier will carry there — checkout must refuse. */
       deliverable: boolean;
       codAvailable: boolean;
@@ -72,7 +89,7 @@ export async function quoteShipping(
   }
 
   try {
-    const quote = await quoteFor({
+    const totals = await computeOrderTotals({
       cartId: cart.id,
       postalCode: parsed.data.postalCode,
       method: parsed.data.paymentMethod,
@@ -82,11 +99,15 @@ export async function quoteShipping(
 
     return {
       ok: true,
-      feePaise: quote.feePaise,
-      deliverable: quote.deliverable,
-      codAvailable: quote.codAvailable,
-      estimatedDays: quote.estimatedDays,
-      live: quote.basis === "shiprocket",
+      feePaise: totals.shippingFee,
+      codHandlingPaise: totals.codHandlingFee,
+      advancePaise: totals.advanceAmount,
+      balanceDuePaise: totals.balanceDueOnDelivery,
+      grandTotalPaise: totals.grandTotal,
+      deliverable: totals.deliverable,
+      codAvailable: totals.codAvailable,
+      estimatedDays: totals.estimatedDays,
+      live: totals.basis === "shiprocket",
     };
   } catch (error) {
     // Never fatal to the page. The customer keeps the estimate already on

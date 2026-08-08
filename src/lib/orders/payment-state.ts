@@ -73,7 +73,9 @@ import { createAdminClient } from "@/lib/supabase/admin";
  * thirty minutes and skips any order with an authorised-but-unsettled payment.
  * See `supabase/migrations/20260808100000_release_abandoned_orders.sql`.
  *
- * **An underpaid capture does not confirm the order.** A payment bound to a
+ * **An underpaid capture does not confirm the order** — where "underpaid" means
+ * short of what was owed *online*, which for a Pay-on-Delivery order is the
+ * advance rather than the total. A payment bound to a
  * provider order we created cannot normally settle for a different amount, so a
  * mismatch is a bug in our plumbing, a partial-payment feature nobody asked
  * for, or a forged event — and in every one of those cases confirming an order
@@ -123,6 +125,8 @@ type OrderRow = {
   status: OrderStatus;
   payment_status: PaymentStatus;
   grand_total: number;
+  /** What was owed **online**. Equals `grand_total` for a prepaid order. */
+  advance_amount: number;
 };
 
 type Decision = {
@@ -150,11 +154,31 @@ function decide(
   outcome: PaymentOutcome,
   recordedAmount: number,
 ): Decision {
-  // The order's own total is the authority on what it costs. `payments.amount`
-  // is written from the same local in the same request today, so the two cannot
-  // disagree — but reading the order means a future change that let them drift
-  // could not silently point the mismatch check at the wrong number.
-  const expected = order.grand_total || recordedAmount;
+  /**
+   * What was owed **online** — which is not the same as what the order costs.
+   *
+   * This is the line that makes Pay on Delivery possible, and getting it wrong
+   * would have been silent and total. The guard below refuses any capture
+   * smaller than `expected`, on the sound reasoning that a payment bound to a
+   * provider order we created cannot settle for a different amount. Under the
+   * Pay-on-Delivery model a capture is *supposed* to be short — ₹220 against a
+   * ₹1,719 order — so comparing against `grand_total` would fire the guard on
+   * the happy path and leave **every** such order stranded `pending` until the
+   * abandonment sweep cancelled it. The customer would have been charged, and
+   * their order would have quietly disappeared.
+   *
+   * The fix is not to weaken the guard — it is to give it the right
+   * expectation. A Pay-on-Delivery capture of exactly the advance is full
+   * payment of everything owed online, and anything else is still refused.
+   *
+   * `advance_amount` is set on every new order (it equals `grand_total` for
+   * prepaid), so the fallbacks only cover rows written before this column
+   * existed. `payments.amount` is written from the same local in the same
+   * request, so the two cannot disagree today — but reading the order means a
+   * future change that let them drift could not silently point the mismatch
+   * check at the wrong number.
+   */
+  const expected = order.advance_amount || order.grand_total || recordedAmount;
   const captured = outcome.status === "captured";
   const shortfall = captured ? expected - outcome.amountPaise : 0;
 
@@ -397,7 +421,7 @@ export async function applyPaymentOutcome(input: {
         "applyPaymentOutcome.order",
         admin
           .from("orders")
-          .select("id, status, payment_status, grand_total")
+          .select("id, status, payment_status, grand_total, advance_amount")
           .eq("id", payment.order_id)
           .maybeSingle(),
       );

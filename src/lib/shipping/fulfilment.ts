@@ -79,6 +79,16 @@ export async function createShipment(
     subtotal: number;
     shippingFee: number;
     grandTotal: number;
+    /**
+     * What the courier must collect in cash. **Never `grandTotal`.**
+     *
+     * A Pay-on-Delivery customer has already paid the advance online. Handing
+     * Shiprocket the order total would have the courier collect that money a
+     * second time, at the door, from someone who can prove they already paid —
+     * and we would find out by complaint, one customer at a time. Zero for a
+     * prepaid order, which is what makes `payment_method: "Prepaid"` consistent.
+     */
+    balanceDueOnDelivery: number;
     address: {
       recipientName: string;
       phone: string;
@@ -178,7 +188,22 @@ export async function createShipment(
       selling_price: Math.round(item.unitPrice / 100),
     })),
     payment_method: order.paymentMethod === "cod" ? "COD" : "Prepaid",
-    sub_total: Math.round(order.subtotal / 100),
+    /**
+     * For a COD shipment Shiprocket treats `sub_total` as **the amount to
+     * collect**, so it is the outstanding balance and nothing else. For a
+     * prepaid shipment nothing is collected and the field is the declared value
+     * of the goods, which is the subtotal.
+     *
+     * This previously passed `order.subtotal` for both. That was very nearly
+     * right by coincidence — with the default `greater_of` rule the advance is
+     * the whole delivery charge, so the balance *is* the goods subtotal — and
+     * silently wrong under any other setting. With a fixed ₹99 advance against
+     * a ₹220 delivery it under-collects by ₹121 on every parcel.
+     */
+    sub_total:
+      order.paymentMethod === "cod"
+        ? Math.round(order.balanceDueOnDelivery / 100)
+        : Math.round(order.subtotal / 100),
     length: box?.length_cm ?? defaults.length_cm,
     breadth: box?.breadth_cm ?? defaults.breadth_cm,
     height: box?.height_cm ?? defaults.height_cm,
@@ -221,6 +246,11 @@ export async function createShipment(
       shiprocket_order_id: shiprocketOrderId,
       shipment_id: shipmentId,
       status: "created",
+      // Recorded so the admin can see what the courier was actually asked for,
+      // and so a discrepancy is answerable from our own data rather than from
+      // the Shiprocket panel. The column existed and nothing ever wrote it.
+      cod_collectable_amount:
+        order.paymentMethod === "cod" ? order.balanceDueOnDelivery : 0,
       raw_order: result.data as never,
     })
     .eq("order_id", order.id);
@@ -607,12 +637,38 @@ export async function fetchTracking(
   if (!result.ok) return { ok: false, message: result.message };
 
   const tracking = readTracking(result);
+
+  /**
+   * The delivery timestamp, captured once and never moved.
+   *
+   * The replacement window is 24 hours from delivery, so this is evidence
+   * rather than a display field: without it the policy is unenforceable and
+   * unprovable, and with the *wrong* value it is unfair in one direction or the
+   * other.
+   *
+   * **The courier's own timestamp is used, not `now()`.** Tracking is fetched
+   * when somebody opens the page, which may be many hours after the parcel
+   * arrived — stamping `now()` would hand that customer a window running from
+   * whenever an admin happened to look, and a customer whose page nobody opened
+   * for two days would get two extra days. Falling back to `now()` only when
+   * the courier gave us nothing parseable is the honest compromise, and it errs
+   * towards the customer.
+   *
+   * Written only when it is not already set. A parcel is delivered once; a
+   * later tracking fetch that still says "Delivered" must not restart the clock.
+   */
+  const deliveredAt =
+    shipment.delivered_at ?? deliveredTimestamp(tracking) ?? null;
+
   const { error } = await supabase
     .from("shipments")
     .update({
       status: tracking.status ?? shipment.status,
       raw_tracking: result.data as never,
       tracked_at: new Date().toISOString(),
+      ...(deliveredAt && !shipment.delivered_at
+        ? { delivered_at: deliveredAt }
+        : {}),
     })
     .eq("order_id", orderId);
 
@@ -621,7 +677,60 @@ export async function fetchTracking(
   if (error)
     console.error("[shiprocket] could not cache tracking:", error.message);
 
+  /**
+   * Mirrored onto the order so the account page can count down without joining
+   * to `shipments`, and so the window survives a shipment row being replaced.
+   */
+  if (deliveredAt && !shipment.delivered_at) {
+    const { error: orderError } = await supabase
+      .from("orders")
+      .update({ delivered_at: deliveredAt })
+      .eq("id", orderId)
+      .is("delivered_at", null);
+    if (orderError)
+      console.error(
+        "[shiprocket] could not record delivery on the order:",
+        orderError.message,
+      );
+  }
+
   return { ok: true, tracking };
+}
+
+/** Shiprocket's own words for "it arrived". Matched loosely; it varies by courier. */
+function isDelivered(status: string | null): boolean {
+  return status !== null && /delivered/i.test(status) && !/undelivered/i.test(status);
+}
+
+/**
+ * When the courier says it was delivered, as an ISO string.
+ *
+ * Returns null unless the shipment is actually delivered, so the caller can use
+ * a plain truthiness check. The activity list is searched for the delivery line
+ * because it carries a real timestamp; the summary status carries none.
+ *
+ * Shiprocket returns dates as `YYYY-MM-DD HH:MM:SS` in IST with no offset, and
+ * `new Date()` on that string would read it as the server's local time — which
+ * on Vercel is UTC, putting delivery five and a half hours early and shortening
+ * every customer's window by that much. The offset is therefore explicit.
+ */
+function deliveredTimestamp(tracking: TrackingSnapshot): string | null {
+  if (!isDelivered(tracking.status)) return null;
+
+  const line = tracking.activities.find(
+    (activity) => isDelivered(activity.activity) || isDelivered(activity.date),
+  );
+  const raw = line?.date;
+  if (raw) {
+    const withZone = /[zZ]|[+-]\d{2}:?\d{2}$/.test(raw)
+      ? raw
+      : `${raw.replace(" ", "T")}+05:30`;
+    const parsed = new Date(withZone);
+    if (!Number.isNaN(parsed.getTime())) return parsed.toISOString();
+  }
+  // Delivered, but the courier gave us no usable time. Better a window that
+  // starts late than no window at all.
+  return new Date().toISOString();
 }
 
 type TrackingResponse = {

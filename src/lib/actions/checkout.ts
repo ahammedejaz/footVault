@@ -25,7 +25,7 @@ import {
   type PaymentMethod,
 } from "@/lib/payments/types";
 import { callerIdentity, consumeRateLimit } from "@/lib/rate-limit";
-import { chargeableFee } from "@/lib/shipping/quote-store";
+import { computeOrderTotals } from "@/lib/orders/totals";
 import { getCart } from "@/lib/queries/cart";
 import { maybeRow } from "@/lib/queries/run";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -62,9 +62,10 @@ import { checkoutSchema } from "@/lib/validations/checkout";
  * `site_settings.shipping` used to be read at this point and passed to
  * `create_order_with_stock` as a flat fee plus a threshold. Since the fee now
  * depends on the destination and the payment method, that decision moved
- * wholesale into `src/lib/shipping/fee.ts`, and this action reads the answer
- * from `shipping_quotes` — the same row the checkout page showed the customer.
- * Two places computing a price is two prices.
+ * wholesale into `computeOrderTotals` — the one function every surface calls,
+ * which reads the answer from `shipping_quotes`, the same row the checkout page
+ * showed the customer. Two places computing a price is two prices, and this
+ * codebase had three.
  */
 
 const GENERIC =
@@ -186,7 +187,7 @@ export async function placeOrder(
      * number in it.
      */
     const units = cart.lines.reduce((total, line) => total + line.quantity, 0);
-    const quote = await chargeableFee({
+    const totals = await computeOrderTotals({
       cartId: cart.id,
       postalCode: address.postalCode,
       method,
@@ -205,7 +206,7 @@ export async function placeOrder(
      * ambiguous empty response all leave it true, so a courier problem still
      * cannot block a sale.
      */
-    if (!quote.deliverable) {
+    if (!totals.deliverable) {
       return {
         ok: false,
         reason: "undeliverable",
@@ -222,7 +223,7 @@ export async function placeOrder(
      * direction as everything else: only an explicit "couriers serve this pin
      * code and none of them will collect cash" declines.
      */
-    if (method === "cod" && !quote.codAvailable) {
+    if (method === "cod" && !totals.codAvailable) {
       return {
         ok: false,
         reason: "payment_unavailable",
@@ -232,11 +233,19 @@ export async function placeOrder(
       };
     }
 
-    // COD is confirmed the moment it is placed: there is nothing to wait for.
-    // Razorpay stays pending until the webhook says captured, and the webhook
-    // is the only thing allowed to confirm it.
-    const initialStatus: OrderStatus =
-      method === "cod" ? "confirmed" : "pending";
+    /**
+     * **Nothing is confirmed before money moves — for either method.**
+     *
+     * Pay on Delivery used to be written `confirmed` the moment it was placed,
+     * on the reasoning that there was nothing to wait for. There is now: the
+     * advance. An order that committed stock against a promise is exactly what
+     * this phase removes, so both methods start `pending` and the webhook is
+     * the only thing allowed to confirm either of them. That also means the
+     * existing abandoned-order sweep covers Pay on Delivery for free — a
+     * customer who dismisses the modal releases their stock in thirty minutes
+     * rather than holding it forever.
+     */
+    const initialStatus: OrderStatus = "pending";
     const paymentStatus: PaymentStatus = "unpaid";
 
     const admin = createAdminClient();
@@ -252,8 +261,14 @@ export async function placeOrder(
         // rule and the rounding, so the fee is passed as-is and the function is
         // told there is no threshold left to apply. Passing both would let the
         // database silently zero a COD fee that deliberately has no free tier.
-        p_shipping_flat_fee: quote.feePaise,
+        p_shipping_flat_fee: totals.shippingFee,
         p_free_shipping_above: null,
+        // The advance is passed; the balance is *derived* inside the function
+        // as grand_total - advance. Two independently-supplied numbers would
+        // break the check constraint the moment a price moved under the row
+        // lock, and take the checkout down with an opaque error.
+        p_advance_amount: totals.advanceAmount,
+        p_cod_handling_fee: totals.codHandlingFee,
         p_user_id: user?.id,
         p_guest_token: guestToken ?? undefined,
         p_contact_email: data.contactEmail ?? user?.email ?? undefined,
@@ -305,6 +320,19 @@ export async function placeOrder(
 
     const grandTotal = assertPaise("checkout.grandTotal", order.grand_total);
 
+    /**
+     * **What is charged online is the advance, not the total.**
+     *
+     * Read back from the row the database wrote rather than reused from
+     * `totals`, because the function recomputed the subtotal under a row lock
+     * and clamped the advance into it. For a prepaid order the two are the same
+     * number; for Pay on Delivery this is the whole point of the feature, and
+     * charging `grandTotal` here would take the goods value online and then ask
+     * the courier to collect it a second time.
+     */
+    const advance = assertPaise("checkout.advance", order.advance_amount);
+    const balanceDue = assertPaise("checkout.balanceDue", order.balance_due);
+
     // Best-effort, and after the order exists rather than before: a book that
     // fails to save must not cost somebody their checkout.
     if (data.saveAddress && user) {
@@ -324,7 +352,7 @@ export async function placeOrder(
       method,
       orderId: order.order_id,
       orderNumber: order.order_number,
-      amountPaise: grandTotal,
+      amountPaise: advance,
       name: address.recipientName,
       email: data.contactEmail ?? user?.email ?? null,
       phone: data.contactPhone ?? address.phone,
@@ -346,7 +374,7 @@ export async function placeOrder(
       const recorded = await recordProviderOrder(
         order.order_id,
         initiation,
-        grandTotal,
+        advance,
       );
       if (!recorded) {
         // Without this row the webhook cannot find the order, so a captured
@@ -379,7 +407,10 @@ export async function placeOrder(
       })),
       subtotal: order.subtotal,
       shippingFee: order.shipping_fee,
+      codHandlingFee: totals.codHandlingFee,
       grandTotal,
+      advanceAmount: advance,
+      balanceDueOnDelivery: balanceDue,
       address,
     });
 
@@ -681,7 +712,10 @@ async function confirmByEmail(args: {
   }[];
   subtotal: number;
   shippingFee: number;
+  codHandlingFee: number;
   grandTotal: number;
+  advanceAmount: number;
+  balanceDueOnDelivery: number;
   address: ShippingAddress;
 }): Promise<void> {
   if (!args.to) {
@@ -704,8 +738,11 @@ async function confirmByEmail(args: {
       subtotal: args.subtotal,
       discountTotal: 0,
       shippingFee: args.shippingFee,
+      codHandlingFee: args.codHandlingFee,
       taxTotal: 0,
       grandTotal: args.grandTotal,
+      advanceAmount: args.advanceAmount,
+      balanceDueOnDelivery: args.balanceDueOnDelivery,
     },
     shippingAddress: args.address,
   });

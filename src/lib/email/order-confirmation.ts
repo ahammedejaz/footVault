@@ -33,10 +33,42 @@ export type OrderConfirmationInput = {
 };
 
 /** What each method means for what happens next, in the customer's words. */
-function whatHappensNext(method: PaymentMethod): string {
-  return method === "cod"
-    ? "You will pay the delivery agent in cash when your order arrives. Nothing has been charged yet."
-    : "We have received your payment. If your bank shows it as pending, it will settle shortly and your order is already confirmed.";
+/**
+ * What happens next, in the customer's own terms.
+ *
+ * The Pay-on-Delivery sentence used to read "Nothing has been charged yet." It
+ * is now the opposite of the truth — an advance was charged before the order
+ * was confirmed — and a confirmation email is exactly where a customer decides
+ * what they think they owe. Somebody who believes they have paid nothing, or
+ * who believes the advance covered the whole order, refuses the parcel at the
+ * door; and a refused parcel costs the shop both legs of the delivery.
+ *
+ * So both figures are named, in words, in the one line most likely to be read.
+ */
+function whatHappensNext(method: PaymentMethod, totals: OrderTotals): string {
+  if (method !== "cod") {
+    return "We have received your payment. If your bank shows it as pending, it will settle shortly and your order is already confirmed.";
+  }
+  return (
+    `You have paid ${formatPaise(totals.advanceAmount)} now. ` +
+    `The courier will collect the remaining ${formatPaise(totals.balanceDueOnDelivery)} ` +
+    "in cash when your order arrives — please have the exact amount ready."
+  );
+}
+
+/**
+ * The replacement policy, at the moment it becomes relevant.
+ *
+ * The window runs from delivery and is short, so a customer who only reads this
+ * email still has to be told — burying it on a policy page and calling it
+ * disclosed is not disclosure.
+ */
+function replacementPolicy(orderUrl: string): string {
+  const base = orderUrl.split("/order/")[0] ?? "";
+  return (
+    "Damaged in transit? Contact us within 24 hours of delivery and we will " +
+    `replace it. We do not offer refunds or returns. ${base}/page/returns`
+  );
 }
 
 function addressLines(address: ShippingAddress): string[] {
@@ -72,6 +104,15 @@ export function buildOrderConfirmationEmail(
     )
     .join("\n");
 
+  /**
+   * `shippingFee` is the whole delivery charge; `codHandlingFee` is the part of
+   * it that is the Pay-on-Delivery extra. Drawn apart here for the same reason
+   * the checkout does it — the owner's condition for keeping the surcharge was
+   * that a customer can see it as its own line.
+   */
+  const forwardLeg = input.totals.shippingFee - input.totals.codHandlingFee;
+  const paysOnDelivery = input.totals.balanceDueOnDelivery > 0;
+
   const text = [
     `Thanks, ${input.customerName}. Your order is placed.`,
     "",
@@ -82,14 +123,26 @@ export function buildOrderConfirmationEmail(
     itemText,
     "",
     `Subtotal        ${formatPaise(input.totals.subtotal)}`,
-    `Shipping        ${input.totals.shippingFee === 0 ? "Free" : formatPaise(input.totals.shippingFee)}`,
-    `Total           ${formatPaise(input.totals.grandTotal)}`,
+    `Shipping        ${forwardLeg === 0 ? "Free" : formatPaise(forwardLeg)}`,
+    ...(input.totals.codHandlingFee > 0
+      ? [`Pay-on-delivery fee  ${formatPaise(input.totals.codHandlingFee)}`]
+      : []),
+    `Order total     ${formatPaise(input.totals.grandTotal)}`,
+    ...(paysOnDelivery
+      ? [
+          "",
+          `Paid now              ${formatPaise(input.totals.advanceAmount)}`,
+          `To pay on delivery    ${formatPaise(input.totals.balanceDueOnDelivery)}`,
+        ]
+      : []),
     "Prices include tax.",
     "",
     "Shipping to",
     ...address.map((line) => `  ${line}`),
     "",
-    whatHappensNext(input.paymentMethod),
+    whatHappensNext(input.paymentMethod, input.totals),
+    "",
+    replacementPolicy(orderUrl),
     "",
     "— Foot Vault",
   ].join("\n");
@@ -108,11 +161,19 @@ export function buildOrderConfirmationEmail(
     `<a href="${orderUrl}">${orderUrl}</a></p>`,
     `<table style="border-collapse:collapse">${itemHtml}`,
     `<tr><td style="padding-top:12px">Subtotal</td><td style="padding-top:12px;text-align:right">${formatPaise(input.totals.subtotal)}</td></tr>`,
-    `<tr><td>Shipping</td><td style="text-align:right">${input.totals.shippingFee === 0 ? "Free" : formatPaise(input.totals.shippingFee)}</td></tr>`,
-    `<tr><td><strong>Total</strong></td><td style="text-align:right"><strong>${formatPaise(input.totals.grandTotal)}</strong></td></tr>`,
+    `<tr><td>Shipping</td><td style="text-align:right">${forwardLeg === 0 ? "Free" : formatPaise(forwardLeg)}</td></tr>`,
+    input.totals.codHandlingFee > 0
+      ? `<tr><td>Pay-on-delivery fee</td><td style="text-align:right">${formatPaise(input.totals.codHandlingFee)}</td></tr>`
+      : "",
+    `<tr><td><strong>Order total</strong></td><td style="text-align:right"><strong>${formatPaise(input.totals.grandTotal)}</strong></td></tr>`,
+    paysOnDelivery
+      ? `<tr><td style="padding-top:12px">Paid now</td><td style="padding-top:12px;text-align:right">${formatPaise(input.totals.advanceAmount)}</td></tr>` +
+        `<tr><td><strong>To pay in cash on delivery</strong></td><td style="text-align:right"><strong>${formatPaise(input.totals.balanceDueOnDelivery)}</strong></td></tr>`
+      : "",
     `</table><p style="font-size:12px">Prices include tax.</p>`,
     `<p><strong>Shipping to</strong><br>${address.map(escapeHtml).join("<br>")}</p>`,
-    `<p>${escapeHtml(whatHappensNext(input.paymentMethod))}</p>`,
+    `<p>${escapeHtml(whatHappensNext(input.paymentMethod, input.totals))}</p>`,
+    `<p style="font-size:12px">${escapeHtml(replacementPolicy(orderUrl))}</p>`,
     `<p>— Foot Vault</p>`,
   ].join("");
 

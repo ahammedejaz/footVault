@@ -239,9 +239,23 @@ export type OrderLine = {
 export type OrderTotals = {
   subtotal: number;
   discountTotal: number;
+  /** The **total** charged for delivery, including any COD handling. */
   shippingFee: number;
+  /**
+   * How much of `shippingFee` is the Pay-on-Delivery extra — the return leg the
+   * shop pays when a parcel is refused at the door. Always 0 for prepaid.
+   *
+   * Carried separately because the owner's condition for keeping the surcharge
+   * was that a customer can see it as its own line rather than as an
+   * unexplained gap between a prepaid total and a COD one.
+   */
+  codHandlingFee: number;
   taxTotal: number;
   grandTotal: number;
+  /** Charged online through Razorpay. Equals `grandTotal` for a prepaid order. */
+  advanceAmount: number;
+  /** Collected in cash by the courier. This is what Shiprocket is told to collect. */
+  balanceDueOnDelivery: number;
 };
 
 export type OrderTimelineEntry = {
@@ -260,6 +274,26 @@ export type OrderView = {
   paymentMethod: PaymentMethod;
   placedAt: string;
   totals: OrderTotals;
+  /**
+   * When the courier recorded delivery, or null. The 24-hour window for
+   * reporting shipment damage runs from this instant.
+   */
+  deliveredAt: string | null;
+  /**
+   * Where the parcel is, once there is one. Null before a shipment exists.
+   *
+   * Deliberately the small subset a customer can act on — the tracking number
+   * they will paste into the courier's own site, who is carrying it, and what
+   * it last said. Not the raw Shiprocket payload, which carries pickup
+   * addresses and internal ids that are the shop's business.
+   */
+  tracking: {
+    awb: string | null;
+    courier: string | null;
+    status: string;
+    /** When the courier last told us anything. */
+    checkedAt: string | null;
+  } | null;
   lines: OrderLine[];
   shippingAddress: ShippingAddress;
   contactEmail: string | null;

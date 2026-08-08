@@ -7,6 +7,7 @@ import {
   type ListParams,
 } from "@/lib/admin/list-params";
 import { maybeRow, pagedRows, rows } from "@/lib/queries/run";
+import { getShipment, type ShipmentRow } from "@/lib/shipping/fulfilment";
 import { createClient } from "@/lib/supabase/server";
 
 /** Columns the orders table may be ordered by. Allow-listed; see list-params. */
@@ -25,6 +26,10 @@ export type AdminOrderRow = {
   paymentStatus: PaymentStatus;
   paymentMethod: string;
   grandTotal: number;
+  /** Already paid online. Shown on the row so the owner can scan it. */
+  advanceAmount: number;
+  /** What the courier collects at the door. */
+  balanceDueOnDelivery: number;
   placedAt: string;
   recipient: string;
   contactEmail: string | null;
@@ -53,6 +58,7 @@ export async function listOrders(
     // type — given `string` it gives up and returns GenericStringError, which
     // surfaces as an unreadable assignability error a long way from here.
     `id, order_number, status, payment_status, payment_method, grand_total,
+       advance_amount, balance_due_on_delivery,
        placed_at, contact_email, contact_phone, shipping_address`,
     { count: "exact" },
   );
@@ -85,6 +91,8 @@ export async function listOrders(
     payment_status: PaymentStatus;
     payment_method: string;
     grand_total: number;
+    advance_amount: number;
+    balance_due_on_delivery: number;
     placed_at: string;
     contact_email: string | null;
     contact_phone: string | null;
@@ -145,6 +153,8 @@ export async function listOrders(
       paymentStatus: row.payment_status,
       paymentMethod: row.payment_method,
       grandTotal: row.grand_total,
+      advanceAmount: row.advance_amount,
+      balanceDueOnDelivery: row.balance_due_on_delivery,
       placedAt: row.placed_at,
       recipient: addressField(row.shipping_address, "recipientName") ?? "—",
       contactEmail: row.contact_email,
@@ -166,6 +176,14 @@ export type AdminOrderDetail = {
   shippingFee: number;
   discountTotal: number;
   grandTotal: number;
+  /** The Pay-on-Delivery extra, as its own line. 0 for prepaid. */
+  codHandlingFee: number;
+  /** Already paid online. */
+  advanceAmount: number;
+  /** What the courier is collecting. The owner needs this at a glance. */
+  balanceDueOnDelivery: number;
+  cashCollectedAt: string | null;
+  deliveredAt: string | null;
   placedAt: string;
   customerNote: string | null;
   contactEmail: string | null;
@@ -228,6 +246,11 @@ export async function getOrderDetail(
     shipping_fee: number;
     discount_total: number;
     grand_total: number;
+    cod_handling_fee: number;
+    advance_amount: number;
+    balance_due_on_delivery: number;
+    cash_collected_at: string | null;
+    delivered_at: string | null;
     placed_at: string;
     customer_note: string | null;
     contact_email: string | null;
@@ -242,7 +265,9 @@ export async function getOrderDetail(
       .from("orders")
       .select(
         `id, order_number, status, payment_status, payment_method, subtotal, shipping_fee,
-         discount_total, grand_total, placed_at, customer_note, contact_email, contact_phone,
+         discount_total, grand_total, cod_handling_fee, advance_amount,
+         balance_due_on_delivery, cash_collected_at, delivered_at,
+         placed_at, customer_note, contact_email, contact_phone,
          user_id, guest_token, stock_restored_at, shipping_address`,
       )
       .eq("id", orderId)
@@ -321,6 +346,11 @@ export async function getOrderDetail(
     shippingFee: order.shipping_fee,
     discountTotal: order.discount_total,
     grandTotal: order.grand_total,
+    codHandlingFee: order.cod_handling_fee,
+    advanceAmount: order.advance_amount,
+    balanceDueOnDelivery: order.balance_due_on_delivery,
+    cashCollectedAt: order.cash_collected_at,
+    deliveredAt: order.delivered_at,
     placedAt: order.placed_at,
     customerNote: order.customer_note,
     contactEmail: order.contact_email,
@@ -384,4 +414,19 @@ function addressField(address: unknown, key: string): string | null {
     if (typeof value === "string" && value.trim()) return value;
   }
   return null;
+}
+
+/**
+ * The shipment for an order, or null before one has been created.
+ *
+ * Read through the caller's own RLS client rather than the service role: an
+ * admin reading is still a read, and the shipments policies already say who may
+ * see one. `getShipment` in `src/lib/shipping/fulfilment.ts` is the single
+ * definition of that query, so the fulfilment steps and this page can never
+ * disagree about what a shipment is.
+ */
+export async function getOrderShipment(
+  orderId: string,
+): Promise<ShipmentRow | null> {
+  return getShipment(await createClient(), orderId);
 }

@@ -133,6 +133,11 @@ async function main() {
   const admin = adminClient();
   const placedOrders: string[] = [];
   const stockToRestore = new Map<string, number>();
+  /**
+   * When this run began, so its own ledger artefacts can be told apart from a
+   * genuine one. See the cleanup at the end of the file.
+   */
+  const runStartedAt = new Date().toISOString();
   const sweepCarts: string[] = [];
   const madeEventIds: string[] = [];
   const madeAccounts: { id: string; email: string }[] = [];
@@ -1095,6 +1100,33 @@ async function main() {
     if (restored)
       console.error(`  cleanup: could not restore stock for ${variantId}`);
   }
+
+  /**
+   * Remove the ledger rows this suite's own fixtures produced.
+   *
+   * Setting a variant's stock directly — which is how the contested-stock case
+   * is set up — trips the movement trigger with none of the `app.inventory_*`
+   * GUCs set, so it records `unspecified` with no actor and no reference. The
+   * quantity is restored above, so nothing *drifts*; but `reconcile_inventory()`
+   * reports unattributed rows as well as drift, and it is right to. The result
+   * was that running this suite made `audit:admin` fail afterwards — and since
+   * `npm run audit` runs checkout before admin, the full suite could never go
+   * green.
+   *
+   * Deleting them is the honest repair rather than loosening the check: they are
+   * artefacts of the harness, not of the shop, and the ledger is left exactly as
+   * this run found it. Scoped to rows created since this run began, so a real
+   * unattributed movement from before it is never touched.
+   */
+  const artefacts = (
+    await admin
+      .from("inventory_movements")
+      .delete()
+      .eq("reason", "unspecified")
+      .gte("created_at", runStartedAt)
+  ).error;
+  if (artefacts)
+    console.error(`  cleanup: could not clear fixture movements: ${artefacts.message}`);
   const carts = (
     await admin
       .from("carts")
