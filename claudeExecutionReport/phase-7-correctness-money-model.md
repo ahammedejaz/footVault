@@ -651,11 +651,21 @@ the shop *shipping* rather than stopping it *selling*.
 
 ## 10 · Blocked on the owner
 
-Nothing is blocked. Two things want a decision rather than an engineer:
+Nothing is blocked. One thing wants a decision rather than an engineer, and one
+has since been answered:
 
-1. **`site_settings.payment_methods` is `{"cod": true, "online": false}`.** If
-   that is read anywhere as a master switch, prepaid is off. I did not trace it,
-   and it is worth ten minutes of somebody's time before launch.
+1. ~~**`site_settings.payment_methods` is `{"cod": true, "online": false}`.**~~
+   **Traced and closed.** It is read by **nothing**. The key appears only in
+   `scripts/seed-data.ts` and `supabase/seed.sql`; no application code looks at
+   it. Availability comes from `ADAPTERS[method].isAvailable()`, which asks
+   whether the Razorpay keys are configured. Prepaid is not switched off.
+
+   It is still worth deleting, and that is a finding rather than a task for
+   today: a settings row that *reads* like a master switch and is wired to
+   nothing is the shape of a future incident — somebody turns online payments
+   "off" before a holiday and the shop keeps taking them. Left in place for now
+   because changing seed data on the way to a merge is churn; noted so the next
+   phase removes it rather than rediscovers it.
 2. **The seven new settings are seeded with defaults I chose**, and the brief is
    explicit that the values are the owner's: ₹999 minimum order for Pay on
    Delivery, ₹500 cap on the deposit, GST absorbed, no prepaid discount, live
