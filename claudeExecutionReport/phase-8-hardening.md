@@ -206,3 +206,22 @@ $ git check-ignore -v backup-20260809-0200-data.sql .env.staging
 No feature code. No migrations. No production configuration changed. The only edits are `docs/admin-guide.md` §12 and `.gitignore`.
 
 **Blocking Batch 1:** the live webhook (Check 1). Everything else is ready.
+
+---
+
+# Owner input prepared in parallel · product weights (Batch 2)
+
+`docs/product-weights.csv` — all 35 products, pre-filled with slug, brand, name and type. Four columns to complete per row.
+
+All 35 slugs were checked against the database before the file was written: 35 template rows, 35 live products, 35 matched, none missing on either side. A typo would have silently dropped a product to the 900 g default, which is the exact failure this file exists to prevent.
+
+**What the four numbers mean — this is where it goes wrong.**
+
+- `weight_grams` — one pair **in its box, as it ships**. Not the shoe on its own. A shoebox is typically 700–1,100 g all in.
+- `length_cm`, `breadth_cm`, `height_cm` — **the box**, not the shoe.
+
+Dimensions are not optional padding. Couriers bill the **greater** of actual and volumetric weight, and Shiprocket computes volumetric as `L × B × H ÷ 5000` kg. A 34×22×12 cm box is 1.8 kg volumetric against maybe 0.9 kg actual — so the box, not the shoe, is what the customer is charged for. Leaving dimensions blank means the shop is quoted on actual weight and billed on volumetric, and eats the difference on every bulky pair.
+
+Blank rows are accepted and fall through to the 900 g default, so this can be filled in a batch at a time. But **a row with a weight and no dimensions is the worst case** — it is confidently wrong rather than obviously absent.
+
+Numbers only, no units in the cells. Return the file as-is.
