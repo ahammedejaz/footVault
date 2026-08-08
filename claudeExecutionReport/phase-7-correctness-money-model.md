@@ -529,6 +529,15 @@ the shop *shipping* rather than stopping it *selling*.
   error would show the whole catalogue as sold out rather than throwing.
   `rows()` raises on error, so this should not be reachable — but "should not be
   reachable" is doing work in that sentence.
+- **`npm run audit:shipping` deletes the cached Shiprocket token** as part of
+  its teardown — "cleared the cached token — the next real request logs in
+  fresh". That is deliberate and it was harmless while nothing had ever logged
+  in. It is not harmless now: every run of that suite costs a real login on the
+  next request that needs a token, against an account whose API user has already
+  been locked out once by repeated logins. Restored by hand after this run. It
+  should either stop clearing the row or clear a *test* provider key, and it is
+  a one-line change I did not make because the suite was in the adversarial
+  pass's hands at the time.
 - **The latch's fifteen minutes is a guess.** Long enough to stop a
   misconfigured deploy burning an afternoon of login attempts, short enough that
   a corrected password is picked up without anybody knowing the latch exists. It
@@ -596,5 +605,14 @@ sql   20260808140000_quote_freeze_columns.sql
 ```
 
 `npm run typecheck`, `npm run lint`, `npm run build` and `npm run shapes` are
-green. `npm run audit:totals` is 42/42 and `npm run audit:literals` is clean on
-both halves. The browser suites were not run — §7.
+green. Measured on this branch:
+
+```
+npm run shapes            16 cached shapes unchanged at v3
+npm run audit:totals      42 passed, 0 failed
+npm run audit:literals    135 files, 7 CMS pages, the announcement — clean
+npm run audit:shipping    57 passed, 0 failed   (against the mock)
+```
+
+The browser suites — `overflow`, `a11y`, `keyboard`, `lighthouse`, the six-width
+sweep and the real tablet — were **not run**. §7.
