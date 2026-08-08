@@ -243,8 +243,28 @@ The announcement's dismissal key is hashed from the **raw** text, before
 substitution, so nudging the threshold does not bring a dismissed strip back for
 everybody.
 
-`npm run audit:literals` is the gate, and it checks both halves — code *and*
-owner-edited content. **135 files, 7 CMS pages and the announcement: clean.**
+`npm run audit:literals` is the gate — and **the first version of it had a hole,
+and the hole let a live one through.**
+
+It read `pages.body` and `site_settings.announcement` and nothing else, so it
+passed while the homepage trust strip went on promising *"Free shipping over
+₹2,499"* from `homepage_sections.payload`. Found by curling the deployed site
+after the merge, not by the gate. A gate that checks the two places you already
+fixed is a gate that proves you fixed them.
+
+It now reads **every owner-editable text column in the database**, jsonb
+included — `pages`, `site_settings`, `homepage_sections` (title, subtitle *and*
+payload), `banners`, `collections`. Anything a shopkeeper can type is checked,
+because anything a shopkeeper can type can carry a threshold.
+
+One figure is allowed, by name and with its reason recorded in the gate:
+**"Under ₹2,000"**, a price-band rail. The number *is* the rail — it defines
+which shoes are on it and the owner curates the contents by hand — so nothing in
+`site_settings` could resolve it. Matched on the whole trimmed text, never as a
+substring, so "Free shipping over ₹2,000" is still caught.
+
+The seed was resynced from the live pages as well; without that a fresh
+environment would have reintroduced ₹2,499 and the pre-Phase-7 money-model copy.
 
 Both policy pages were also rewritten, because they described the *old* money
 model. `/page/returns` said the Pay-on-Delivery charge is never refundable; under

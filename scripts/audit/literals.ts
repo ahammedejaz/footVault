@@ -15,6 +15,16 @@
  *      and the shipping page both said "₹2,499" while
  *      `site_settings.shipping.free_above_paise` said ₹6,499. Not stale docs —
  *      a promise on every page of the storefront that checkout does not keep.
+ *   3. Phase 7, **after this gate was written and passing**. It survived in a
+ *      third place: `homepage_sections.payload`, the trust strip under the
+ *      homepage hero, still promising "Free shipping over ₹2,499". Found by
+ *      curling the deployed site rather than by the gate, because the gate read
+ *      `pages.body` and the announcement and nothing else. A gate that checks
+ *      the two places you already fixed is a gate that proves you fixed them.
+ *
+ * So the rule now reads **every owner-editable text column in the database**,
+ * including inside jsonb, and the list is derived rather than typed: adding a
+ * content table without adding it here is the way this happens a fourth time.
  *
  * So this checks two surfaces, because the second is where it went the moment
  * the first was closed:
@@ -59,6 +69,26 @@ const CURRENCY = /₹\s*\d/;
 
 /** `Rs 199`, `Rs. 2,499` — the other way the same mistake is spelled. */
 const RUPEES_WORD = /\bRs\.?\s*\d/;
+
+/**
+ * Figures that are the **name of a thing** rather than a promise about a
+ * transaction.
+ *
+ * "Under ₹2,000" is a price-band rail. The number *is* the rail — it defines
+ * which shoes are on it, the owner curates the contents by hand, and changing
+ * the number without changing the contents would be the mistake rather than the
+ * fix. Nothing in `site_settings` could resolve it, because it is not a setting.
+ *
+ * Matched on the **whole trimmed text**, never as a substring, so "Free
+ * shipping over ₹2,000" is still caught. Each entry carries its reason: an
+ * allowlist without one is a list of things somebody once found annoying.
+ */
+const ALLOWED = new Map<string, string>([
+  [
+    "Under ₹2,000",
+    "a price-band rail name — the figure defines the rail, it does not promise anything",
+  ],
+]);
 
 /* --------------------------------------------------------------- 1 · code -- */
 
@@ -127,45 +157,83 @@ async function checkContent(): Promise<void> {
       auth: { persistSession: false },
     });
   
-    const { data: pages, error: pagesError } = await supabase
-      .from("pages")
-      .select("slug, body");
-    if (pagesError) {
-      report("pages", `could not be read: ${pagesError.message}`);
-    } else {
-      for (const page of pages ?? []) {
-        const body = String(page.body ?? "");
-        for (const [index, line] of body.split("\n").entries()) {
-          if (CURRENCY.test(line) || RUPEES_WORD.test(line)) {
-            report(
-              `pages.body (${page.slug}) line ${index + 1}`,
-              line.trim().slice(0, 110),
-            );
-          }
+    /**
+   * Every owner-editable surface, and what a figure in it would be promising.
+   *
+   * `collections.name` is deliberately **not** here. "Under ₹2,000" is a
+   * price-band rail — the number is the definition of the rail rather than a
+   * promise about delivery, and tokenising it would be nonsense. Every other
+   * text a shopkeeper can type is checked, because every other one can carry a
+   * threshold.
+   */
+  const surfaces: {
+    table: string;
+    columns: string[];
+    label: (row: Record<string, unknown>) => string;
+  }[] = [
+    { table: "pages", columns: ["title", "body"], label: (r) => String(r.slug) },
+    {
+      table: "site_settings",
+      columns: ["value"],
+      label: (r) => String(r.key),
+    },
+    {
+      table: "homepage_sections",
+      columns: ["title", "subtitle", "payload"],
+      label: (r) => String(r.section_type),
+    },
+    {
+      table: "banners",
+      columns: ["headline", "subtext", "cta_label"],
+      label: (r) => String(r.placement ?? r.id),
+    },
+    {
+      table: "collections",
+      columns: ["description"],
+      label: (r) => String(r.slug),
+    },
+  ];
+
+  for (const surface of surfaces) {
+    const { data, error } = await supabase
+      .from(surface.table)
+      .select("*")
+      .overrideTypes<Record<string, unknown>[]>();
+
+    if (error) {
+      report(surface.table, `could not be read: ${error.message}`);
+      continue;
+    }
+
+    for (const row of data ?? []) {
+      for (const column of surface.columns) {
+        const value = row[column];
+        if (value === null || value === undefined) continue;
+        // jsonb arrives as an object; stringifying is exactly right, because a
+        // figure buried three levels down is still on the page.
+        const text =
+          typeof value === "string" ? value : JSON.stringify(value);
+        if (!CURRENCY.test(text) && !RUPEES_WORD.test(text)) continue;
+        if (ALLOWED.has(text.trim())) {
+          console.log(
+            `  \x1b[90m·\x1b[0m ${surface.table}.${column}: "${text.trim()}" — ` +
+              `allowed: ${ALLOWED.get(text.trim())}`,
+          );
+          continue;
         }
-      }
-      console.log(
-        `  \x1b[32m✓\x1b[0m ${pages?.length ?? 0} CMS pages checked`,
-      );
-    }
-  
-    const { data: settings, error: settingsError } = await supabase
-      .from("site_settings")
-      .select("key, value")
-      .eq("key", "announcement")
-      .maybeSingle();
-    if (settingsError) {
-      report("site_settings.announcement", settingsError.message);
-    } else {
-      const text = String(
-        (settings?.value as { text?: unknown } | null)?.text ?? "",
-      );
-      if (CURRENCY.test(text) || RUPEES_WORD.test(text)) {
-        report("site_settings.announcement", text.slice(0, 110));
-      } else {
-        console.log("  \x1b[32m✓\x1b[0m the announcement strip carries no figure");
+        const line =
+          text.split("\n").find((l) => CURRENCY.test(l) || RUPEES_WORD.test(l)) ??
+          text;
+        report(
+          `${surface.table}.${column} (${surface.label(row)})`,
+          line.trim().slice(0, 110),
+        );
       }
     }
+    console.log(
+      `  \x1b[32m✓\x1b[0m ${surface.table}: ${(data ?? []).length} rows, ${surface.columns.join(", ")}`,
+    );
+  }
   }
 }
 
