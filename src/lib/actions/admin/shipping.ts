@@ -89,6 +89,8 @@ export async function createShipmentForOrder(
         subtotal: order.subtotal,
         shippingFee: order.shippingFee,
         grandTotal: order.grandTotal,
+        // What the courier collects. Never the total — see createShipment.
+        balanceDueOnDelivery: order.balanceDueOnDelivery,
         address: order.address,
         contactEmail: order.contactEmail,
         items: order.items.map((item) => ({

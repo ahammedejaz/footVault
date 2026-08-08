@@ -79,6 +79,16 @@ export async function createShipment(
     subtotal: number;
     shippingFee: number;
     grandTotal: number;
+    /**
+     * What the courier must collect in cash. **Never `grandTotal`.**
+     *
+     * A Pay-on-Delivery customer has already paid the advance online. Handing
+     * Shiprocket the order total would have the courier collect that money a
+     * second time, at the door, from someone who can prove they already paid —
+     * and we would find out by complaint, one customer at a time. Zero for a
+     * prepaid order, which is what makes `payment_method: "Prepaid"` consistent.
+     */
+    balanceDueOnDelivery: number;
     address: {
       recipientName: string;
       phone: string;
@@ -178,7 +188,22 @@ export async function createShipment(
       selling_price: Math.round(item.unitPrice / 100),
     })),
     payment_method: order.paymentMethod === "cod" ? "COD" : "Prepaid",
-    sub_total: Math.round(order.subtotal / 100),
+    /**
+     * For a COD shipment Shiprocket treats `sub_total` as **the amount to
+     * collect**, so it is the outstanding balance and nothing else. For a
+     * prepaid shipment nothing is collected and the field is the declared value
+     * of the goods, which is the subtotal.
+     *
+     * This previously passed `order.subtotal` for both. That was very nearly
+     * right by coincidence — with the default `greater_of` rule the advance is
+     * the whole delivery charge, so the balance *is* the goods subtotal — and
+     * silently wrong under any other setting. With a fixed ₹99 advance against
+     * a ₹220 delivery it under-collects by ₹121 on every parcel.
+     */
+    sub_total:
+      order.paymentMethod === "cod"
+        ? Math.round(order.balanceDueOnDelivery / 100)
+        : Math.round(order.subtotal / 100),
     length: box?.length_cm ?? defaults.length_cm,
     breadth: box?.breadth_cm ?? defaults.breadth_cm,
     height: box?.height_cm ?? defaults.height_cm,
@@ -221,6 +246,11 @@ export async function createShipment(
       shiprocket_order_id: shiprocketOrderId,
       shipment_id: shipmentId,
       status: "created",
+      // Recorded so the admin can see what the courier was actually asked for,
+      // and so a discrepancy is answerable from our own data rather than from
+      // the Shiprocket panel. The column existed and nothing ever wrote it.
+      cod_collectable_amount:
+        order.paymentMethod === "cod" ? order.balanceDueOnDelivery : 0,
       raw_order: result.data as never,
     })
     .eq("order_id", order.id);

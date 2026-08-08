@@ -638,6 +638,7 @@ export type Database = {
       };
       orders: {
         Row: {
+          delivered_at: string | null;
           advance_amount: number;
           balance_due_on_delivery: number;
           cash_collected_at: string | null;
@@ -668,6 +669,7 @@ export type Database = {
           user_id: string | null;
         };
         Insert: {
+          delivered_at?: string | null;
           advance_amount?: number;
           balance_due_on_delivery?: number;
           cash_collected_at?: string | null;
@@ -698,6 +700,7 @@ export type Database = {
           user_id?: string | null;
         };
         Update: {
+          delivered_at?: string | null;
           advance_amount?: number;
           balance_due_on_delivery?: number;
           cash_collected_at?: string | null;
@@ -1193,6 +1196,8 @@ export type Database = {
       };
       shipments: {
         Row: {
+          cod_collectable_amount: number;
+          delivered_at: string | null;
           awb_code: string | null;
           courier_id: string | null;
           courier_name: string | null;
@@ -1215,6 +1220,8 @@ export type Database = {
           updated_at: string;
         };
         Insert: {
+          cod_collectable_amount?: number;
+          delivered_at?: string | null;
           awb_code?: string | null;
           courier_id?: string | null;
           courier_name?: string | null;
@@ -1237,6 +1244,8 @@ export type Database = {
           updated_at?: string;
         };
         Update: {
+          cod_collectable_amount?: number;
+          delivered_at?: string | null;
           awb_code?: string | null;
           courier_id?: string | null;
           courier_name?: string | null;
