@@ -295,6 +295,76 @@ reviews described the symptom correctly and the obvious fix for it is wrong.
 
 ---
 
+## 5a · A2 — the two pages never disagreed about a number
+
+Measured before touching anything. Live: **0** products where the all-variant
+and active-variant stock sums differ, **0** inactive variants anywhere, and
+`reconcile_inventory()` returns **0** drifting rows. Both pages read
+`stock_quantity` live, both exclude deleted products, and neither number is
+wrong. So the brief's three hypotheses — a cached aggregate, inactive variants,
+a ledger-derived count — are all ruled out by the data.
+
+What is wrong is that they show **different things under an identical heading**.
+`/admin/products` says "In stock" and means *every size of this product added
+together*. `/admin/inventory` says "In stock" and means *this one size*. And
+`/admin/inventory` defaults to `stock_quantity` **ascending**, so it opens
+showing the 33 sizes the shop has none of — a screen full of zeros, next to a
+products page showing totals in the dozens.
+
+- The columns are now **"All sizes"** and **"This size"**, each with the other
+  page named in its title text.
+- Both pages say what they are *for and when to use them*, not what their
+  controls do: *"For changing how many of a size you have, use Inventory"* /
+  *"Come here after a delivery, a stocktake, or when a number looks wrong…
+  Opens with the sizes you have none of, at the top."*
+- **`reconcile_inventory()` is now on the screen.** It has been detectable since
+  Phase 5 and was reachable only from a test script — the one screen that could
+  act on the answer never asked the question. Drift renders as a banner naming
+  each SKU, its count and what its history says. A *failed* check renders as a
+  failed check, not as a clean one.
+
+## 5b · A4 — the comment was the bug
+
+"Make main" reported no change and up/down errored. The action's own doc comment
+said *"exactly one primary is not enforced by a constraint, so it has to be
+enforced by construction"*, and on that basis `resequence()` wrote the whole
+gallery back as **one multi-row upsert** with `is_primary: index === 0`.
+
+It *is* enforced by a constraint, and has been since Phase 1:
+`product_images_one_primary_idx`, `unique (product_id) where is_primary`.
+Postgres checks a unique index per row as it is written, not at statement end,
+so the instant the new primary landed before the old one had been cleared there
+were two rows with `is_primary` and the whole write was rejected `23505`.
+Reproduced against the live database:
+
+```
+set new primary, then clear old  -> BLOCKED 23505 product_images_one_primary_idx
+clear all, then set new primary  -> succeeded
+```
+
+`public.reorder_product_images(product_id, ids[])` clears every primary and then
+writes the new positions, in one transaction. It has to be a function rather
+than two PostgREST calls: in between, the gallery has no primary at all, and a
+failure in that gap leaves a product whose card on `/shop` has no photograph to
+lead with. It validates that the id list is the *whole* gallery and that every
+id belongs to the product — a partial list would leave omitted rows carrying
+stale positions, which is how two photographs come to share `sort_order 3`. A
+mismatch raises `GLRYM` and the admin is told the gallery changed under them,
+which is a different sentence from "that did not save" and is the one that is
+true.
+
+Verified end to end against live data: make-main on the second photograph moves
+it to position 0, exactly one primary throughout, the storefront's own ordering
+(`is_primary desc, sort_order`) then leads with it, and restoring the original
+order works. `revalidateCatalog(slug)` was already called after a reorder, so
+the storefront reflects it immediately — that half was never broken.
+
+**Still not done:** the reorder is Up/Down/Make-main buttons, not drag and drop.
+The brief asked for drag-and-drop with optimistic feedback. The existing buttons
+are keyboard-operable and announce themselves, which a drag list is not without
+a second hidden interface; I did not build the drag layer, and that is a gap
+against the brief rather than a considered substitution.
+
 ## 6 · Part B — the money model
 
 ### The rule
@@ -399,8 +469,6 @@ reached.
 
 | Brief | State | Why it matters |
 |---|---|---|
-| **A2** — `/admin/products` vs `/admin/inventory` | **Not done.** Diagnosis only | Probable cause found and not confirmed: `/admin/inventory` defaults to `stock_quantity` **ascending**, so it opens showing the 33 zero-stock variants first, while `/admin/products` shows a per-product total sorted by `updated_at`. Both read `stock_quantity` live and both exclude deleted products; live data shows **zero** numeric disagreement (0 products where all-variant and active-variant sums differ; 0 inactive variants; `reconcile_inventory()` returns 0 drifting rows). So this is very likely a *presentation* problem, not a data one — but that was not proven by putting both pages side by side, and it should be |
-| **A4** — image reorder / "Make main" | **Not done** | Not diagnosed at all |
 | **A5** — checkout address book | **Not done.** `src/components/checkout/address-book.tsx` and `address.ts` exist from Phase 6; the edit/delete/set-default operations and the re-quote on address change were not built or verified |
 | **A8** — forged Server Action harness | Handed to the adversarial pass. **See `phase-7-security-review.md`; if it is not there, this gate is unmet** |
 | **B3** — refunds | **Schema only.** `refunds` table, enums, indexes and RLS are live and in migrations. No Razorpay Refunds API call, no `refund.processed`/`refund.failed` webhook handling, no policy table in code, no admin UI, no idempotency test. **The brief's refund matrix — including the shop-error row it calls "not optional" — is not implemented** |
@@ -509,6 +577,9 @@ new   scripts/audit/literals.ts              npm run audit:literals
       src/lib/supabase/proxy.ts              F-2
       src/lib/orders/types.ts                `returning`
       src/lib/actions/admin/settings.ts      seven owner settings
+      src/lib/actions/admin/products.ts      resequence -> reorder_product_images
+      src/lib/queries/admin/inventory.ts     inventoryDrift()
+      src/app/admin/{inventory,products}/page.tsx
       src/components/admin/settings/settings-forms.tsx
       src/components/storefront/{size-selector,product-viewer,add-to-bag,announcement-bar}.tsx
       src/components/checkout/totals.tsx     the prepaid discount, as its own line
@@ -520,6 +591,7 @@ sql   20260808140000_quote_freeze_columns.sql
       20260808140300_refunds_table.sql
       20260808140400_refunds_rls.sql
       20260808140500_create_order_records_quote_and_discount.sql
+      20260808140600_reorder_product_images.sql
 ```
 
 `npm run typecheck`, `npm run lint`, `npm run build` and `npm run shapes` are
