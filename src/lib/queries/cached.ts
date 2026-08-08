@@ -64,13 +64,29 @@ export const CHROME_CACHE_TAG = "chrome";
  * always should have been.
  */
 /*
- * v3 — Phase 7. The stored shape did not change; what is *done* with it did.
- * The cache now holds catalog content whose stock figures are deliberately
- * stale, with availability read live and laid over the top, so an entry written
- * by v2 code is read by a different contract. Bumped rather than argued about:
- * one cold hour is cheaper than reasoning about whether it was safe.
+ * v4 — Phase 7, and the second bump is the useful one.
+ *
+ * v3: the stored shape did not change; what is *done* with it did. Availability
+ * is read live and laid over cached content, so an entry written by v2 code is
+ * read by a different contract.
+ *
+ * v4: the same again, for *content*. `homepage_sections.payload` used to hold
+ * finished prose and now holds prose with `{{tokens}}` in it, which the renderer
+ * substitutes. An entry written before that change is a literal — and the one
+ * that was live said "Free shipping over ₹2,499" while the shop charged to
+ * ₹6,499.
+ *
+ * **This is also the only lever that clears it.** `unstable_cache` on Vercel is
+ * backed by the Data Cache, a runtime store shared across deployments: shipping
+ * new code does not flush it, and `vercel --prod --force` with the build cache
+ * disabled does not either. Both were tried against the live project and the
+ * stale entry survived both. But `SHAPE_VERSION` is one of the cache **key
+ * parts**, so changing it does not clear anything — it asks a different
+ * question, and every binding misses on the next request. That is what this
+ * mechanism was built for, and it is the reason it is a version rather than a
+ * comment.
  */
-const SHAPE_VERSION = "v3";
+const SHAPE_VERSION = "v4";
 
 const ONE_HOUR = 3600;
 const options = { revalidate: ONE_HOUR, tags: [CHROME_CACHE_TAG] };
