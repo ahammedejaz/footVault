@@ -41,7 +41,10 @@ export function MobileNavPanel({
   const setOpen = onOpenChange;
   const pathname = usePathname();
   const here = useCurrentPath();
-  const swipe = useSwipeDismiss({ side: "left", onDismiss: () => setOpen(false) });
+  const swipe = useSwipeDismiss({
+    side: "left",
+    onDismiss: () => setOpen(false),
+  });
 
   // Navigating closes the drawer. Reset during render, not in an effect: an
   // effect would show the drawer over the new page for a frame first.
@@ -74,8 +77,8 @@ export function MobileNavPanel({
             </Dialog.Close>
           </div>
           <Dialog.Description className="sr-only">
-            Every department, with its shelves underneath. Swipe left, tap outside or
-            press Escape to close.
+            Every department, with its shelves underneath. Swipe left, tap
+            outside or press Escape to close.
           </Dialog.Description>
 
           <nav
@@ -111,7 +114,10 @@ export function MobileNavPanel({
           */}
           <div className="border-border border-t px-4 py-4">
             {user ? (
-              <form action={signOut} className="flex items-center justify-between gap-3">
+              <form
+                action={signOut}
+                className="flex items-center justify-between gap-3"
+              >
                 <input type="hidden" name="next" value={here} readOnly />
                 <span className="min-w-0">
                   <span className="text-muted-foreground block font-mono text-xs tracking-[0.06em] uppercase">
@@ -121,7 +127,12 @@ export function MobileNavPanel({
                     {user.name ?? user.email}
                   </span>
                 </span>
-                <Button type="submit" variant="outline" size="sm" className="shrink-0">
+                <Button
+                  type="submit"
+                  variant="outline"
+                  size="sm"
+                  className="shrink-0"
+                >
                   <LogOut aria-hidden />
                   Sign out
                 </Button>

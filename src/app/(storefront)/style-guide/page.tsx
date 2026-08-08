@@ -32,14 +32,46 @@ const SWATCHES = [
 ];
 
 const SCALE = [
-  { cls: "text-6xl font-display font-extrabold tracking-[-0.03em]", label: "64 / 60 · Archivo 800 Expanded", sample: "Hero" },
-  { cls: "text-4xl font-display font-extrabold tracking-[-0.02em]", label: "40 / 44 · Archivo 800 Expanded", sample: "Section head" },
-  { cls: "text-2xl font-display font-bold tracking-[-0.02em]", label: "28 / 34 · Archivo 700 Expanded", sample: "Product title" },
-  { cls: "text-lg font-semibold", label: "20 / 28 · Instrument Sans 600", sample: "Sub-head" },
-  { cls: "text-base", label: "16 / 26 · Instrument Sans 400", sample: "Body copy default" },
-  { cls: "text-base font-mono font-medium", label: "16 / 16 · Geist Mono 500", sample: formatRupees(8995) },
-  { cls: "text-sm", label: "14 / 22 · Instrument Sans 400", sample: "Card title, labels" },
-  { cls: "text-xs font-mono tracking-[0.06em]", label: "12 / 16 · Geist Mono 400 +0.06em", sample: "SIZE RUN · SKU · ORDER NO." },
+  {
+    cls: "text-6xl font-display font-extrabold tracking-[-0.03em]",
+    label: "64 / 60 · Archivo 800 Expanded",
+    sample: "Hero",
+  },
+  {
+    cls: "text-4xl font-display font-extrabold tracking-[-0.02em]",
+    label: "40 / 44 · Archivo 800 Expanded",
+    sample: "Section head",
+  },
+  {
+    cls: "text-2xl font-display font-bold tracking-[-0.02em]",
+    label: "28 / 34 · Archivo 700 Expanded",
+    sample: "Product title",
+  },
+  {
+    cls: "text-lg font-semibold",
+    label: "20 / 28 · Instrument Sans 600",
+    sample: "Sub-head",
+  },
+  {
+    cls: "text-base",
+    label: "16 / 26 · Instrument Sans 400",
+    sample: "Body copy default",
+  },
+  {
+    cls: "text-base font-mono font-medium",
+    label: "16 / 16 · Geist Mono 500",
+    sample: formatRupees(8995),
+  },
+  {
+    cls: "text-sm",
+    label: "14 / 22 · Instrument Sans 400",
+    sample: "Card title, labels",
+  },
+  {
+    cls: "text-xs font-mono tracking-[0.06em]",
+    label: "12 / 16 · Geist Mono 400 +0.06em",
+    sample: "SIZE RUN · SKU · ORDER NO.",
+  },
 ];
 
 /**
@@ -99,7 +131,9 @@ export default function StyleGuidePage() {
               <p className="text-muted-foreground font-mono text-xs">
                 {swatch.hex}
               </p>
-              <p className="text-muted-foreground mt-1 text-sm">{swatch.note}</p>
+              <p className="text-muted-foreground mt-1 text-sm">
+                {swatch.note}
+              </p>
             </li>
           ))}
         </ul>
@@ -188,8 +222,14 @@ export default function StyleGuidePage() {
       </Section>
 
       <Section title="Navy surface">
-        <div data-surface="ink" className="relative isolate overflow-hidden rounded-lg p-8">
-          <div className="tread-texture pointer-events-none absolute inset-0" aria-hidden="true" />
+        <div
+          data-surface="ink"
+          className="relative isolate overflow-hidden rounded-lg p-8"
+        >
+          <div
+            className="tread-texture pointer-events-none absolute inset-0"
+            aria-hidden="true"
+          />
           <div className="relative flex flex-wrap items-center gap-6">
             <TreadMark className="text-orange h-16 w-8" />
             <div>
@@ -197,7 +237,8 @@ export default function StyleGuidePage() {
                 Same primitives, inverted
               </p>
               <p className="text-muted-foreground mt-2 max-w-md text-sm">
-                Anything inside <code className="font-mono">data-surface=&quot;ink&quot;</code>{" "}
+                Anything inside{" "}
+                <code className="font-mono">data-surface=&quot;ink&quot;</code>{" "}
                 remaps the semantic tokens, so components restyle themselves
                 without per-component overrides.
               </p>

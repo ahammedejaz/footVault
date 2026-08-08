@@ -28,7 +28,10 @@ export const AUDIT_ROUTES: readonly AuditRoute[] = [
   // and a sixty-six character name.
   { path: "/product/adidas-gazelle-indoor-womens", name: "product-sold-out" },
   { path: "/product/woodland-nubuck-trek-mens", name: "product-one-size" },
-  { path: "/product/asics-gel-kayano-31-wide-womens", name: "product-long-name" },
+  {
+    path: "/product/asics-gel-kayano-31-wide-womens",
+    name: "product-long-name",
+  },
   { path: "/search?q=nkie+pegasis", name: "search-typo" },
   { path: "/search?q=zzzzz", name: "search-empty" },
   { path: "/search", name: "search-landing" },

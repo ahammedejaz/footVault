@@ -78,7 +78,9 @@ export async function getBanner(placement: string): Promise<Banner | null> {
     `getBanner(${placement})`,
     db()
       .from("banners")
-      .select("image_url, mobile_image_url, headline, subtext, cta_label, cta_href")
+      .select(
+        "image_url, mobile_image_url, headline, subtext, cta_label, cta_href",
+      )
       .eq("placement", placement)
       .eq("is_active", true)
       .or(`starts_at.is.null,starts_at.lte.${now}`)
@@ -144,7 +146,11 @@ export type PageLink = { slug: string; title: string };
 export async function listPages(): Promise<PageLink[]> {
   return rows<PageLink>(
     "listPages",
-    db().from("pages").select("slug, title").eq("is_published", true).order("title"),
+    db()
+      .from("pages")
+      .select("slug, title")
+      .eq("is_published", true)
+      .order("title"),
   );
 }
 
@@ -169,7 +175,11 @@ export async function getSiteSettings(): Promise<SiteSettings> {
   return Object.fromEntries(data.map((row) => [row.key, row.value]));
 }
 
-export function setting<T>(settings: SiteSettings, key: string, fallback: T): T {
+export function setting<T>(
+  settings: SiteSettings,
+  key: string,
+  fallback: T,
+): T {
   const value = settings[key];
   return value === undefined || value === null ? fallback : (value as T);
 }

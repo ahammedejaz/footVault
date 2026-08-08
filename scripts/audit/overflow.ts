@@ -51,7 +51,9 @@ let interactiveSeen = 0;
 async function visit(page: Page, path: string) {
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      return await page.goto(`${BASE_URL}${path}`, { waitUntil: "domcontentloaded" });
+      return await page.goto(`${BASE_URL}${path}`, {
+        waitUntil: "domcontentloaded",
+      });
     } catch (error) {
       if (attempt === 1) throw error;
       await page.goto("about:blank");
@@ -66,7 +68,9 @@ async function waitForReady(page: Page, path: string) {
     .first()
     .waitFor({ state: "visible", timeout: 15_000 })
     .catch(() => {
-      throw new Error(`${path}: no visible <h1> after 15s — is the page rendering?`);
+      throw new Error(
+        `${path}: no visible <h1> after 15s — is the page rendering?`,
+      );
     });
   // Let images settle into their reserved boxes before measuring.
   await page.waitForTimeout(250);
@@ -99,7 +103,6 @@ async function settleAnimations(page: Page) {
   });
 }
 
-
 async function inspect(page: Page, width: number): Promise<Finding[]> {
   // No named helper functions inside this body: the TypeScript loader adds a
   // `__name` shim to anything it can name, and that identifier does not exist
@@ -115,7 +118,9 @@ async function inspect(page: Page, width: number): Promise<Finding[]> {
       });
     }
 
-    for (const el of Array.from(document.querySelectorAll<HTMLElement>("body *"))) {
+    for (const el of Array.from(
+      document.querySelectorAll<HTMLElement>("body *"),
+    )) {
       const style = getComputedStyle(el);
       if (style.display === "none" || style.visibility === "hidden") continue;
       const box = el.getBoundingClientRect();
@@ -180,7 +185,8 @@ async function inspect(page: Page, width: number): Promise<Finding[]> {
         let effectiveHeight = box.height;
 
         if (stretched) {
-          const host = el.closest("article, li, [data-card]") ?? el.offsetParent;
+          const host =
+            el.closest("article, li, [data-card]") ?? el.offsetParent;
           if (host) {
             const hostBox = host.getBoundingClientRect();
             effectiveWidth = Math.max(effectiveWidth, hostBox.width);
@@ -190,11 +196,15 @@ async function inspect(page: Page, width: number): Promise<Finding[]> {
         if (before.content !== "none" && before.position === "absolute") {
           effectiveWidth = Math.max(
             effectiveWidth,
-            Number.parseFloat(before.minWidth) || Number.parseFloat(before.width) || 0,
+            Number.parseFloat(before.minWidth) ||
+              Number.parseFloat(before.width) ||
+              0,
           );
           effectiveHeight = Math.max(
             effectiveHeight,
-            Number.parseFloat(before.minHeight) || Number.parseFloat(before.height) || 0,
+            Number.parseFloat(before.minHeight) ||
+              Number.parseFloat(before.height) ||
+              0,
           );
         }
 
@@ -219,11 +229,14 @@ async function inspect(page: Page, width: number): Promise<Finding[]> {
       if (el.matches("input, select, textarea")) {
         const size = Number.parseFloat(style.fontSize);
         if (size < 16) {
-          findings.push({ kind: "input-font", detail: `${`${el.tagName.toLowerCase()}${
+          findings.push({
+            kind: "input-font",
+            detail: `${`${el.tagName.toLowerCase()}${
               typeof el.className === "string" && el.className
                 ? "." + el.className.trim().split(/\s+/).slice(0, 3).join(".")
                 : ""
-            }${(el.textContent ?? "").trim() ? ` "${(el.textContent ?? "").trim().slice(0, 32)}"` : ""}`} — ${size}px` });
+            }${(el.textContent ?? "").trim() ? ` "${(el.textContent ?? "").trim().slice(0, 32)}"` : ""}`} — ${size}px`,
+          });
         }
       }
     }
@@ -270,7 +283,9 @@ async function walkStates(
       const response = await visit(page, state.path);
       const status = response?.status() ?? 0;
       if (status !== 200) {
-        problems.push(`[${width}] ${state.name} — HTTP ${status}, expected 200`);
+        problems.push(
+          `[${width}] ${state.name} — HTTP ${status}, expected 200`,
+        );
         continue;
       }
       await waitForReady(page, state.name);
@@ -283,7 +298,9 @@ async function walkStates(
         continue;
       }
       for (const finding of await inspect(page, width)) {
-        problems.push(`[${width}] ${state.name} — ${finding.kind}: ${finding.detail}`);
+        problems.push(
+          `[${width}] ${state.name} — ${finding.kind}: ${finding.detail}`,
+        );
       }
       process.stdout.write("+");
     }
@@ -325,12 +342,16 @@ async function main() {
         const status = response?.status() ?? 0;
         const expected = route.status ?? 200;
         if (status !== expected) {
-          problems.push(`[${width}] ${route.path} — HTTP ${status}, expected ${expected}`);
+          problems.push(
+            `[${width}] ${route.path} — HTTP ${status}, expected ${expected}`,
+          );
         }
         await waitForReady(page, route.path);
 
         for (const finding of await inspect(page, width)) {
-          problems.push(`[${width}] ${route.path} — ${finding.kind}: ${finding.detail}`);
+          problems.push(
+            `[${width}] ${route.path} — ${finding.kind}: ${finding.detail}`,
+          );
         }
         process.stdout.write(".");
       }
@@ -350,14 +371,20 @@ async function main() {
         `${interactiveSeen} interactive elements measured — no overflow, ` +
         "no tap target under 44px, no input under 16px.",
     );
-    console.log(`  (left behind: ${fixture.ledger.emails.join(", ")}, orders ${fixture.ledger.orderNumbers.join(", ")})`);
+    console.log(
+      `  (left behind: ${fixture.ledger.emails.join(", ")}, orders ${fixture.ledger.orderNumbers.join(", ")})`,
+    );
     return;
   }
   // Deduplicated: the same header button at six widths is one problem.
   const unique = [...new Set(problems)];
-  console.log(`${unique.length} findings from ${interactiveSeen} interactive elements measured:\n`);
+  console.log(
+    `${unique.length} findings from ${interactiveSeen} interactive elements measured:\n`,
+  );
   for (const problem of unique) console.log("  " + problem);
-  console.log(`\n  (left behind: ${fixture.ledger.emails.join(", ")}, orders ${fixture.ledger.orderNumbers.join(", ")})`);
+  console.log(
+    `\n  (left behind: ${fixture.ledger.emails.join(", ")}, orders ${fixture.ledger.orderNumbers.join(", ")})`,
+  );
   process.exitCode = 1;
 }
 

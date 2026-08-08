@@ -24,7 +24,8 @@ import { Button } from "@/components/ui/button";
  * and it arrives while the finger is still on the way down.
  */
 const SearchPanel = dynamic(
-  () => import("@/components/storefront/search-panel").then((m) => m.SearchPanel),
+  () =>
+    import("@/components/storefront/search-panel").then((m) => m.SearchPanel),
   { ssr: false },
 );
 

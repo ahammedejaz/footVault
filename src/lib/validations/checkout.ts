@@ -109,7 +109,8 @@ export const emailSchema = z
   .pipe(z.email({ message: "Enter an email we can send the receipt to." }));
 
 /** Bounded so a paste of an entire document cannot become an address line. */
-const line = (max: number, message: string) => z.string().trim().min(1, { message }).max(max);
+const line = (max: number, message: string) =>
+  z.string().trim().min(1, { message }).max(max);
 
 /* --------------------------------------------------------------- address -- */
 
@@ -159,7 +160,9 @@ export type ShippingAddressInput = z.input<typeof shippingAddressSchema>;
 export function checkoutSchema(options: { requireContactEmail: boolean }) {
   return z
     .object({
-      paymentMethod: z.enum(PAYMENT_METHODS, { message: "Choose how you want to pay." }),
+      paymentMethod: z.enum(PAYMENT_METHODS, {
+        message: "Choose how you want to pay.",
+      }),
       addressId: z.uuid().optional(),
       address: shippingAddressSchema.optional(),
       contactEmail: emailSchema.optional(),
@@ -207,7 +210,10 @@ export type CheckoutInput = z.infer<ReturnType<typeof checkoutSchema>>;
 export const razorpayCallbackSchema = z.object({
   razorpay_order_id: z.string().trim().min(1).max(64),
   razorpay_payment_id: z.string().trim().min(1).max(64),
-  razorpay_signature: z.string().trim().regex(/^[a-f0-9]{64}$/, {
-    message: "Malformed signature.",
-  }),
+  razorpay_signature: z
+    .string()
+    .trim()
+    .regex(/^[a-f0-9]{64}$/, {
+      message: "Malformed signature.",
+    }),
 });

@@ -63,7 +63,10 @@ export default async function CartPage({
         <EmptyState
           title="Nothing in your bag yet"
           body="Start with the new arrivals — every card shows the full size run, so you can see what we hold in your size before you open anything."
-          action={{ href: "/collection/new-arrivals", label: "See new arrivals" }}
+          action={{
+            href: "/collection/new-arrivals",
+            label: "See new arrivals",
+          }}
         />
       ) : (
         <div className="mt-8 grid gap-8 lg:grid-cols-[minmax(0,1fr)_23rem] lg:grid-rows-[auto_1fr] lg:gap-10">
@@ -109,7 +112,9 @@ export default async function CartPage({
             className="lg:sticky lg:top-24 lg:row-span-2 lg:self-start"
           >
             <div className="bg-fog border-border rounded-lg border p-5">
-              <h2 className="font-mono text-xs tracking-[0.06em] uppercase">Summary</h2>
+              <h2 className="font-mono text-xs tracking-[0.06em] uppercase">
+                Summary
+              </h2>
 
               <dl className="mt-4 space-y-2 text-sm">
                 <div className="flex items-baseline justify-between">
@@ -164,8 +169,8 @@ export default async function CartPage({
           {user ? null : (
             <div className="border-border rounded-lg border p-5 lg:col-start-1">
               <p className="text-sm text-pretty">
-                Signing in keeps this bag on your next phone, and puts your orders
-                in one place. It is not needed to buy.
+                Signing in keeps this bag on your next phone, and puts your
+                orders in one place. It is not needed to buy.
               </p>
               <GoogleSignInForm className="mt-3" next="/cart" />
             </div>

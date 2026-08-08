@@ -18,7 +18,11 @@ import { cn } from "@/lib/utils";
  * query, because a timeline out of order is worse than no timeline and the cost
  * of being sure is one comparison.
  */
-export function OrderTimeline({ timeline }: { timeline: OrderTimelineEntry[] }) {
+export function OrderTimeline({
+  timeline,
+}: {
+  timeline: OrderTimelineEntry[];
+}) {
   if (timeline.length === 0) return null;
 
   const entries = [...timeline].sort((a, b) => a.at.localeCompare(b.at));
@@ -51,13 +55,18 @@ export function OrderTimeline({ timeline }: { timeline: OrderTimelineEntry[] }) 
             <div className={cn("pb-5", current && "pb-0")}>
               <p className="text-sm font-medium">
                 {ORDER_STATUS_COPY[entry.status].label}
-                {current ? <span className="sr-only"> — current status</span> : null}
+                {current ? (
+                  <span className="sr-only"> — current status</span>
+                ) : null}
               </p>
               <p className="text-muted-foreground mt-0.5 font-mono text-xs tracking-[0.06em]">
-                <time dateTime={entry.at}>{formatOrderDateTime(entry.at)}</time> · {entry.by}
+                <time dateTime={entry.at}>{formatOrderDateTime(entry.at)}</time>{" "}
+                · {entry.by}
               </p>
               {entry.note ? (
-                <p className="text-muted-foreground mt-1 text-sm text-pretty">{entry.note}</p>
+                <p className="text-muted-foreground mt-1 text-sm text-pretty">
+                  {entry.note}
+                </p>
               ) : null}
             </div>
           </li>

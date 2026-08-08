@@ -31,7 +31,9 @@ export async function adoptGuestOrders(
 
   const { data, error } = await supabase.rpc("adopt_guest_orders");
   if (error) {
-    throw new Error(`adoptGuestOrders: ${error.message} [${error.code ?? "unknown"}]`);
+    throw new Error(
+      `adoptGuestOrders: ${error.message} [${error.code ?? "unknown"}]`,
+    );
   }
   return data ?? 0;
 }

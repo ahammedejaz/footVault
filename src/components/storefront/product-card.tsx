@@ -4,7 +4,7 @@ import Link from "next/link";
 import { Price } from "@/components/storefront/price";
 import { SaveForLater } from "@/components/storefront/save-for-later";
 import { SizeRun } from "@/components/storefront/size-run";
-import type { ProductSummary } from "@/lib/catalog-types";
+import type { ProductColor, ProductSummary } from "@/lib/catalog-types";
 import { cn } from "@/lib/utils";
 
 /**
@@ -59,6 +59,7 @@ export function ProductCard({
 }) {
   const soldOut = !product.inStock;
   const Heading = `h${headingLevel}` as "h2" | "h3";
+  const colourway = colourwayCaption(product.colors);
 
   return (
     <article className={cn("product-card group relative", className)}>
@@ -145,6 +146,27 @@ export function ProductCard({
         </Link>
       </Heading>
       <span className="card-rule mt-1 w-full" aria-hidden="true" />
+      {/*
+        The colourway, as a caption in the flow.
+
+        Phase 5 removed this along with the text that was baked into the seed
+        artwork, on the judgement that "Peacoat Navy" under a thumbnail is
+        glossary noise. That was wrong in one specific way: a colourway is not a
+        decoration of a shoe, it is which shoe it is. Two cards in the same grid
+        can be the same model, the same brand and the same price, and the
+        colourway is the only thing on the card that tells them apart.
+
+        It is restored as a sibling under the name rather than as anything
+        layered over the image — the frame holds the image and only the image,
+        which is the rule the original removal was in service of. `truncate`
+        rather than wrap, so a long name can never push the price and the size
+        run out of alignment across a row of cards.
+      */}
+      {colourway ? (
+        <p className="text-muted-foreground mt-1.5 truncate text-sm">
+          {colourway}
+        </p>
+      ) : null}
       <Price
         basePrice={product.basePrice}
         salePrice={product.salePrice}
@@ -165,6 +187,24 @@ export function ProductCard({
       <SizeRun sizes={product.sizes} className="mt-3" />
     </article>
   );
+}
+
+/**
+ * What the caption says when a product comes in more than one colourway.
+ *
+ * The card shows one photograph, so naming only the first colour would be a
+ * quiet lie about a product that comes in three. The count is appended rather
+ * than the names listed: two names is already wider than a 156px card, and a
+ * truncated "Peacoat Navy, Collegiate Gr…" is worse than no second name at all.
+ *
+ * Returns null rather than an empty string for a product with no variants, so
+ * the caller drops the element instead of rendering an empty line that still
+ * takes its margin.
+ */
+function colourwayCaption(colors: ProductColor[]): string | null {
+  const first = colors[0]?.name;
+  if (!first) return null;
+  return colors.length > 1 ? `${first} · ${colors.length} colours` : first;
 }
 
 export function ProductGrid({

@@ -31,7 +31,9 @@ export const CHECKOUT_SQLSTATE = {
  * empty list, and the caller falls back to a generic message rather than
  * throwing on top of a throw.
  */
-export function parseOutOfStockItems(details: string | null | undefined): OutOfStockItem[] {
+export function parseOutOfStockItems(
+  details: string | null | undefined,
+): OutOfStockItem[] {
   if (!details) return [];
 
   let parsed: unknown;
@@ -46,7 +48,8 @@ export function parseOutOfStockItems(details: string | null | undefined): OutOfS
   for (const entry of parsed) {
     if (typeof entry !== "object" || entry === null) continue;
     const row = entry as Record<string, unknown>;
-    const productName = typeof row.productName === "string" ? row.productName : null;
+    const productName =
+      typeof row.productName === "string" ? row.productName : null;
     const size = typeof row.size === "string" ? row.size : "";
     const requested = typeof row.requested === "number" ? row.requested : null;
     const available = typeof row.available === "number" ? row.available : 0;
@@ -68,7 +71,9 @@ export function describeOutOfStock(items: OutOfStockItem[]): string {
   }
 
   const phrases = items.map((item) => {
-    const what = item.size ? `${item.productName} in ${item.size}` : item.productName;
+    const what = item.size
+      ? `${item.productName} in ${item.size}`
+      : item.productName;
     return item.available === 0
       ? `${what} is sold out`
       : `${what} has only ${item.available} left, and you asked for ${item.requested}`;

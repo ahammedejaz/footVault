@@ -25,12 +25,19 @@ type QueryResult<T> = { data: T; error: PostgrestError | null };
 function fail(label: string, error: PostgrestError): never {
   // The label is the call site, not the table: "getCategory(mens-boots)" is
   // findable in the logs, "PGRST200" on its own is not.
-  const detail = [error.message, error.details, error.hint].filter(Boolean).join(" — ");
-  throw new Error(`${label}: ${detail || "query failed"} [${error.code ?? "unknown"}]`);
+  const detail = [error.message, error.details, error.hint]
+    .filter(Boolean)
+    .join(" — ");
+  throw new Error(
+    `${label}: ${detail || "query failed"} [${error.code ?? "unknown"}]`,
+  );
 }
 
 /** Any result, as-is. Throws on a PostgREST error. */
-export async function run<T>(label: string, query: PromiseLike<QueryResult<T>>): Promise<T> {
+export async function run<T>(
+  label: string,
+  query: PromiseLike<QueryResult<T>>,
+): Promise<T> {
   const { data, error } = await query;
   if (error) fail(label, error);
   return data;

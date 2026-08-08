@@ -20,7 +20,9 @@ import type { NavItem } from "@/components/storefront/nav-types";
  */
 const MobileNavPanel = dynamic(
   () =>
-    import("@/components/storefront/mobile-nav-panel").then((m) => m.MobileNavPanel),
+    import("@/components/storefront/mobile-nav-panel").then(
+      (m) => m.MobileNavPanel,
+    ),
   { ssr: false },
 );
 
@@ -54,7 +56,12 @@ export function MobileNav({
         <Menu />
       </Button>
       {mounted ? (
-        <MobileNavPanel items={items} user={user} open={open} onOpenChange={setOpen} />
+        <MobileNavPanel
+          items={items}
+          user={user}
+          open={open}
+          onOpenChange={setOpen}
+        />
       ) : null}
     </>
   );

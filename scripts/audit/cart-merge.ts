@@ -36,7 +36,9 @@ const PASSWORD = "correct-horse-battery-staple-42";
 let failures = 0;
 function check(name: string, passed: boolean, detail = "") {
   if (!passed) failures++;
-  console.log(`${passed ? "  PASS" : "  FAIL"}  ${name}${detail ? `  — ${detail}` : ""}`);
+  console.log(
+    `${passed ? "  PASS" : "  FAIL"}  ${name}${detail ? `  — ${detail}` : ""}`,
+  );
 }
 
 /** An anonymous browser: a token in a header, no session. */
@@ -48,11 +50,17 @@ function guestClient(token: string): SupabaseClient<Database> {
 }
 
 /** What /auth/callback holds: the guest header *and* the new session. */
-function callbackClient(token: string, accessToken: string): SupabaseClient<Database> {
+function callbackClient(
+  token: string,
+  accessToken: string,
+): SupabaseClient<Database> {
   return createClient<Database>(URL_, ANON, {
     auth: { persistSession: false },
     global: {
-      headers: { "x-guest-token": token, Authorization: `Bearer ${accessToken}` },
+      headers: {
+        "x-guest-token": token,
+        Authorization: `Bearer ${accessToken}`,
+      },
     },
   });
 }
@@ -60,7 +68,9 @@ function callbackClient(token: string, accessToken: string): SupabaseClient<Data
 async function main() {
   console.log("\nCart merge on sign-in\n");
 
-  const anon = createClient<Database>(URL_, ANON, { auth: { persistSession: false } });
+  const anon = createClient<Database>(URL_, ANON, {
+    auth: { persistSession: false },
+  });
 
   // Three real variants with stock, plus one deliberately scarce.
   const { data: variants, error: variantError } = await anon
@@ -70,7 +80,9 @@ async function main() {
     .gte("stock_quantity", 3)
     .limit(4);
   if (variantError || !variants || variants.length < 4) {
-    throw new Error(`need 4 in-stock variants: ${variantError?.message ?? "not enough seed stock"}`);
+    throw new Error(
+      `need 4 in-stock variants: ${variantError?.message ?? "not enough seed stock"}`,
+    );
   }
   const [a, b, c, shared] = variants;
 
@@ -83,7 +95,11 @@ async function main() {
     .insert({ guest_token: token })
     .select("id")
     .single();
-  check("a guest can create a cart with only a token", !guestCartError, guestCartError?.message ?? "");
+  check(
+    "a guest can create a cart with only a token",
+    !guestCartError,
+    guestCartError?.message ?? "",
+  );
   if (!guestCart) throw new Error("no guest cart");
 
   const guestLines = [
@@ -93,7 +109,9 @@ async function main() {
     // Also in the account bag already — this is the line that must sum.
     { cart_id: guestCart.id, variant_id: shared.id, quantity: 2 },
   ];
-  const { error: linesError } = await guest.from("cart_items").insert(guestLines);
+  const { error: linesError } = await guest
+    .from("cart_items")
+    .insert(guestLines);
   check("the guest can fill it", !linesError, linesError?.message ?? "");
 
   /* ── a second browser cannot see it ────────────────────────────────────── */
@@ -104,7 +122,11 @@ async function main() {
     "another guest reading this cart",
     stranger.from("cart_items").select("id").eq("cart_id", guestCart.id),
   );
-  check("another guest token reads zero of those lines", peek.length === 0, `${peek.length} rows`);
+  check(
+    "another guest token reads zero of those lines",
+    peek.length === 0,
+    `${peek.length} rows`,
+  );
 
   /* ── the customer signs in, with an account bag already going ──────────── */
   const email = `fv-merge.${Date.now().toString(36)}@example.com`;
@@ -113,12 +135,15 @@ async function main() {
     password: PASSWORD,
     options: { data: { full_name: "Merge Test" } },
   });
-  if (signUpError || !signUp.session) throw new Error(`signUp: ${signUpError?.message}`);
+  if (signUpError || !signUp.session)
+    throw new Error(`signUp: ${signUpError?.message}`);
   const userId = signUp.user!.id;
 
   const asUser = createClient<Database>(URL_, ANON, {
     auth: { persistSession: false },
-    global: { headers: { Authorization: `Bearer ${signUp.session.access_token}` } },
+    global: {
+      headers: { Authorization: `Bearer ${signUp.session.access_token}` },
+    },
   });
 
   const accountCart = await maybeRow<{ id: string }>(
@@ -144,18 +169,33 @@ async function main() {
     token,
   );
 
-  check("every guest line merged", outcome.merged === 4, `merged ${outcome.merged}, dropped ${outcome.dropped}`);
+  check(
+    "every guest line merged",
+    outcome.merged === 4,
+    `merged ${outcome.merged}, dropped ${outcome.dropped}`,
+  );
   check("the guest cart was consumed", outcome.guestCartConsumed);
 
   const after = await rows<{ variant_id: string; quantity: number }>(
     "read the merged bag",
-    asUser.from("cart_items").select("variant_id, quantity").eq("cart_id", accountCart.id),
+    asUser
+      .from("cart_items")
+      .select("variant_id, quantity")
+      .eq("cart_id", accountCart.id),
   );
 
   const byVariant = new Map(after.map((l) => [l.variant_id, l.quantity]));
 
-  check("all four lines are in the account bag", after.length === 4, `${after.length} lines`);
-  check("a guest-only line kept its quantity", byVariant.get(b.id) === 2, `qty ${byVariant.get(b.id)}`);
+  check(
+    "all four lines are in the account bag",
+    after.length === 4,
+    `${after.length} lines`,
+  );
+  check(
+    "a guest-only line kept its quantity",
+    byVariant.get(b.id) === 2,
+    `qty ${byVariant.get(b.id)}`,
+  );
 
   const expectedShared = Math.min(1 + 2, shared.stock_quantity, 10);
   check(
@@ -176,10 +216,17 @@ async function main() {
   );
   const afterRetry = await rows<{ variant_id: string; quantity: number }>(
     "re-read after a second merge",
-    asUser.from("cart_items").select("variant_id, quantity").eq("cart_id", accountCart.id),
+    asUser
+      .from("cart_items")
+      .select("variant_id, quantity")
+      .eq("cart_id", accountCart.id),
   );
   const retryMap = new Map(afterRetry.map((l) => [l.variant_id, l.quantity]));
-  check("a second merge moves nothing", again.merged === 0, `merged ${again.merged}`);
+  check(
+    "a second merge moves nothing",
+    again.merged === 0,
+    `merged ${again.merged}`,
+  );
   check(
     "and leaves every quantity exactly as it was",
     afterRetry.length === after.length &&
@@ -192,18 +239,28 @@ async function main() {
     "look for the consumed guest cart",
     guest.from("carts").select("id").eq("id", guestCart.id),
   );
-  check("the guest cart no longer exists", leftovers.length === 0, `${leftovers.length} rows`);
+  check(
+    "the guest cart no longer exists",
+    leftovers.length === 0,
+    `${leftovers.length} rows`,
+  );
 
   /* ── quantities cap at stock ───────────────────────────────────────────── */
   const token2 = randomUUID();
   const guest2 = guestClient(token2);
   const cart2 = await maybeRow<{ id: string }>(
     "create the second guest cart",
-    guest2.from("carts").insert({ guest_token: token2 }).select("id").maybeSingle(),
+    guest2
+      .from("carts")
+      .insert({ guest_token: token2 })
+      .select("id")
+      .maybeSingle(),
   );
   if (!cart2) throw new Error("no second guest cart");
 
-  const scarce = variants.reduce((min, v) => (v.stock_quantity < min.stock_quantity ? v : min));
+  const scarce = variants.reduce((min, v) =>
+    v.stock_quantity < min.stock_quantity ? v : min,
+  );
   const filled = (
     await guest2.from("cart_items").insert({
       cart_id: cart2.id,
@@ -214,13 +271,18 @@ async function main() {
   if (filled) throw new Error(`fill the second guest cart: ${filled.message}`);
 
   const email2 = `fv-merge2.${Date.now().toString(36)}@example.com`;
-  const { data: signUp2 } = await anon.auth.signUp({ email: email2, password: PASSWORD });
+  const { data: signUp2 } = await anon.auth.signUp({
+    email: email2,
+    password: PASSWORD,
+  });
   if (!signUp2?.session) throw new Error("second signUp failed");
   const user2 = signUp2.user!.id;
 
   const asUser2 = createClient<Database>(URL_, ANON, {
     auth: { persistSession: false },
-    global: { headers: { Authorization: `Bearer ${signUp2.session.access_token}` } },
+    global: {
+      headers: { Authorization: `Bearer ${signUp2.session.access_token}` },
+    },
   });
   const cartB = await maybeRow<{ id: string }>(
     "create the second account cart",
@@ -234,9 +296,14 @@ async function main() {
       quantity: Math.min(scarce.stock_quantity, 10),
     })
   ).error;
-  if (seededB) throw new Error(`seed the second account cart: ${seededB.message}`);
+  if (seededB)
+    throw new Error(`seed the second account cart: ${seededB.message}`);
 
-  await mergeGuestCartIntoAccount(callbackClient(token2, signUp2.session.access_token), user2, token2);
+  await mergeGuestCartIntoAccount(
+    callbackClient(token2, signUp2.session.access_token),
+    user2,
+    token2,
+  );
 
   const capped = await maybeRow<{ quantity: number }>(
     "read the capped line",
@@ -255,7 +322,9 @@ async function main() {
     `${ceiling} + ${ceiling} -> ${capped?.quantity} (stock ${scarce.stock_quantity})`,
   );
 
-  console.log(`\n${failures === 0 ? "All checks passed." : `${failures} check(s) FAILED.`}\n`);
+  console.log(
+    `\n${failures === 0 ? "All checks passed." : `${failures} check(s) FAILED.`}\n`,
+  );
   console.log(`  (test accounts left behind: ${email}, ${email2})\n`);
   process.exit(failures === 0 ? 0 : 1);
 }

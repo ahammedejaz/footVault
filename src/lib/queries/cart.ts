@@ -35,7 +35,12 @@ import type {
  * quietly.
  */
 
-export type { Cart, CartAdjustment, CartLine, FreeShipping } from "@/lib/cart-types";
+export type {
+  Cart,
+  CartAdjustment,
+  CartLine,
+  FreeShipping,
+} from "@/lib/cart-types";
 
 type RawLine = {
   id: string;
@@ -73,17 +78,22 @@ async function activeCartId(): Promise<string | null> {
 
   // Both filters are belt and braces — the RLS policies already scope this to
   // the caller — but they keep the query honest if a policy is ever loosened.
-  const scoped = user ? query.eq("user_id", user.id) : query.eq("guest_token", guestToken!);
+  const scoped = user
+    ? query.eq("user_id", user.id)
+    : query.eq("guest_token", guestToken!);
 
-  const row = await maybeRow<{ id: string }>("activeCartId", scoped.maybeSingle());
+  const row = await maybeRow<{ id: string }>(
+    "activeCartId",
+    scoped.maybeSingle(),
+  );
   return row?.id ?? null;
 }
 
 export async function getCart(): Promise<Cart> {
   const settings = await cachedSiteSettings();
   const shipping = setting<ShippingSettings>(settings, "shipping", {
-    flat_fee_paise: 9900,
-    free_above_paise: 199900,
+    flat_fee_paise: 19900,
+    free_above_paise: 249900,
     currency: "INR",
     regions: ["IN"],
   });
@@ -121,7 +131,13 @@ export async function getCart(): Promise<Cart> {
 
     // The line no longer refers to anything sellable: the owner deactivated the
     // product, retired the size, or soft-deleted it out from under the bag.
-    if (!variant || !product || !variant.is_active || !product.is_active || product.deleted_at) {
+    if (
+      !variant ||
+      !product ||
+      !variant.is_active ||
+      !product.is_active ||
+      product.deleted_at
+    ) {
       adjustments.push({
         kind: "gone",
         name: product?.name ?? "An item",
@@ -130,10 +146,15 @@ export async function getCart(): Promise<Cart> {
       continue;
     }
 
-    const unitPrice = variant.price_override ?? product.effective_price ?? product.base_price;
+    const unitPrice =
+      variant.price_override ?? product.effective_price ?? product.base_price;
 
     if (variant.stock_quantity <= 0) {
-      adjustments.push({ kind: "gone", name: product.name, size: variant.size });
+      adjustments.push({
+        kind: "gone",
+        name: product.name,
+        size: variant.size,
+      });
       continue;
     }
 
@@ -160,7 +181,10 @@ export async function getCart(): Promise<Cart> {
       });
     }
 
-    const primary = product.images.find((image) => image.is_primary) ?? product.images[0] ?? null;
+    const primary =
+      product.images.find((image) => image.is_primary) ??
+      product.images[0] ??
+      null;
 
     lines.push({
       id: item.id,
@@ -212,9 +236,16 @@ export async function getCartCount(): Promise<number> {
     "getCartCount",
     supabase
       .from("cart_items")
-      .select("quantity, variant:product_variants!inner ( stock_quantity, is_active )")
+      .select(
+        "quantity, variant:product_variants!inner ( stock_quantity, is_active )",
+      )
       .eq("cart_id", cartId)
-      .overrideTypes<{ quantity: number; variant: { stock_quantity: number; is_active: boolean } | null }[]>(),
+      .overrideTypes<
+        {
+          quantity: number;
+          variant: { stock_quantity: number; is_active: boolean } | null;
+        }[]
+      >(),
   );
 
   return raw.reduce((total, item) => {
@@ -223,7 +254,10 @@ export async function getCartCount(): Promise<number> {
   }, 0);
 }
 
-function freeShippingFrom(shipping: ShippingSettings, subtotal: number): FreeShipping {
+function freeShippingFrom(
+  shipping: ShippingSettings,
+  subtotal: number,
+): FreeShipping {
   const thresholdPaise = shipping.free_above_paise;
   const remainingPaise = Math.max(0, thresholdPaise - subtotal);
   return {

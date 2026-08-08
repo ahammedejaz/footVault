@@ -49,3 +49,6 @@ next-env.d.ts
 .yarn/*
 /coverage
 *.pem
+
+# Ad-hoc screenshots taken while testing. Audit output goes to a temp dir.
+screenshots/

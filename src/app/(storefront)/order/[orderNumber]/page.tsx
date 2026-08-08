@@ -88,7 +88,8 @@ export default async function OrderConfirmationPage({
       </div>
 
       <p className="text-muted-foreground mt-2 text-sm">
-        Placed on <time dateTime={order.placedAt}>{formatOrderDate(order.placedAt)}</time>
+        Placed on{" "}
+        <time dateTime={order.placedAt}>{formatOrderDate(order.placedAt)}</time>
       </p>
 
       <OrderDetail order={order} />
@@ -96,7 +97,9 @@ export default async function OrderConfirmationPage({
       <div className="mt-10 border-t border-border pt-8">
         {order.isGuestOrder ? (
           <div className="max-w-xl">
-            <h2 className="text-lg font-semibold">Keep your orders in one place</h2>
+            <h2 className="text-lg font-semibold">
+              Keep your orders in one place
+            </h2>
             {/*
               An offer about the future, not a promise about this order. Whether
               signing in attaches an existing guest order to the new account is
@@ -106,12 +109,15 @@ export default async function OrderConfirmationPage({
               better reason to sign in than "future ones will be tidier".
             */}
             <p className="text-muted-foreground mt-2 text-base text-pretty">
-              An account keeps your order history, your saved addresses and your bag
-              together on every device you use. You did not need one to buy, and you do
-              not need one now.
+              An account keeps your order history, your saved addresses and your
+              bag together on every device you use. You did not need one to buy,
+              and you do not need one now.
             </p>
             <div className="mt-4 max-w-xs">
-              <GoogleSignInForm next={`/order/${order.orderNumber}`} label="Create an account" />
+              <GoogleSignInForm
+                next={`/order/${order.orderNumber}`}
+                label="Create an account"
+              />
             </div>
           </div>
         ) : (

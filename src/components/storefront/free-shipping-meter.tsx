@@ -13,11 +13,18 @@ import type { FreeShipping } from "@/lib/cart-types";
  * because "72% of the way to free shipping" is not what anybody wants to know —
  * "₹560 away" is.
  */
-export function FreeShippingMeter({ freeShipping }: { freeShipping: FreeShipping }) {
+export function FreeShippingMeter({
+  freeShipping,
+}: {
+  freeShipping: FreeShipping;
+}) {
   const { thresholdPaise, remainingPaise, qualified, feePaise } = freeShipping;
   if (thresholdPaise <= 0) return null;
 
-  const progress = Math.min(1, (thresholdPaise - remainingPaise) / thresholdPaise);
+  const progress = Math.min(
+    1,
+    (thresholdPaise - remainingPaise) / thresholdPaise,
+  );
 
   return (
     <div>
@@ -32,7 +39,8 @@ export function FreeShippingMeter({ freeShipping }: { freeShipping: FreeShipping
               {formatPaise(remainingPaise)}
             </span>{" "}
             <span className="text-muted-foreground">
-              away from free shipping. Below that, delivery is {formatPaise(feePaise)}.
+              away from free shipping. Below that, delivery is{" "}
+              {formatPaise(feePaise)}.
             </span>
           </>
         )}

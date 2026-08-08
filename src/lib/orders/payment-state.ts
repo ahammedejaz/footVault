@@ -145,7 +145,11 @@ type Decision = {
  * two or three times against successively fresher reads, and a decision
  * function that also wrote would make that impossible to do safely.
  */
-function decide(order: OrderRow, outcome: PaymentOutcome, recordedAmount: number): Decision {
+function decide(
+  order: OrderRow,
+  outcome: PaymentOutcome,
+  recordedAmount: number,
+): Decision {
   // The order's own total is the authority on what it costs. `payments.amount`
   // is written from the same local in the same request today, so the two cannot
   // disagree — but reading the order means a future change that let them drift
@@ -174,9 +178,15 @@ function decide(order: OrderRow, outcome: PaymentOutcome, recordedAmount: number
     // what was owed, so their order proceeds and the difference is a refund we
     // owe rather than a reason to strand them.
     paymentStatus = "paid";
-    if (order.status === "pending" && canTransition(order.status, "confirmed")) {
+    if (
+      order.status === "pending" &&
+      canTransition(order.status, "confirmed")
+    ) {
       status = "confirmed";
-      note = shortfall < 0 ? `Payment captured; ${-shortfall} paise overpaid` : "Payment captured";
+      note =
+        shortfall < 0
+          ? `Payment captured; ${-shortfall} paise overpaid`
+          : "Payment captured";
     } else if (isTerminalStatus(order.status)) {
       // The money arrived anyway. Record it — payment_status still becomes
       // `paid` — but do not claim the transition happened, because it did not
@@ -192,8 +202,10 @@ function decide(order: OrderRow, outcome: PaymentOutcome, recordedAmount: number
 
   const patch: OrderPatch = {};
   if (status !== order.status) patch.status = status;
-  if (paymentStatus !== order.payment_status) patch.payment_status = paymentStatus;
-  if (outcome.providerPaymentId) patch.payment_reference = outcome.providerPaymentId;
+  if (paymentStatus !== order.payment_status)
+    patch.payment_status = paymentStatus;
+  if (outcome.providerPaymentId)
+    patch.payment_reference = outcome.providerPaymentId;
 
   return { status, paymentStatus, note, illegal, expected, shortfall, patch };
 }
@@ -208,11 +220,15 @@ async function recordHistory(
   orderId: string,
   decision: Decision,
 ): Promise<void> {
-  const { error } = await admin
-    .from("order_status_history")
-    .insert({ order_id: orderId, status: decision.status, note: decision.note });
+  const { error } = await admin.from("order_status_history").insert({
+    order_id: orderId,
+    status: decision.status,
+    note: decision.note,
+  });
   if (error) {
-    console.error(`[payments] history row failed for ${orderId}: ${error.message}`);
+    console.error(
+      `[payments] history row failed for ${orderId}: ${error.message}`,
+    );
   }
 }
 
@@ -263,7 +279,9 @@ async function claimEvent(
   // is right — guessing either way here would either drop the event or double
   // it, and both are worse than one more delivery.
   if (!existing) {
-    throw new Error(`applyPaymentOutcome: event ${eventId} conflicted but then vanished`);
+    throw new Error(
+      `applyPaymentOutcome: event ${eventId} conflicted but then vanished`,
+    );
   }
   if (existing.processed_at) return { kind: "duplicate" };
   return { kind: "claimed", id: existing.id };
@@ -274,11 +292,16 @@ async function releaseClaim(
   admin: ReturnType<typeof createAdminClient>,
   eventRowId: string,
 ): Promise<void> {
-  const { error } = await admin.from("payment_events").delete().eq("id", eventRowId);
+  const { error } = await admin
+    .from("payment_events")
+    .delete()
+    .eq("id", eventRowId);
   if (error) {
     // Loud, because the consequence is a stuck order: the retry will now see a
     // duplicate and do nothing.
-    console.error(`[payments] could not release event claim ${eventRowId}: ${error.message}`);
+    console.error(
+      `[payments] could not release event claim ${eventRowId}: ${error.message}`,
+    );
   }
 }
 
@@ -291,7 +314,12 @@ export async function applyPaymentOutcome(input: {
 }): Promise<ApplyPaymentResult> {
   const admin = createAdminClient();
 
-  const claim = await claimEvent(admin, input.provider, input.eventId, input.eventType);
+  const claim = await claimEvent(
+    admin,
+    input.provider,
+    input.eventId,
+    input.eventType,
+  );
   if (claim.kind === "duplicate") {
     return {
       applied: false,
@@ -301,7 +329,8 @@ export async function applyPaymentOutcome(input: {
   }
 
   try {
-    const providerOrderId = input.providerOrderId ?? input.outcome.providerOrderId;
+    const providerOrderId =
+      input.providerOrderId ?? input.outcome.providerOrderId;
 
     const payment = providerOrderId
       ? await maybeRow<{
@@ -334,7 +363,10 @@ export async function applyPaymentOutcome(input: {
     // provider's ids rather than by order state, so nothing races it — and
     // doing it here lifts a whole round trip out of the read-decide-write
     // window on the order, which is the window E-2 was firing into.
-    const txn = advanceTxnStatus(payment.status, txnStatusFor(input.outcome.status));
+    const txn = advanceTxnStatus(
+      payment.status,
+      txnStatusFor(input.outcome.status),
+    );
     const paymentPatch: Database["public"]["Tables"]["payments"]["Update"] = {
       status: txn,
       raw_status: input.outcome.rawStatus,
@@ -345,8 +377,9 @@ export async function applyPaymentOutcome(input: {
       paymentPatch.provider_payment_id = input.outcome.providerPaymentId;
     }
 
-    const paymentError = (await admin.from("payments").update(paymentPatch).eq("id", payment.id))
-      .error;
+    const paymentError = (
+      await admin.from("payments").update(paymentPatch).eq("id", payment.id)
+    ).error;
     if (paymentError) {
       throw new Error(
         `applyPaymentOutcome.payments: ${paymentError.message} [${paymentError.code}]`,
@@ -355,7 +388,11 @@ export async function applyPaymentOutcome(input: {
 
     let settled: Decision | null = null;
 
-    for (let attempt = 0; attempt < CAS_ATTEMPTS && settled === null; attempt++) {
+    for (
+      let attempt = 0;
+      attempt < CAS_ATTEMPTS && settled === null;
+      attempt++
+    ) {
       const order = await maybeRow<OrderRow>(
         "applyPaymentOutcome.order",
         admin
@@ -400,7 +437,9 @@ export async function applyPaymentOutcome(input: {
         .select("id");
 
       if (swapError) {
-        throw new Error(`applyPaymentOutcome.orders: ${swapError.message} [${swapError.code}]`);
+        throw new Error(
+          `applyPaymentOutcome.orders: ${swapError.message} [${swapError.code}]`,
+        );
       }
       // Somebody moved it. Go round again and decide against what actually won.
       if ((swapped?.length ?? 0) !== 1) continue;
@@ -448,13 +487,23 @@ export async function applyPaymentOutcome(input: {
         .eq("id", claim.id)
     ).error;
     if (settleError) {
-      console.error(`[payments] could not settle event ${input.eventId}: ${settleError.message}`);
+      console.error(
+        `[payments] could not settle event ${input.eventId}: ${settleError.message}`,
+      );
     }
 
     if (settled.illegal) {
-      return { applied: false, reason: "illegal_transition", message: settled.illegal };
+      return {
+        applied: false,
+        reason: "illegal_transition",
+        message: settled.illegal,
+      };
     }
-    return { applied: true, status: settled.status, paymentStatus: settled.paymentStatus };
+    return {
+      applied: true,
+      status: settled.status,
+      paymentStatus: settled.paymentStatus,
+    };
   } catch (error) {
     // Nothing here is half-done in a way a replay makes worse: the transition
     // is guarded by canTransition and the payment record only moves forward.

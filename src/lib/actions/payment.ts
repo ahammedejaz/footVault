@@ -3,6 +3,7 @@
 import { getPaymentAdapter } from "@/lib/payments";
 import { recordAndApply } from "@/lib/payments/apply";
 import type { PaymentOutcomeStatus } from "@/lib/payments/types";
+import { callerIp, consumeRateLimit } from "@/lib/rate-limit";
 import { razorpayCallbackSchema } from "@/lib/validations/checkout";
 
 /**
@@ -49,7 +50,13 @@ export type VerifyPaymentResult =
     }
   | {
       ok: false;
-      reason: "invalid_input" | "bad_signature" | "unknown_order" | "provider_error" | "error";
+      reason:
+        | "invalid_input"
+        | "bad_signature"
+        | "unknown_order"
+        | "provider_error"
+        | "throttled"
+        | "error";
       /**
        * Safe to render, and written so that a customer always knows whether
        * they were charged. "Something went wrong" after a payment screen is
@@ -58,7 +65,9 @@ export type VerifyPaymentResult =
       message: string;
     };
 
-export async function verifyRazorpayPayment(input: unknown): Promise<VerifyPaymentResult> {
+export async function verifyRazorpayPayment(
+  input: unknown,
+): Promise<VerifyPaymentResult> {
   const parsed = razorpayCallbackSchema.safeParse(input);
   if (!parsed.success) {
     // Not logged with the input. A malformed callback is either a bug in our
@@ -68,7 +77,8 @@ export async function verifyRazorpayPayment(input: unknown): Promise<VerifyPayme
     return {
       ok: false,
       reason: "invalid_input",
-      message: "We could not read that payment confirmation. Your order page has the latest status.",
+      message:
+        "We could not read that payment confirmation. Your order page has the latest status.",
     };
   }
 
@@ -78,11 +88,48 @@ export async function verifyRazorpayPayment(input: unknown): Promise<VerifyPayme
     signature: parsed.data.razorpay_signature,
   };
 
+  /**
+   * Counted per IP, after the shape check and before the signature check.
+   *
+   * This action has no session — §8.6 of the Phase 5 report explains why, and
+   * that reasoning still holds — so an IP is the only handle there is. A real
+   * customer calls this once, or twice if they refresh. Twenty a minute is far
+   * beyond that and far below anything that would inconvenience an office
+   * sharing an address.
+   *
+   * The throttle is worth more here than the HMAC is: a caller with a *valid*
+   * triple can invoke this repeatedly, and each call is a round trip to
+   * Razorpay's API followed by database writes. Being an idempotent no-op does
+   * not make it free.
+   */
+  const throttle = await consumeRateLimit("paymentVerify", await callerIp());
+  if (!throttle.allowed) {
+    console.warn("[payment] verify throttled", {
+      providerOrderId: claim.providerOrderId,
+      retryAfterSeconds: throttle.retryAfterSeconds,
+    });
+    return {
+      ok: false,
+      reason: "throttled",
+      // Never implies the payment failed. The customer's money may well have
+      // moved, and the order page reads its state from the database rather than
+      // from this action, so telling them to look there is both true and useful.
+      message:
+        "We are checking a lot of payments right now. Your order page will show the " +
+        "latest status in a moment — do not pay again.",
+    };
+  }
+
   try {
-    const verification = await getPaymentAdapter(RAZORPAY).verifyClientCallback(claim);
+    const verification =
+      await getPaymentAdapter(RAZORPAY).verifyClientCallback(claim);
 
     if (!verification.ok) {
-      return { ok: false, reason: verification.reason, message: verification.message };
+      return {
+        ok: false,
+        reason: verification.reason,
+        message: verification.message,
+      };
     }
 
     const { outcome } = verification;
@@ -140,9 +187,12 @@ export async function verifyRazorpayPayment(input: unknown): Promise<VerifyPayme
       !application.result.applied &&
       application.result.reason === "not_found"
     ) {
-      console.error("[payment] verified a payment for an order we do not have", {
-        providerOrderId: claim.providerOrderId,
-      });
+      console.error(
+        "[payment] verified a payment for an order we do not have",
+        {
+          providerOrderId: claim.providerOrderId,
+        },
+      );
       return {
         ok: false,
         reason: "unknown_order",
@@ -182,13 +232,19 @@ export async function verifyRazorpayPayment(input: unknown): Promise<VerifyPayme
  * first time the action runs — which is in production, on a button press.
  * Phase 4 shipped exactly that bug, and CI now greps for it.
  */
-function messageFor(status: PaymentOutcomeStatus, providerMessage: string | null): string {
+function messageFor(
+  status: PaymentOutcomeStatus,
+  providerMessage: string | null,
+): string {
   switch (status) {
     case "captured":
       return "Payment received. Your order is confirmed.";
     case "pending":
       return "Your bank is still confirming this payment. We will update your order the moment it clears.";
     case "failed":
-      return providerMessage ?? "The payment did not go through and you have not been charged.";
+      return (
+        providerMessage ??
+        "The payment did not go through and you have not been charged."
+      );
   }
 }

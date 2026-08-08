@@ -50,18 +50,25 @@ async function cookieJar(session: Session) {
     refresh_token: session.refresh_token,
   });
   return [...jar].map(([name, value]) => ({
-    name, value, domain: "localhost", path: "/",
+    name,
+    value,
+    domain: "localhost",
+    path: "/",
   }));
 }
 
 async function main() {
   let bad = 0;
-  const ok = (n: string, p: boolean, d = "") => { if (!p) bad++; console.log(`  ${p ? "PASS" : "FAIL"}  ${n}${d ? "  — " + d : ""}`); };
+  const ok = (n: string, p: boolean, d = "") => {
+    if (!p) bad++;
+    console.log(`  ${p ? "PASS" : "FAIL"}  ${n}${d ? "  — " + d : ""}`);
+  };
 
   const anon = createClient(URL_, ANON, { auth: { persistSession: false } });
   const email = `fv-signedin.${Date.now().toString(36)}@example.com`;
   const { data: up, error } = await anon.auth.signUp({
-    email, password: "correct-horse-battery-staple-42",
+    email,
+    password: "correct-horse-battery-staple-42",
     options: { data: { full_name: "Signed In Tester" } },
   });
   if (error || !up.session) throw new Error(String(error?.message));
@@ -73,59 +80,114 @@ async function main() {
   });
   const product = await maybeRow<{ id: string; name: string }>(
     "pick a product to save",
-    asUser.from("products").select("id, name").eq("is_active", true).limit(1).maybeSingle(),
+    asUser
+      .from("products")
+      .select("id, name")
+      .eq("is_active", true)
+      .limit(1)
+      .maybeSingle(),
   );
   if (!product) throw new Error("no active products to save");
-  const { error: saveErr } = await asUser.from("wishlist_items")
+  const { error: saveErr } = await asUser
+    .from("wishlist_items")
     .insert({ user_id: up.user!.id, product_id: product.id });
-  ok("a signed-in customer can save a product", !saveErr, saveErr?.message ?? "");
+  ok(
+    "a signed-in customer can save a product",
+    !saveErr,
+    saveErr?.message ?? "",
+  );
 
   const browser = await chromium.launch();
-  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const ctx = await browser.newContext({
+    viewport: { width: 390, height: 844 },
+  });
   await ctx.addCookies(await cookieJar(up.session));
   const page = await ctx.newPage();
   const errs: string[] = [];
-  page.on("console", (m) => { if (m.type() === "error") errs.push(m.text()); });
+  page.on("console", (m) => {
+    if (m.type() === "error") errs.push(m.text());
+  });
   page.on("pageerror", (e) => errs.push("pageerror: " + e.message));
 
   await page.goto(`${BASE}/wishlist`, { waitUntil: "load" });
-  ok("the saved list renders the saved product",
-    (await page.getByText(product.name).count()) > 0, product.name);
-  ok("move-to-bag is offered",
-    (await page.getByRole("button", { name: /move to bag/i }).count()) > 0);
-  ok("it does not offer sign-in to somebody already signed in",
-    (await page.getByRole("button", { name: /continue with google/i }).count()) === 0);
+  ok(
+    "the saved list renders the saved product",
+    (await page.getByText(product.name).count()) > 0,
+    product.name,
+  );
+  ok(
+    "move-to-bag is offered",
+    (await page.getByRole("button", { name: /move to bag/i }).count()) > 0,
+  );
+  ok(
+    "it does not offer sign-in to somebody already signed in",
+    (await page
+      .getByRole("button", { name: /continue with google/i })
+      .count()) === 0,
+  );
 
-  await page.goto(`${BASE}/product/nike-air-max-90-mens`, { waitUntil: "load" });
-  ok("the account menu shows a signed-in state",
+  await page.goto(`${BASE}/product/nike-air-max-90-mens`, {
+    waitUntil: "load",
+  });
+  ok(
+    "the account menu shows a signed-in state",
     (await page.locator('[aria-label^="Account, signed in as"]').count()) > 0,
-    (await page.locator('[aria-label^="Account, signed in as"]').first().getAttribute("aria-label")) ?? "absent");
+    (await page
+      .locator('[aria-label^="Account, signed in as"]')
+      .first()
+      .getAttribute("aria-label")) ?? "absent",
+  );
 
   // Add to bag as a signed-in customer — the account-cart path, not the guest one.
-  const chip = page.locator('button[aria-label^="UK "]:not([aria-label*="sold out"])').first();
+  const chip = page
+    .locator('button[aria-label^="UK "]:not([aria-label*="sold out"])')
+    .first();
   await chip.click();
   await page.getByRole("button", { name: "Add to bag" }).first().click();
   await page.getByText("Added to bag").first().waitFor({ timeout: 10_000 });
   await page.reload({ waitUntil: "load" });
-  const label = await page.locator('a[href="/cart"]').first().getAttribute("aria-label");
+  const label = await page
+    .locator('a[href="/cart"]')
+    .first()
+    .getAttribute("aria-label");
   ok("the account bag counts it", /1 item/.test(label ?? ""), label ?? "");
 
   const cookies = await ctx.cookies();
-  ok("no guest token was minted for a signed-in customer",
+  ok(
+    "no guest token was minted for a signed-in customer",
     !cookies.some((c) => c.name === "fv_guest"),
-    cookies.map((c) => c.name).join(", "));
+    cookies.map((c) => c.name).join(", "),
+  );
 
   await page.goto(`${BASE}/cart`, { waitUntil: "load" });
-  ok("the cart page renders for a signed-in customer",
-    (await page.getByRole("heading", { level: 1 }).first().textContent() ?? "").toLowerCase().includes("your bag"));
-  ok("it does not pitch sign-in to somebody signed in",
-    (await page.getByText(/signing in keeps this bag/i).count()) === 0);
+  ok(
+    "the cart page renders for a signed-in customer",
+    (
+      (await page.getByRole("heading", { level: 1 }).first().textContent()) ??
+      ""
+    )
+      .toLowerCase()
+      .includes("your bag"),
+  );
+  ok(
+    "it does not pitch sign-in to somebody signed in",
+    (await page.getByText(/signing in keeps this bag/i).count()) === 0,
+  );
 
-  ok("no console errors", errs.filter((e) => !/404/.test(e)).length === 0, errs.slice(0, 2).join(" | "));
+  ok(
+    "no console errors",
+    errs.filter((e) => !/404/.test(e)).length === 0,
+    errs.slice(0, 2).join(" | "),
+  );
 
   await browser.close();
-  console.log(bad === 0 ? "\nAll signed-in checks passed.\n" : `\n${bad} FAILED\n`);
+  console.log(
+    bad === 0 ? "\nAll signed-in checks passed.\n" : `\n${bad} FAILED\n`,
+  );
   console.log(`  (account left behind: ${email})`);
   process.exit(bad === 0 ? 0 : 1);
 }
-main().catch((e) => { console.error(e); process.exit(1); });
+main().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});

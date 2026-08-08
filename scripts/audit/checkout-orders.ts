@@ -61,7 +61,9 @@ const ADDRESS = {
 let failures = 0;
 function check(name: string, passed: boolean, detail = "") {
   if (!passed) failures++;
-  console.log(`${passed ? "  PASS" : "  FAIL"}  ${name}${detail ? `  — ${detail}` : ""}`);
+  console.log(
+    `${passed ? "  PASS" : "  FAIL"}  ${name}${detail ? `  — ${detail}` : ""}`,
+  );
 }
 
 function guestClient(token: string): SupabaseClient<Database> {
@@ -72,7 +74,9 @@ function guestClient(token: string): SupabaseClient<Database> {
 }
 
 function adminClient(): SupabaseClient<Database> {
-  return createClient<Database>(URL_, SERVICE, { auth: { persistSession: false } });
+  return createClient<Database>(URL_, SERVICE, {
+    auth: { persistSession: false },
+  });
 }
 
 type Placed = { orderId: string; orderNumber: string; grandTotal: number };
@@ -84,7 +88,10 @@ async function placeOrderAs(
   guestToken: string | null,
   userId: string | null,
   method: "cod" | "razorpay",
-): Promise<{ ok: true; order: Placed } | { ok: false; code: string; details: string | null }> {
+): Promise<
+  | { ok: true; order: Placed }
+  | { ok: false; code: string; details: string | null }
+> {
   const { data, error } = await admin.rpc("create_order_with_stock", {
     p_cart_id: cartId,
     p_shipping_address: ADDRESS,
@@ -99,19 +106,30 @@ async function placeOrderAs(
     p_contact_phone: "9876543210",
   });
 
-  if (error) return { ok: false, code: error.code ?? "unknown", details: error.details ?? null };
+  if (error)
+    return {
+      ok: false,
+      code: error.code ?? "unknown",
+      details: error.details ?? null,
+    };
   const row = data?.[0];
   if (!row) return { ok: false, code: "no_row", details: null };
   return {
     ok: true,
-    order: { orderId: row.order_id, orderNumber: row.order_number, grandTotal: row.grand_total },
+    order: {
+      orderId: row.order_id,
+      orderNumber: row.order_number,
+      grandTotal: row.grand_total,
+    },
   };
 }
 
 async function main() {
   console.log("\nCheckout, orders and idempotency\n");
 
-  const anon = createClient<Database>(URL_, ANON, { auth: { persistSession: false } });
+  const anon = createClient<Database>(URL_, ANON, {
+    auth: { persistSession: false },
+  });
   const admin = adminClient();
   const placedOrders: string[] = [];
   const stockToRestore = new Map<string, number>();
@@ -122,7 +140,11 @@ async function main() {
   const stockOf = async (variantId: string): Promise<number> => {
     const row = await maybeRow<{ stock_quantity: number }>(
       "stockOf",
-      admin.from("product_variants").select("stock_quantity").eq("id", variantId).maybeSingle(),
+      admin
+        .from("product_variants")
+        .select("stock_quantity")
+        .eq("id", variantId)
+        .maybeSingle(),
     );
     return row?.stock_quantity ?? -1;
   };
@@ -144,7 +166,9 @@ async function main() {
     "pick variants",
     anon
       .from("product_variants")
-      .select("id, stock_quantity, product:products!inner(is_active, deleted_at)")
+      .select(
+        "id, stock_quantity, product:products!inner(is_active, deleted_at)",
+      )
       .eq("is_active", true)
       .gte("stock_quantity", 8)
       .limit(6)
@@ -158,22 +182,36 @@ async function main() {
   const guestA = guestClient(tokenA);
   const cartA = await maybeRow<{ id: string }>(
     "guest A cart",
-    guestA.from("carts").insert({ guest_token: tokenA }).select("id").maybeSingle(),
+    guestA
+      .from("carts")
+      .insert({ guest_token: tokenA })
+      .select("id")
+      .maybeSingle(),
   );
   if (!cartA) throw new Error("no guest cart");
   const lineA = (
-    await guestA.from("cart_items").insert({ cart_id: cartA.id, variant_id: main1.id, quantity: 2 })
+    await guestA
+      .from("cart_items")
+      .insert({ cart_id: cartA.id, variant_id: main1.id, quantity: 2 })
   ).error;
   if (lineA) throw new Error(`fill guest A: ${lineA.message}`);
 
   const placed = await placeOrderAs(admin, cartA.id, tokenA, null, "cod");
-  check("a guest order is placed", placed.ok, placed.ok ? placed.order.orderNumber : placed.code);
+  check(
+    "a guest order is placed",
+    placed.ok,
+    placed.ok ? placed.order.orderNumber : placed.code,
+  );
   if (!placed.ok) throw new Error("cannot continue without an order");
   placedOrders.push(placed.order.orderId);
 
   const afterStock = await maybeRow<{ stock_quantity: number }>(
     "stock after",
-    admin.from("product_variants").select("stock_quantity").eq("id", main1.id).maybeSingle(),
+    admin
+      .from("product_variants")
+      .select("stock_quantity")
+      .eq("id", main1.id)
+      .maybeSingle(),
   );
   check(
     "stock is decremented by exactly the quantity ordered",
@@ -185,9 +223,17 @@ async function main() {
     "cart after",
     admin.from("carts").select("status").eq("id", cartA.id).maybeSingle(),
   );
-  check("the cart is marked converted", cartAfter?.status === "converted", cartAfter?.status ?? "");
+  check(
+    "the cart is marked converted",
+    cartAfter?.status === "converted",
+    cartAfter?.status ?? "",
+  );
 
-  const snapshot = await rows<{ product_name: string; sku: string; unit_price: number }>(
+  const snapshot = await rows<{
+    product_name: string;
+    sku: string;
+    unit_price: number;
+  }>(
     "order items",
     admin
       .from("order_items")
@@ -196,41 +242,75 @@ async function main() {
   );
   check(
     "the line is snapshotted with a name, a SKU and a price",
-    snapshot.length === 1 && !!snapshot[0].product_name && !!snapshot[0].sku && snapshot[0].unit_price > 0,
+    snapshot.length === 1 &&
+      !!snapshot[0].product_name &&
+      !!snapshot[0].sku &&
+      snapshot[0].unit_price > 0,
     JSON.stringify(snapshot[0] ?? null),
   );
 
   const zeroDiscount = await maybeRow<{ discount_total: number }>(
     "discount",
-    admin.from("orders").select("discount_total").eq("id", placed.order.orderId).maybeSingle(),
+    admin
+      .from("orders")
+      .select("discount_total")
+      .eq("id", placed.order.orderId)
+      .maybeSingle(),
   );
-  check("discount is zero — nothing can move it this phase", zeroDiscount?.discount_total === 0);
+  check(
+    "discount is zero — nothing can move it this phase",
+    zeroDiscount?.discount_total === 0,
+  );
 
   /* ── 2 · only the owner reads it ────────────────────────────────────────── */
   const mine = await rows<{ id: string }>(
     "guest A reads their order",
-    guestA.from("orders").select("id").eq("order_number", placed.order.orderNumber),
+    guestA
+      .from("orders")
+      .select("id")
+      .eq("order_number", placed.order.orderNumber),
   );
-  check("the guest who placed it can read it", mine.length === 1, `${mine.length} rows`);
+  check(
+    "the guest who placed it can read it",
+    mine.length === 1,
+    `${mine.length} rows`,
+  );
 
   const myItems = await rows<{ id: string }>(
     "guest A reads their items",
-    guestA.from("order_items").select("id").eq("order_id", placed.order.orderId),
+    guestA
+      .from("order_items")
+      .select("id")
+      .eq("order_id", placed.order.orderId),
   );
   check("and its items", myItems.length === 1, `${myItems.length} rows`);
 
   const myHistory = await rows<{ status: string }>(
     "guest A reads their history",
-    guestA.from("order_status_history").select("status").eq("order_id", placed.order.orderId),
+    guestA
+      .from("order_status_history")
+      .select("status")
+      .eq("order_id", placed.order.orderId),
   );
-  check("and its history", myHistory.length === 1, myHistory.map((h) => h.status).join(","));
+  check(
+    "and its history",
+    myHistory.length === 1,
+    myHistory.map((h) => h.status).join(","),
+  );
 
   const guestB = guestClient(randomUUID());
   const byNumber = await rows<{ id: string }>(
     "guest B guesses the number",
-    guestB.from("orders").select("id").eq("order_number", placed.order.orderNumber),
+    guestB
+      .from("orders")
+      .select("id")
+      .eq("order_number", placed.order.orderNumber),
   );
-  check("another guest cannot read it by order number", byNumber.length === 0, `${byNumber.length} rows`);
+  check(
+    "another guest cannot read it by order number",
+    byNumber.length === 0,
+    `${byNumber.length} rows`,
+  );
 
   const byId = await rows<{ id: string }>(
     "guest B knows the id",
@@ -240,35 +320,57 @@ async function main() {
 
   const itemsB = await rows<{ id: string }>(
     "guest B reads the items",
-    guestB.from("order_items").select("id").eq("order_id", placed.order.orderId),
+    guestB
+      .from("order_items")
+      .select("id")
+      .eq("order_id", placed.order.orderId),
   );
   check("nor its items", itemsB.length === 0, `${itemsB.length} rows`);
 
   const historyB = await rows<{ id: string }>(
     "guest B reads the history",
-    guestB.from("order_status_history").select("id").eq("order_id", placed.order.orderId),
+    guestB
+      .from("order_status_history")
+      .select("id")
+      .eq("order_id", placed.order.orderId),
   );
   check("nor its history", historyB.length === 0, `${historyB.length} rows`);
 
   const tokenless = await rows<{ id: string }>(
     "anon with no token",
-    anon.from("orders").select("id").eq("order_number", placed.order.orderNumber),
+    anon
+      .from("orders")
+      .select("id")
+      .eq("order_number", placed.order.orderNumber),
   );
   check("nor an anonymous caller with no token at all", tokenless.length === 0);
 
   const email = `fv-checkout.${Date.now().toString(36)}@example.com`;
-  const { data: signUp, error: signUpError } = await anon.auth.signUp({ email, password: PASSWORD });
-  if (signUpError || !signUp.session) throw new Error(`signUp: ${signUpError?.message}`);
+  const { data: signUp, error: signUpError } = await anon.auth.signUp({
+    email,
+    password: PASSWORD,
+  });
+  if (signUpError || !signUp.session)
+    throw new Error(`signUp: ${signUpError?.message}`);
   madeAccounts.push({ id: signUp.session.user.id, email });
   const stranger = createClient<Database>(URL_, ANON, {
     auth: { persistSession: false },
-    global: { headers: { Authorization: `Bearer ${signUp.session.access_token}` } },
+    global: {
+      headers: { Authorization: `Bearer ${signUp.session.access_token}` },
+    },
   });
   const strangerRead = await rows<{ id: string }>(
     "a signed-in stranger",
-    stranger.from("orders").select("id").eq("order_number", placed.order.orderNumber),
+    stranger
+      .from("orders")
+      .select("id")
+      .eq("order_number", placed.order.orderNumber),
   );
-  check("nor a different, signed-in customer", strangerRead.length === 0, `${strangerRead.length} rows`);
+  check(
+    "nor a different, signed-in customer",
+    strangerRead.length === 0,
+    `${strangerRead.length} rows`,
+  );
 
   /* ── 3 · one cart converts once ─────────────────────────────────────────── */
   const second = await placeOrderAs(admin, cartA.id, tokenA, null, "cod");
@@ -281,12 +383,19 @@ async function main() {
     "orders for this cart",
     admin.from("orders").select("id").eq("cart_id", cartA.id),
   );
-  check("and exactly one order exists for it", forThisCart.length === 1, `${forThisCart.length}`);
+  check(
+    "and exactly one order exists for it",
+    forThisCart.length === 1,
+    `${forThisCart.length}`,
+  );
 
   /* ── 4 · two customers, one unit ────────────────────────────────────────── */
   stockToRestore.set(contested.id, contested.stock_quantity);
   const pinned = (
-    await admin.from("product_variants").update({ stock_quantity: 1 }).eq("id", contested.id)
+    await admin
+      .from("product_variants")
+      .update({ stock_quantity: 1 })
+      .eq("id", contested.id)
   ).error;
   if (pinned) throw new Error(`pin stock: ${pinned.message}`);
 
@@ -296,11 +405,17 @@ async function main() {
       const client = guestClient(token);
       const cart = await maybeRow<{ id: string }>(
         "racer cart",
-        client.from("carts").insert({ guest_token: token }).select("id").maybeSingle(),
+        client
+          .from("carts")
+          .insert({ guest_token: token })
+          .select("id")
+          .maybeSingle(),
       );
       if (!cart) throw new Error("no racer cart");
       const err = (
-        await client.from("cart_items").insert({ cart_id: cart.id, variant_id: contested.id, quantity: 1 })
+        await client
+          .from("cart_items")
+          .insert({ cart_id: cart.id, variant_id: contested.id, quantity: 1 })
       ).error;
       if (err) throw new Error(`fill racer: ${err.message}`);
       return { token, cartId: cart.id };
@@ -308,54 +423,87 @@ async function main() {
   );
 
   const raced = await Promise.all(
-    racers.map((racer) => placeOrderAs(admin, racer.cartId, racer.token, null, "cod")),
+    racers.map((racer) =>
+      placeOrderAs(admin, racer.cartId, racer.token, null, "cod"),
+    ),
   );
   const winners = raced.filter((r) => r.ok);
   const losers = raced.filter((r) => !r.ok);
-  for (const winner of winners) if (winner.ok) placedOrders.push(winner.order.orderId);
+  for (const winner of winners)
+    if (winner.ok) placedOrders.push(winner.order.orderId);
 
-  check("exactly one of two concurrent checkouts wins", winners.length === 1, `${winners.length} won`);
+  check(
+    "exactly one of two concurrent checkouts wins",
+    winners.length === 1,
+    `${winners.length} won`,
+  );
   check(
     "the loser is told what sold out, by name and size",
     losers.length === 1 &&
       !losers[0].ok &&
       losers[0].code === "OSTCK" &&
       /productName/.test(losers[0].details ?? ""),
-    losers[0] && !losers[0].ok ? `${losers[0].code} ${losers[0].details ?? ""}` : "",
+    losers[0] && !losers[0].ok
+      ? `${losers[0].code} ${losers[0].details ?? ""}`
+      : "",
   );
   const contestedAfter = await maybeRow<{ stock_quantity: number }>(
     "contested stock",
-    admin.from("product_variants").select("stock_quantity").eq("id", contested.id).maybeSingle(),
+    admin
+      .from("product_variants")
+      .select("stock_quantity")
+      .eq("id", contested.id)
+      .maybeSingle(),
   );
-  check("and the unit is gone exactly once", contestedAfter?.stock_quantity === 0, `${contestedAfter?.stock_quantity}`);
+  check(
+    "and the unit is gone exactly once",
+    contestedAfter?.stock_quantity === 0,
+    `${contestedAfter?.stock_quantity}`,
+  );
 
   /* ── 5 · cancelling restocks exactly once ───────────────────────────────── */
   const winner = winners[0];
   if (winner.ok) {
-    const { data: first, error: firstError } = await admin.rpc("cancel_order_with_restock", {
-      p_order_id: winner.order.orderId,
-      p_reason: "audit",
-      p_require_unpaid: true,
-      p_release_cart: false,
-    });
+    const { data: first, error: firstError } = await admin.rpc(
+      "cancel_order_with_restock",
+      {
+        p_order_id: winner.order.orderId,
+        p_reason: "audit",
+        p_require_unpaid: true,
+        p_release_cart: false,
+      },
+    );
     if (firstError) throw new Error(`cancel: ${firstError.message}`);
 
-    const { data: again, error: againError } = await admin.rpc("cancel_order_with_restock", {
-      p_order_id: winner.order.orderId,
-      p_reason: "audit again",
-      p_require_unpaid: true,
-      p_release_cart: false,
-    });
+    const { data: again, error: againError } = await admin.rpc(
+      "cancel_order_with_restock",
+      {
+        p_order_id: winner.order.orderId,
+        p_reason: "audit again",
+        p_require_unpaid: true,
+        p_release_cart: false,
+      },
+    );
     if (againError) throw new Error(`cancel again: ${againError.message}`);
 
     const restocked = await maybeRow<{ stock_quantity: number }>(
       "restocked",
-      admin.from("product_variants").select("stock_quantity").eq("id", contested.id).maybeSingle(),
+      admin
+        .from("product_variants")
+        .select("stock_quantity")
+        .eq("id", contested.id)
+        .maybeSingle(),
     );
-    check("cancelling gives the unit back", first === "cancelled" && restocked?.stock_quantity === 1,
-      `${first} / stock ${restocked?.stock_quantity}`);
-    check("cancelling twice does not give it back twice", again === "already_cancelled" && restocked?.stock_quantity === 1,
-      `${again} / stock ${restocked?.stock_quantity}`);
+    check(
+      "cancelling gives the unit back",
+      first === "cancelled" && restocked?.stock_quantity === 1,
+      `${first} / stock ${restocked?.stock_quantity}`,
+    );
+    check(
+      "cancelling twice does not give it back twice",
+      again === "already_cancelled" && restocked?.stock_quantity === 1,
+      `${again} / stock ${restocked?.stock_quantity}`,
+    );
   }
 
   /* ── 6 · ten deliveries of one webhook ──────────────────────────────────── */
@@ -363,11 +511,17 @@ async function main() {
   const guestW = guestClient(tokenW);
   const cartW = await maybeRow<{ id: string }>(
     "webhook cart",
-    guestW.from("carts").insert({ guest_token: tokenW }).select("id").maybeSingle(),
+    guestW
+      .from("carts")
+      .insert({ guest_token: tokenW })
+      .select("id")
+      .maybeSingle(),
   );
   if (!cartW) throw new Error("no webhook cart");
   const lineW = (
-    await guestW.from("cart_items").insert({ cart_id: cartW.id, variant_id: forWebhook.id, quantity: 1 })
+    await guestW
+      .from("cart_items")
+      .insert({ cart_id: cartW.id, variant_id: forWebhook.id, quantity: 1 })
   ).error;
   if (lineW) throw new Error(`fill webhook cart: ${lineW.message}`);
 
@@ -409,15 +563,25 @@ async function main() {
     );
   }
 
-  check("the first delivery confirms the order", deliveries[0].applied === true,
-    JSON.stringify(deliveries[0]));
+  check(
+    "the first delivery confirms the order",
+    deliveries[0].applied === true,
+    JSON.stringify(deliveries[0]),
+  );
   check(
     "the other nine are duplicates",
     deliveries.slice(1).every((d) => !d.applied && d.reason === "duplicate"),
-    deliveries.slice(1).map((d) => (d.applied ? "applied" : d.reason)).join(","),
+    deliveries
+      .slice(1)
+      .map((d) => (d.applied ? "applied" : d.reason))
+      .join(","),
   );
 
-  const settled = await maybeRow<{ status: string; payment_status: string; stock_restored_at: string | null }>(
+  const settled = await maybeRow<{
+    status: string;
+    payment_status: string;
+    stock_restored_at: string | null;
+  }>(
     "order after the webhook storm",
     admin
       .from("orders")
@@ -425,30 +589,48 @@ async function main() {
       .eq("id", online.order.orderId)
       .maybeSingle(),
   );
-  check("the order is confirmed and paid, once", settled?.status === "confirmed" && settled?.payment_status === "paid",
-    `${settled?.status}/${settled?.payment_status}`);
+  check(
+    "the order is confirmed and paid, once",
+    settled?.status === "confirmed" && settled?.payment_status === "paid",
+    `${settled?.status}/${settled?.payment_status}`,
+  );
 
   const stockOnce = await maybeRow<{ stock_quantity: number }>(
     "webhook variant stock",
-    admin.from("product_variants").select("stock_quantity").eq("id", forWebhook.id).maybeSingle(),
+    admin
+      .from("product_variants")
+      .select("stock_quantity")
+      .eq("id", forWebhook.id)
+      .maybeSingle(),
   );
-  check("stock moved exactly once across ten deliveries",
+  check(
+    "stock moved exactly once across ten deliveries",
     stockOnce?.stock_quantity === forWebhook.stock_quantity - 1,
-    `${forWebhook.stock_quantity} -> ${stockOnce?.stock_quantity}`);
+    `${forWebhook.stock_quantity} -> ${stockOnce?.stock_quantity}`,
+  );
 
   const events = await rows<{ id: string; result: string | null }>(
     "event ledger",
     admin.from("payment_events").select("id, result").eq("event_id", eventId),
   );
-  check("one ledger row for one event", events.length === 1 && events[0].result === "applied",
-    `${events.length} rows, result ${events[0]?.result}`);
+  check(
+    "one ledger row for one event",
+    events.length === 1 && events[0].result === "applied",
+    `${events.length} rows, result ${events[0]?.result}`,
+  );
 
   const history = await rows<{ status: string }>(
     "history after capture",
-    admin.from("order_status_history").select("status").eq("order_id", online.order.orderId),
+    admin
+      .from("order_status_history")
+      .select("status")
+      .eq("order_id", online.order.orderId),
   );
-  check("two history rows: placed, then confirmed", history.length === 2,
-    history.map((h) => h.status).join(","));
+  check(
+    "two history rows: placed, then confirmed",
+    history.length === 2,
+    history.map((h) => h.status).join(","),
+  );
 
   /* ── 7 · abandoned orders give their units back (E-1) ───────────────────── */
   {
@@ -461,13 +643,21 @@ async function main() {
     const guestAb = guestClient(tokenAb);
     const cartAb = await maybeRow<{ id: string }>(
       "abandoned cart",
-      guestAb.from("carts").insert({ guest_token: tokenAb }).select("id").maybeSingle(),
+      guestAb
+        .from("carts")
+        .insert({ guest_token: tokenAb })
+        .select("id")
+        .maybeSingle(),
     );
     const tokenAuth = randomUUID();
     const guestAuth = guestClient(tokenAuth);
     const cartAuth = await maybeRow<{ id: string }>(
       "authorised cart",
-      guestAuth.from("carts").insert({ guest_token: tokenAuth }).select("id").maybeSingle(),
+      guestAuth
+        .from("carts")
+        .insert({ guest_token: tokenAuth })
+        .select("id")
+        .maybeSingle(),
     );
     if (!cartAb || !cartAuth) throw new Error("no sweep carts");
     sweepCarts.push(cartAb.id, cartAuth.id);
@@ -475,14 +665,29 @@ async function main() {
     const beforeSweep = await stockOf(forSweep.id);
     for (const cart of [cartAb.id, cartAuth.id]) {
       const err = (
-        await admin.from("cart_items").insert({ cart_id: cart, variant_id: forSweep.id, quantity: 1 })
+        await admin
+          .from("cart_items")
+          .insert({ cart_id: cart, variant_id: forSweep.id, quantity: 1 })
       ).error;
       if (err) throw new Error(`fill sweep cart: ${err.message}`);
     }
 
-    const abandoned = await placeOrderAs(admin, cartAb.id, tokenAb, null, "razorpay");
-    const inFlight = await placeOrderAs(admin, cartAuth.id, tokenAuth, null, "razorpay");
-    if (!abandoned.ok || !inFlight.ok) throw new Error("could not place the sweep orders");
+    const abandoned = await placeOrderAs(
+      admin,
+      cartAb.id,
+      tokenAb,
+      null,
+      "razorpay",
+    );
+    const inFlight = await placeOrderAs(
+      admin,
+      cartAuth.id,
+      tokenAuth,
+      null,
+      "razorpay",
+    );
+    if (!abandoned.ok || !inFlight.ok)
+      throw new Error("could not place the sweep orders");
     placedOrders.push(abandoned.order.orderId, inFlight.order.orderId);
 
     // Money committed but not settled. This one must survive the sweep.
@@ -505,7 +710,9 @@ async function main() {
     );
 
     // Inside the window: nothing is stale yet, so nothing may move.
-    const { data: freedEarly, error: earlyError } = await admin.rpc("release_abandoned_orders");
+    const { data: freedEarly, error: earlyError } = await admin.rpc(
+      "release_abandoned_orders",
+    );
     if (earlyError) throw new Error(`early sweep: ${earlyError.message}`);
     check(
       "a fresh order is inside the window and is left alone",
@@ -516,12 +723,16 @@ async function main() {
     const backdated = (
       await admin
         .from("orders")
-        .update({ placed_at: new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString() })
+        .update({
+          placed_at: new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString(),
+        })
         .in("id", [abandoned.order.orderId, inFlight.order.orderId])
     ).error;
     if (backdated) throw new Error(`backdate: ${backdated.message}`);
 
-    const { data: freed, error: sweepError } = await admin.rpc("release_abandoned_orders");
+    const { data: freed, error: sweepError } = await admin.rpc(
+      "release_abandoned_orders",
+    );
     if (sweepError) throw new Error(`sweep: ${sweepError.message}`);
 
     const abandonedRow = await orderStatus(admin, abandoned.order.orderId);
@@ -544,7 +755,9 @@ async function main() {
       `${beforeSweep} -> ${heldBoth} -> ${afterSweep}`,
     );
 
-    const { data: freedAgain, error: againError } = await admin.rpc("release_abandoned_orders");
+    const { data: freedAgain, error: againError } = await admin.rpc(
+      "release_abandoned_orders",
+    );
     if (againError) throw new Error(`second sweep: ${againError.message}`);
     check(
       "sweeping twice frees nothing the second time",
@@ -553,7 +766,11 @@ async function main() {
     );
 
     const { error: sweepAnon } = await anon.rpc("release_abandoned_orders");
-    check("anon cannot call release_abandoned_orders", !!sweepAnon, sweepAnon?.code ?? "no error");
+    check(
+      "anon cannot call release_abandoned_orders",
+      !!sweepAnon,
+      sweepAnon?.code ?? "no error",
+    );
   }
 
   /* ── 8 · a capture racing a cancellation (E-2) ──────────────────────────── */
@@ -575,12 +792,18 @@ async function main() {
       const client = guestClient(token);
       const cart = await maybeRow<{ id: string }>(
         "race cart",
-        client.from("carts").insert({ guest_token: token }).select("id").maybeSingle(),
+        client
+          .from("carts")
+          .insert({ guest_token: token })
+          .select("id")
+          .maybeSingle(),
       );
       if (!cart) throw new Error("no race cart");
       sweepCarts.push(cart.id);
       const fill = (
-        await client.from("cart_items").insert({ cart_id: cart.id, variant_id: forRace.id, quantity: 1 })
+        await client
+          .from("cart_items")
+          .insert({ cart_id: cart.id, variant_id: forRace.id, quantity: 1 })
       ).error;
       if (fill) throw new Error(`fill race cart: ${fill.message}`);
 
@@ -630,7 +853,11 @@ async function main() {
       })();
       await Promise.all([capture, cancelling]);
 
-      const row = await maybeRow<{ status: string; payment_status: string; stock_restored_at: string | null }>(
+      const row = await maybeRow<{
+        status: string;
+        payment_status: string;
+        stock_restored_at: string | null;
+      }>(
         "order after the race",
         admin
           .from("orders")
@@ -641,7 +868,8 @@ async function main() {
       observed.push(
         `${raceDelays[i]}ms:${row?.status}/${row?.payment_status}${row?.stock_restored_at ? "+restocked" : ""}`,
       );
-      if (row && row.status !== "cancelled" && row.stock_restored_at !== null) live++;
+      if (row && row.status !== "cancelled" && row.stock_restored_at !== null)
+        live++;
     }
 
     check(
@@ -660,12 +888,18 @@ async function main() {
     const guestG = guestClient(tokenG);
     const cartG = await maybeRow<{ id: string }>(
       "adoption cart",
-      guestG.from("carts").insert({ guest_token: tokenG }).select("id").maybeSingle(),
+      guestG
+        .from("carts")
+        .insert({ guest_token: tokenG })
+        .select("id")
+        .maybeSingle(),
     );
     if (!cartG) throw new Error("no adoption cart");
     sweepCarts.push(cartG.id);
     const fillG = (
-      await guestG.from("cart_items").insert({ cart_id: cartG.id, variant_id: forAdopt.id, quantity: 1 })
+      await guestG
+        .from("cart_items")
+        .insert({ cart_id: cartG.id, variant_id: forAdopt.id, quantity: 1 })
     ).error;
     if (fillG) throw new Error(`fill adoption cart: ${fillG.message}`);
 
@@ -678,7 +912,8 @@ async function main() {
       email: emailG,
       password: PASSWORD,
     });
-    if (signUpGError || !signUpG.session) throw new Error(`adoption signUp: ${signUpGError?.message}`);
+    if (signUpGError || !signUpG.session)
+      throw new Error(`adoption signUp: ${signUpGError?.message}`);
     madeAccounts.push({ id: signUpG.session.user.id, email: emailG });
 
     // Exactly the client /auth/callback holds: the new session *and* the guest
@@ -695,7 +930,10 @@ async function main() {
 
     // A stranger holding a *different* token must not be able to take it first.
     const thiefEmail = `fv-thief.${Date.now().toString(36)}@example.com`;
-    const { data: thief } = await anon.auth.signUp({ email: thiefEmail, password: PASSWORD });
+    const { data: thief } = await anon.auth.signUp({
+      email: thiefEmail,
+      password: PASSWORD,
+    });
     if (thief?.session) {
       madeAccounts.push({ id: thief.session.user.id, email: thiefEmail });
       const thiefClient = createClient<Database>(URL_, ANON, {
@@ -707,25 +945,35 @@ async function main() {
           },
         },
       });
-      const { data: stolen, error: thiefError } = await thiefClient.rpc("adopt_guest_orders");
+      const { data: stolen, error: thiefError } =
+        await thiefClient.rpc("adopt_guest_orders");
       check(
         "another account carrying its own token adopts nothing",
         !thiefError && stolen === 0,
-        thiefError ? thiefError.code ?? "error" : `${stolen} adopted`,
+        thiefError ? (thiefError.code ?? "error") : `${stolen} adopted`,
       );
     }
 
-    const { data: adopted, error: adoptError } = await callback.rpc("adopt_guest_orders");
-    check("adopt_guest_orders moves the guest's order to the account", !adoptError && adopted === 1,
-      adoptError ? adoptError.message : `${adopted} adopted`);
+    const { data: adopted, error: adoptError } =
+      await callback.rpc("adopt_guest_orders");
+    check(
+      "adopt_guest_orders moves the guest's order to the account",
+      !adoptError && adopted === 1,
+      adoptError ? adoptError.message : `${adopted} adopted`,
+    );
 
     const asAccount = createClient<Database>(URL_, ANON, {
       auth: { persistSession: false },
-      global: { headers: { Authorization: `Bearer ${signUpG.session.access_token}` } },
+      global: {
+        headers: { Authorization: `Bearer ${signUpG.session.access_token}` },
+      },
     });
     const owned = await rows<{ id: string; guest_token: string | null }>(
       "the account's orders after adoption",
-      asAccount.from("orders").select("id, guest_token").eq("id", guestOrder.order.orderId),
+      asAccount
+        .from("orders")
+        .select("id, guest_token")
+        .eq("id", guestOrder.order.orderId),
     );
     check(
       "the customer can read it with no guest cookie at all",
@@ -735,11 +983,19 @@ async function main() {
 
     const staleToken = await rows<{ id: string }>(
       "the old token after adoption",
-      guestClient(tokenG).from("orders").select("id").eq("id", guestOrder.order.orderId),
+      guestClient(tokenG)
+        .from("orders")
+        .select("id")
+        .eq("id", guestOrder.order.orderId),
     );
-    check("and the retired token reads nothing", staleToken.length === 0, `${staleToken.length} rows`);
+    check(
+      "and the retired token reads nothing",
+      staleToken.length === 0,
+      `${staleToken.length} rows`,
+    );
 
-    const { data: again, error: againAdoptError } = await callback.rpc("adopt_guest_orders");
+    const { data: again, error: againAdoptError } =
+      await callback.rpc("adopt_guest_orders");
     check(
       "adopting twice is a no-op",
       !againAdoptError && again === 0,
@@ -752,13 +1008,21 @@ async function main() {
     "anon reads payments",
     anon.from("payments").select("id").eq("order_id", online.order.orderId),
   );
-  check("anon reads zero payment rows", paymentsAnon.length === 0, `${paymentsAnon.length}`);
+  check(
+    "anon reads zero payment rows",
+    paymentsAnon.length === 0,
+    `${paymentsAnon.length}`,
+  );
 
   const eventsUser = await rows<{ id: string }>(
     "a customer reads the event ledger",
     stranger.from("payment_events").select("id"),
   );
-  check("a signed-in customer reads zero payment events", eventsUser.length === 0, `${eventsUser.length}`);
+  check(
+    "a signed-in customer reads zero payment events",
+    eventsUser.length === 0,
+    `${eventsUser.length}`,
+  );
 
   // These three read `error` and nothing else: being refused *is* the result.
   const { error: rpcAnonError } = await anon.rpc("create_order_with_stock", {
@@ -770,18 +1034,33 @@ async function main() {
     p_shipping_flat_fee: 0,
     p_free_shipping_above: 0,
   });
-  check("anon cannot call create_order_with_stock", !!rpcAnonError, rpcAnonError?.code ?? "no error");
+  check(
+    "anon cannot call create_order_with_stock",
+    !!rpcAnonError,
+    rpcAnonError?.code ?? "no error",
+  );
 
-  const { error: cancelUserError } = await stranger.rpc("cancel_order_with_restock", {
-    p_order_id: online.order.orderId,
-    p_reason: "attack",
+  const { error: cancelUserError } = await stranger.rpc(
+    "cancel_order_with_restock",
+    {
+      p_order_id: online.order.orderId,
+      p_reason: "attack",
+    },
+  );
+  check(
+    "a customer cannot call cancel_order_with_restock",
+    !!cancelUserError,
+    cancelUserError?.code ?? "no error",
+  );
+
+  const { error: guardUserError } = await stranger.rpc("assert_cart_stock", {
+    p_cart_id: cartA.id,
   });
-  check("a customer cannot call cancel_order_with_restock", !!cancelUserError,
-    cancelUserError?.code ?? "no error");
-
-  const { error: guardUserError } = await stranger.rpc("assert_cart_stock", { p_cart_id: cartA.id });
-  check("a customer cannot call assert_cart_stock", !!guardUserError,
-    guardUserError?.code ?? "no error");
+  check(
+    "a customer cannot call assert_cart_stock",
+    !!guardUserError,
+    guardUserError?.code ?? "no error",
+  );
 
   /* ── cleanup ────────────────────────────────────────────────────────────── */
   for (const orderId of placedOrders) {
@@ -794,32 +1073,58 @@ async function main() {
         p_release_cart: false,
       })
     ).error;
-    if (undone) console.error(`  cleanup: could not cancel ${orderId}: ${undone.message}`);
+    if (undone)
+      console.error(
+        `  cleanup: could not cancel ${orderId}: ${undone.message}`,
+      );
 
-    const removed = (await admin.from("orders").delete().eq("id", orderId)).error;
-    if (removed) console.error(`  cleanup: could not delete order ${orderId}: ${removed.message}`);
+    const removed = (await admin.from("orders").delete().eq("id", orderId))
+      .error;
+    if (removed)
+      console.error(
+        `  cleanup: could not delete order ${orderId}: ${removed.message}`,
+      );
   }
   for (const [variantId, stock] of stockToRestore) {
     const restored = (
-      await admin.from("product_variants").update({ stock_quantity: stock }).eq("id", variantId)
+      await admin
+        .from("product_variants")
+        .update({ stock_quantity: stock })
+        .eq("id", variantId)
     ).error;
-    if (restored) console.error(`  cleanup: could not restore stock for ${variantId}`);
+    if (restored)
+      console.error(`  cleanup: could not restore stock for ${variantId}`);
   }
   const carts = (
-    await admin.from("carts").delete().in("id", [cartA.id, cartW.id, ...racers.map((r) => r.cartId)])
+    await admin
+      .from("carts")
+      .delete()
+      .in("id", [cartA.id, cartW.id, ...racers.map((r) => r.cartId)])
   ).error;
-  if (carts) console.error(`  cleanup: could not delete the test carts: ${carts.message}`);
+  if (carts)
+    console.error(
+      `  cleanup: could not delete the test carts: ${carts.message}`,
+    );
 
   if (sweepCarts.length > 0) {
-    const extra = (await admin.from("carts").delete().in("id", sweepCarts)).error;
-    if (extra) console.error(`  cleanup: could not delete the sweep/race carts: ${extra.message}`);
+    const extra = (await admin.from("carts").delete().in("id", sweepCarts))
+      .error;
+    if (extra)
+      console.error(
+        `  cleanup: could not delete the sweep/race carts: ${extra.message}`,
+      );
   }
 
   // payment_events deliberately has no foreign key to orders — an event for an
   // order we cannot resolve still has to be recordable — so deleting the order
   // leaves the ledger row behind. Swept explicitly rather than by cascade.
-  const ledger = (await admin.from("payment_events").delete().in("event_id", madeEventIds)).error;
-  if (ledger) console.error(`  cleanup: could not delete the test events: ${ledger.message}`);
+  const ledger = (
+    await admin.from("payment_events").delete().in("event_id", madeEventIds)
+  ).error;
+  if (ledger)
+    console.error(
+      `  cleanup: could not delete the test events: ${ledger.message}`,
+    );
 
   // The throwaway sign-ups go too. Leaving them was a documented wart in the
   // first version of this file and Agent E's suite showed it is avoidable: the
@@ -828,12 +1133,19 @@ async function main() {
   let deleted = 0;
   for (const account of madeAccounts) {
     const { error } = await admin.auth.admin.deleteUser(account.id);
-    if (error) console.error(`  cleanup: could not delete ${account.email}: ${error.message}`);
+    if (error)
+      console.error(
+        `  cleanup: could not delete ${account.email}: ${error.message}`,
+      );
     else deleted++;
   }
 
-  console.log(`\n${failures === 0 ? "All checks passed." : `${failures} check(s) FAILED.`}\n`);
-  console.log(`  accounts created ${madeAccounts.length}, deleted ${deleted}\n`);
+  console.log(
+    `\n${failures === 0 ? "All checks passed." : `${failures} check(s) FAILED.`}\n`,
+  );
+  console.log(
+    `  accounts created ${madeAccounts.length}, deleted ${deleted}\n`,
+  );
   process.exit(failures === 0 ? 0 : 1);
 }
 

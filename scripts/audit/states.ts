@@ -29,7 +29,10 @@ export type AuditState = {
   name: string;
   path: string;
   /** Which of the fixture's cookie jars this state is seen through. */
-  as: keyof Pick<QaFixture, "guest" | "guestOrder" | "account"> | "failure" | "browserFailure";
+  as:
+    | keyof Pick<QaFixture, "guest" | "guestOrder" | "account">
+    | "failure"
+    | "browserFailure";
   /** Performed after the page is ready — opens an overlay, submits a form. */
   after?: (page: Page) => Promise<void>;
   /** Visited at the narrowest width only, because it cannot be repeated. */
@@ -44,7 +47,11 @@ async function fillAddress(page: Page, guest: boolean) {
   await page.fill("#checkout-city", QA_ADDRESS.city);
   await page.fill("#checkout-postalCode", QA_ADDRESS.postalCode);
   await page.selectOption("#checkout-state", QA_ADDRESS.state);
-  if (guest) await page.fill("#checkout-contactEmail", `${QA_EMAIL_PREFIX}guest@example.com`);
+  if (guest)
+    await page.fill(
+      "#checkout-contactEmail",
+      `${QA_EMAIL_PREFIX}guest@example.com`,
+    );
 }
 
 export function auditStates(fixture: QaFixture): AuditState[] {
@@ -57,16 +64,23 @@ export function auditStates(fixture: QaFixture): AuditState[] {
       as: "guest",
       after: async (page) => {
         await page.locator('a[href="/cart"]').first().click();
-        await page.getByRole("dialog").waitFor({ state: "visible", timeout: 15_000 });
+        await page
+          .getByRole("dialog")
+          .waitFor({ state: "visible", timeout: 15_000 });
         // The drawer fetches its lines after it animates in; measuring before
         // they land measures an empty panel.
-        await page.getByRole("button", { name: /^One more/ }).first().waitFor({ timeout: 15_000 });
+        await page
+          .getByRole("button", { name: /^One more/ })
+          .first()
+          .waitFor({ timeout: 15_000 });
         // The panel is still sliding in when its lines land. `waitForReady`
         // settles animations on arrival; this state creates one afterwards.
         await page
           .locator('[role="dialog"]')
           .first()
-          .evaluate((node) => Promise.allSettled(node.getAnimations().map((a) => a.finished)));
+          .evaluate((node) =>
+            Promise.allSettled(node.getAnimations().map((a) => a.finished)),
+          );
       },
     },
 
@@ -80,7 +94,9 @@ export function auditStates(fixture: QaFixture): AuditState[] {
         // Client-side only: no round trip, so this state is repeatable at every
         // width and leaves nothing behind.
         await page.getByRole("button", { name: /place order|^pay /i }).click();
-        await page.locator("#checkout-recipientName-error").waitFor({ timeout: 10_000 });
+        await page
+          .locator("#checkout-recipientName-error")
+          .waitFor({ timeout: 10_000 });
       },
     },
     {
@@ -91,7 +107,9 @@ export function auditStates(fixture: QaFixture): AuditState[] {
         await fillAddress(page, true);
         await page.locator('input[name="paymentMethod"][value="cod"]').check();
         await page.getByRole("button", { name: /place order/i }).click();
-        await page.getByText(/reached the last pair first/i).waitFor({ timeout: 30_000 });
+        await page
+          .getByText(/reached the last pair first/i)
+          .waitFor({ timeout: 30_000 });
       },
     },
     { name: "checkout-signed-in", path: "/checkout", as: "account" },
@@ -101,7 +119,9 @@ export function auditStates(fixture: QaFixture): AuditState[] {
       as: "account",
       after: async (page) => {
         await page.locator('input[name="addressChoice"][value="new"]').check();
-        await page.locator("#checkout-recipientName").waitFor({ timeout: 10_000 });
+        await page
+          .locator("#checkout-recipientName")
+          .waitFor({ timeout: 10_000 });
       },
     },
     {
@@ -124,11 +144,17 @@ export function auditStates(fixture: QaFixture): AuditState[] {
          * finding about Razorpay's chrome and not about this shop.
          */
         await page.route(`${RAZORPAY_CHECKOUT_SRC}*`, (route) => route.abort());
-        await page.route("**/checkout.razorpay.com/**", (route) => route.abort());
+        await page.route("**/checkout.razorpay.com/**", (route) =>
+          route.abort(),
+        );
         await page.reload({ waitUntil: "load" });
-        await page.locator("#checkout-recipientName").waitFor({ timeout: 20_000 });
+        await page
+          .locator("#checkout-recipientName")
+          .waitFor({ timeout: 20_000 });
         await fillAddress(page, true);
-        await page.locator('input[name="paymentMethod"][value="razorpay"]').check();
+        await page
+          .locator('input[name="paymentMethod"][value="razorpay"]')
+          .check();
         await page.getByRole("button", { name: /^pay /i }).click();
         await page
           .getByText(/the payment window did not open/i)
@@ -137,8 +163,13 @@ export function auditStates(fixture: QaFixture): AuditState[] {
         // If any of Razorpay's own DOM reached the page, everything measured
         // after this point is theirs, not ours. Fail loudly rather than report
         // a third party's layout as a defect in the shop.
-        const leaked = await page.locator(".razorpay-container, .razorpay-backdrop").count();
-        if (leaked > 0) throw new Error(`Razorpay injected ${leaked} node(s) despite the block`);
+        const leaked = await page
+          .locator(".razorpay-container, .razorpay-backdrop")
+          .count();
+        if (leaked > 0)
+          throw new Error(
+            `Razorpay injected ${leaked} node(s) despite the block`,
+          );
       },
     },
 
@@ -156,20 +187,30 @@ export function auditStates(fixture: QaFixture): AuditState[] {
 
     /* ----------------------------------------------------------- the account */
     { name: "account-signed-in", path: "/account", as: "account" },
-    { name: "account-orders-populated", path: "/account/orders", as: "account" },
+    {
+      name: "account-orders-populated",
+      path: "/account/orders",
+      as: "account",
+    },
     {
       name: "account-order-detail",
       path: `/account/orders/${fixture.account.orderId}`,
       as: "account",
     },
-    { name: "account-addresses-populated", path: "/account/addresses", as: "account" },
+    {
+      name: "account-addresses-populated",
+      path: "/account/addresses",
+      as: "account",
+    },
     {
       name: "account-address-form",
       path: "/account/addresses",
       as: "account",
       after: async (page) => {
         await page.getByRole("button", { name: /add an address/i }).click();
-        await page.locator("#checkout-recipientName").waitFor({ timeout: 10_000 });
+        await page
+          .locator("#checkout-recipientName")
+          .waitFor({ timeout: 10_000 });
       },
     },
   ];

@@ -55,7 +55,11 @@ export async function mergeGuestCartIntoAccount(
   userId: string,
   guestToken: string | null,
 ): Promise<MergeOutcome> {
-  const empty: MergeOutcome = { merged: 0, dropped: 0, guestCartConsumed: false };
+  const empty: MergeOutcome = {
+    merged: 0,
+    dropped: 0,
+    guestCartConsumed: false,
+  };
 
   if (!guestToken) return empty;
 

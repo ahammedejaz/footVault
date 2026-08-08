@@ -44,15 +44,15 @@ const rule = {
     schema: [],
     messages: {
       unchecked:
-        "This drops the query's `error`, so a failure renders as no rows. Wrap it: `await rows(\"{{label}}\", …)` from @/lib/queries/run, or destructure `error` and act on it.",
+        'This drops the query\'s `error`, so a failure renders as no rows. Wrap it: `await rows("{{label}}", …)` from @/lib/queries/run, or destructure `error` and act on it.',
       unusedError:
         "`error` is destructured but never read, which is the same as dropping it. Throw on it, or use the helpers in @/lib/queries/run.",
       unbound:
-        "The result of this query is never destructured, so nothing checks `error`. Wrap it: `await rows(\"{{label}}\", …)` from @/lib/queries/run.",
+        'The result of this query is never destructured, so nothing checks `error`. Wrap it: `await rows("{{label}}", …)` from @/lib/queries/run.',
       thenOnBuilder:
-        "`.then()` on a query builder skips the error check. Wrap the builder instead: `run(\"{{label}}\", builder)` from @/lib/queries/run.",
+        '`.then()` on a query builder skips the error check. Wrap the builder instead: `run("{{label}}", builder)` from @/lib/queries/run.',
       inCombinator:
-        "A raw query builder inside Promise.{{combinator}} resolves to an unchecked `{ data, error }`. Wrap each one first: `Promise.{{combinator}}([rows(\"…\", builder), …])`.",
+        'A raw query builder inside Promise.{{combinator}} resolves to an unchecked `{ data, error }`. Wrap each one first: `Promise.{{combinator}}([rows("…", builder), …])`.',
     },
   },
 
@@ -145,22 +145,36 @@ const rule = {
       // `await supabase.from(…).insert(…)` statement all end the same way: the
       // result exists and nothing in this file looks at its error.
       if (parent.type !== "VariableDeclarator" || parent.init !== awaitNode) {
-        context.report({ node: awaitNode, messageId: "unbound", data: { label } });
+        context.report({
+          node: awaitNode,
+          messageId: "unbound",
+          data: { label },
+        });
         return;
       }
 
       const pattern = parent.id;
       if (pattern.type !== "ObjectPattern") {
-        context.report({ node: awaitNode, messageId: "unbound", data: { label } });
+        context.report({
+          node: awaitNode,
+          messageId: "unbound",
+          data: { label },
+        });
         return;
       }
 
       const errorProp = pattern.properties.find(
         (p) =>
-          p.type === "Property" && p.key.type === "Identifier" && p.key.name === "error",
+          p.type === "Property" &&
+          p.key.type === "Identifier" &&
+          p.key.name === "error",
       );
       if (!errorProp) {
-        context.report({ node: awaitNode, messageId: "unchecked", data: { label } });
+        context.report({
+          node: awaitNode,
+          messageId: "unchecked",
+          data: { label },
+        });
         return;
       }
 
@@ -177,7 +191,11 @@ const rule = {
 
     return {
       VariableDeclarator(node) {
-        if (node.init && node.id.type === "Identifier" && isBuilder(node.init)) {
+        if (
+          node.init &&
+          node.id.type === "Identifier" &&
+          isBuilder(node.init)
+        ) {
           builderLocals.add(node.id.name);
         }
       },
@@ -222,7 +240,11 @@ const rule = {
           if (list?.type !== "ArrayExpression") return;
           for (const element of list.elements) {
             if (element && isBuilder(element)) {
-              context.report({ node: element, messageId: "inCombinator", data: { combinator } });
+              context.report({
+                node: element,
+                messageId: "inCombinator",
+                data: { combinator },
+              });
             }
           }
         }

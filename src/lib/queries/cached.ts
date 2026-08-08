@@ -82,7 +82,11 @@ export const cachedSiteSettings = unstable_cache(
   options,
 );
 
-export const cachedPages = unstable_cache(listPages, [SHAPE_VERSION, "chrome:pages"], options);
+export const cachedPages = unstable_cache(
+  listPages,
+  [SHAPE_VERSION, "chrome:pages"],
+  options,
+);
 
 /* -------------------------------------------------------------------------- */
 /* the LCP path                                                               */
@@ -149,14 +153,16 @@ export const cachedPage = unstable_cache(
 
 /** One collection's rail. Bounded: one key per collection. */
 export const cachedCollectionProducts = unstable_cache(
-  (collectionSlug: string, perPage: number) => listProducts({ collectionSlug, perPage }),
+  (collectionSlug: string, perPage: number) =>
+    listProducts({ collectionSlug, perPage }),
   [SHAPE_VERSION, "catalog:collection-products"],
   catalog,
 );
 
 /** One category's first page. Bounded: one key per category. */
 const cachedCategoryProducts = unstable_cache(
-  (categorySlug: string, perPage: number) => listProducts({ categorySlug, perPage }),
+  (categorySlug: string, perPage: number) =>
+    listProducts({ categorySlug, perPage }),
   [SHAPE_VERSION, "catalog:category-products"],
   catalog,
 );
@@ -173,6 +179,9 @@ export async function cachedRelatedProducts(
   limit = 4,
 ): Promise<ProductSummary[]> {
   if (!product.categorySlug) return [];
-  const { products } = await cachedCategoryProducts(product.categorySlug, limit + 1);
+  const { products } = await cachedCategoryProducts(
+    product.categorySlug,
+    limit + 1,
+  );
   return products.filter((p) => p.id !== product.id).slice(0, limit);
 }

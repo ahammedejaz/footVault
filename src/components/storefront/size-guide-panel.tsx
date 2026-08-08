@@ -46,12 +46,16 @@ export function SizeGuidePanel({
                 Size guide
               </Dialog.Title>
               <Dialog.Description className="text-muted-foreground mt-1 text-sm">
-                UK is what we list. Conversions are approximate — brands differ by
-                up to half a size.
+                UK is what we list. Conversions are approximate — brands differ
+                by up to half a size.
               </Dialog.Description>
             </div>
             <Dialog.Close asChild>
-              <Button variant="ghost" size="icon" aria-label="Close the size guide">
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Close the size guide"
+              >
                 <X />
               </Button>
             </Dialog.Close>
@@ -60,7 +64,8 @@ export function SizeGuidePanel({
           <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-5">
             <table className="w-full border-collapse text-left font-mono text-sm tabular-nums">
               <caption className="sr-only">
-                UK, EU, US and foot length in centimetres for every size in this run
+                UK, EU, US and foot length in centimetres for every size in this
+                run
               </caption>
               <thead>
                 <tr className="border-border border-b">
@@ -87,7 +92,10 @@ export function SizeGuidePanel({
                     <th scope="row" className="py-2.5 font-medium">
                       {row.uk}
                       {row.uk === highlight ? (
-                        <span className="sr-only"> — the size you have selected</span>
+                        <span className="sr-only">
+                          {" "}
+                          — the size you have selected
+                        </span>
                       ) : null}
                     </th>
                     <td className="py-2.5">{row.eu}</td>
@@ -103,11 +111,15 @@ export function SizeGuidePanel({
                 Measuring a foot
               </h3>
               <ol className="text-muted-foreground mt-3 list-decimal space-y-2 pl-5 text-sm">
-                <li>Stand on a sheet of paper against a wall, heel touching it.</li>
-                <li>Mark the end of the longest toe and measure heel to mark.</li>
                 <li>
-                  Measure both feet in the evening, when they are at their largest,
-                  and use the longer one.
+                  Stand on a sheet of paper against a wall, heel touching it.
+                </li>
+                <li>
+                  Mark the end of the longest toe and measure heel to mark.
+                </li>
+                <li>
+                  Measure both feet in the evening, when they are at their
+                  largest, and use the longer one.
                 </li>
                 <li>Match that number to the centimetre column above.</li>
               </ol>

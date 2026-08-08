@@ -33,13 +33,17 @@ import {
  */
 
 export type ActionResult<T = undefined> =
-  | { ok: true; data: T }
-  | { ok: false; message: string };
+  { ok: true; data: T } | { ok: false; message: string };
 
 const GENERIC = "That did not save. Try again.";
 
 /** Everything the undo affordance needs to put a removed line back. */
-export type RemovedLine = { variantId: string; quantity: number; name: string; size: string };
+export type RemovedLine = {
+  variantId: string;
+  quantity: number;
+  name: string;
+  size: string;
+};
 
 /* ------------------------------------------------------------------ shared -- */
 
@@ -90,7 +94,8 @@ async function readSellable(variantId: string): Promise<Sellable | null> {
   return {
     variantId: row.id,
     stock: row.stock_quantity,
-    unitPrice: row.price_override ?? product.effective_price ?? product.base_price,
+    unitPrice:
+      row.price_override ?? product.effective_price ?? product.base_price,
     name: product.name,
     size: row.size,
   };
@@ -134,7 +139,9 @@ async function getOrCreateCartId(): Promise<string> {
 
   if (error) {
     if (error.code !== "23505") {
-      throw new Error(`getOrCreateCartId.insert: ${error.message} [${error.code}]`);
+      throw new Error(
+        `getOrCreateCartId.insert: ${error.message} [${error.code}]`,
+      );
     }
     // Lost the race. The winner's cart is the one we want.
     const raced = await maybeRow<{ id: string }>(
@@ -146,7 +153,10 @@ async function getOrCreateCartId(): Promise<string> {
         .eq(owner.column, owner.value)
         .maybeSingle(),
     );
-    if (!raced) throw new Error("getOrCreateCartId: insert conflicted but no active cart exists");
+    if (!raced)
+      throw new Error(
+        "getOrCreateCartId: insert conflicted but no active cart exists",
+      );
     return raced.id;
   }
 
@@ -171,19 +181,27 @@ export type AddedToBag = {
   previousQuantity: number;
 };
 
-export async function addToBag(
-  input: { variantId: string; quantity?: number },
-): Promise<ActionResult<AddedToBag>> {
+export async function addToBag(input: {
+  variantId: string;
+  quantity?: number;
+}): Promise<ActionResult<AddedToBag>> {
   const parsed = addToBagSchema.safeParse(input);
   if (!parsed.success) {
-    return { ok: false, message: parsed.error.issues[0]?.message ?? "That size is not available." };
+    return {
+      ok: false,
+      message: parsed.error.issues[0]?.message ?? "That size is not available.",
+    };
   }
 
   try {
     const sellable = await readSellable(parsed.data.variantId);
-    if (!sellable) return { ok: false, message: "That size is no longer available." };
+    if (!sellable)
+      return { ok: false, message: "That size is no longer available." };
     if (sellable.stock <= 0) {
-      return { ok: false, message: `${sellable.name} in ${sellable.size} is sold out.` };
+      return {
+        ok: false,
+        message: `${sellable.name} in ${sellable.size} is sold out.`,
+      };
     }
 
     const cartId = await getOrCreateCartId();
@@ -246,7 +264,11 @@ export async function addToBag(
     }
 
     if (error || !itemId) {
-      console.error("[cart] addToBag failed:", error?.message ?? "no row id", error?.code);
+      console.error(
+        "[cart] addToBag failed:",
+        error?.message ?? "no row id",
+        error?.code,
+      );
       return { ok: false, message: GENERIC };
     }
 
@@ -269,9 +291,10 @@ export async function addToBag(
 
 /* --------------------------------------------------------------- quantity -- */
 
-export async function setQuantity(
-  input: { itemId: string; quantity: number },
-): Promise<ActionResult<{ quantity: number; capped: boolean }>> {
+export async function setQuantity(input: {
+  itemId: string;
+  quantity: number;
+}): Promise<ActionResult<{ quantity: number; capped: boolean }>> {
   const parsed = setQuantitySchema.safeParse(input);
   if (!parsed.success) return { ok: false, message: GENERIC };
 
@@ -288,10 +311,14 @@ export async function setQuantity(
         .eq("id", parsed.data.itemId)
         .maybeSingle(),
     );
-    if (!line) return { ok: false, message: "That item is no longer in your bag." };
+    if (!line)
+      return { ok: false, message: "That item is no longer in your bag." };
 
     if (parsed.data.quantity === 0) {
-      const { error } = await supabase.from("cart_items").delete().eq("id", line.id);
+      const { error } = await supabase
+        .from("cart_items")
+        .delete()
+        .eq("id", line.id);
       if (error) {
         console.error("[cart] setQuantity delete failed:", error.message);
         return { ok: false, message: GENERIC };
@@ -306,9 +333,16 @@ export async function setQuantity(
         .from("cart_items")
         .delete()
         .eq("id", line.id);
-      if (dropError) console.error("[cart] dropping a sold-out line failed:", dropError.message);
+      if (dropError)
+        console.error(
+          "[cart] dropping a sold-out line failed:",
+          dropError.message,
+        );
       refreshBag();
-      return { ok: false, message: "That size sold out. It has been removed from your bag." };
+      return {
+        ok: false,
+        message: "That size sold out. It has been removed from your bag.",
+      };
     }
 
     const ceiling = Math.min(sellable.stock, MAX_LINE_QUANTITY);
@@ -325,7 +359,10 @@ export async function setQuantity(
     }
 
     refreshBag();
-    return { ok: true, data: { quantity, capped: quantity < parsed.data.quantity } };
+    return {
+      ok: true,
+      data: { quantity, capped: quantity < parsed.data.quantity },
+    };
   } catch (error) {
     console.error("[cart] setQuantity threw:", error);
     return { ok: false, message: GENERIC };
@@ -335,15 +372,19 @@ export async function setQuantity(
 /* ----------------------------------------------------------------- remove -- */
 
 /** Removes a line and hands back what it was, so it can be put straight back. */
-export async function removeLine(
-  input: { itemId: string },
-): Promise<ActionResult<RemovedLine>> {
+export async function removeLine(input: {
+  itemId: string;
+}): Promise<ActionResult<RemovedLine>> {
   const parsed = removeLineSchema.safeParse(input);
   if (!parsed.success) return { ok: false, message: GENERIC };
 
   try {
     const supabase = await createClient();
-    const line = await maybeRow<{ id: string; variant_id: string; quantity: number }>(
+    const line = await maybeRow<{
+      id: string;
+      variant_id: string;
+      quantity: number;
+    }>(
       "removeLine.line",
       supabase
         .from("cart_items")
@@ -351,11 +392,15 @@ export async function removeLine(
         .eq("id", parsed.data.itemId)
         .maybeSingle(),
     );
-    if (!line) return { ok: false, message: "That item is no longer in your bag." };
+    if (!line)
+      return { ok: false, message: "That item is no longer in your bag." };
 
     const sellable = await readSellable(line.variant_id);
 
-    const { error } = await supabase.from("cart_items").delete().eq("id", line.id);
+    const { error } = await supabase
+      .from("cart_items")
+      .delete()
+      .eq("id", line.id);
     if (error) {
       console.error("[cart] removeLine failed:", error.message);
       return { ok: false, message: GENERIC };
@@ -405,26 +450,48 @@ export async function acknowledgeCartChanges(): Promise<ActionResult> {
     );
     if (!cart) return { ok: true, data: undefined };
 
-    const lines = await rows<{ id: string; variant_id: string; quantity: number }>(
+    const lines = await rows<{
+      id: string;
+      variant_id: string;
+      quantity: number;
+    }>(
       "acknowledge.lines",
-      supabase.from("cart_items").select("id, variant_id, quantity").eq("cart_id", cart.id),
+      supabase
+        .from("cart_items")
+        .select("id, variant_id, quantity")
+        .eq("cart_id", cart.id),
     );
 
     for (const line of lines) {
       const sellable = await readSellable(line.variant_id);
 
       if (!sellable || sellable.stock <= 0) {
-        const { error } = await supabase.from("cart_items").delete().eq("id", line.id);
-        if (error) console.error("[cart] acknowledge: dropping a dead line failed:", error.message);
+        const { error } = await supabase
+          .from("cart_items")
+          .delete()
+          .eq("id", line.id);
+        if (error)
+          console.error(
+            "[cart] acknowledge: dropping a dead line failed:",
+            error.message,
+          );
         continue;
       }
 
-      const quantity = Math.min(line.quantity, sellable.stock, MAX_LINE_QUANTITY);
+      const quantity = Math.min(
+        line.quantity,
+        sellable.stock,
+        MAX_LINE_QUANTITY,
+      );
       const { error } = await supabase
         .from("cart_items")
         .update({ quantity, unit_price_seen: sellable.unitPrice })
         .eq("id", line.id);
-      if (error) console.error("[cart] acknowledge: reconciling a line failed:", error.message);
+      if (error)
+        console.error(
+          "[cart] acknowledge: reconciling a line failed:",
+          error.message,
+        );
     }
 
     refreshBag();

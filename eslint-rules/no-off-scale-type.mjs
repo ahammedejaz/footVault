@@ -17,7 +17,8 @@
 const CLASS_ATTRIBUTES = new Set(["className", "class"]);
 
 /** text-[<number><length-unit>] — the arbitrary font-size form, and only that. */
-const ARBITRARY_FONT_SIZE = /(?:^|\s)!?(?:[a-z-]+:)*text-\[(-?[\d.]+(?:px|rem|em|pt|ch|ex|vw|vh))\]/g;
+const ARBITRARY_FONT_SIZE =
+  /(?:^|\s)!?(?:[a-z-]+:)*text-\[(-?[\d.]+(?:px|rem|em|pt|ch|ex|vw|vh))\]/g;
 
 /** @type {import("eslint").Rule.RuleModule} */
 const rule = {
@@ -38,13 +39,21 @@ const rule = {
     function check(node, value) {
       if (typeof value !== "string") return;
       for (const match of value.matchAll(ARBITRARY_FONT_SIZE)) {
-        context.report({ node, messageId: "offScale", data: { size: match[1] } });
+        context.report({
+          node,
+          messageId: "offScale",
+          data: { size: match[1] },
+        });
       }
     }
 
     return {
       JSXAttribute(node) {
-        if (node.name.type !== "JSXIdentifier" || !CLASS_ATTRIBUTES.has(node.name.name)) return;
+        if (
+          node.name.type !== "JSXIdentifier" ||
+          !CLASS_ATTRIBUTES.has(node.name.name)
+        )
+          return;
         const value = node.value;
         if (!value) return;
         if (value.type === "Literal") check(node, value.value);

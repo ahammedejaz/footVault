@@ -14,7 +14,10 @@ import type { Gender } from "@/lib/catalog-types";
  * them — and they were sitting in the product page's first-load bundle.
  */
 const SizeGuidePanel = dynamic(
-  () => import("@/components/storefront/size-guide-panel").then((m) => m.SizeGuidePanel),
+  () =>
+    import("@/components/storefront/size-guide-panel").then(
+      (m) => m.SizeGuidePanel,
+    ),
   { ssr: false },
 );
 

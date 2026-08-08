@@ -70,7 +70,9 @@ export function SaveForLater({
     });
   };
 
-  const label = isSaved ? `Remove ${productName} from saved items` : `Save ${productName}`;
+  const label = isSaved
+    ? `Remove ${productName} from saved items`
+    : `Save ${productName}`;
 
   return (
     <>
@@ -86,7 +88,10 @@ export function SaveForLater({
           )}
         >
           <Heart
-            className={cn("size-4 transition-colors", isSaved && "fill-orange text-orange")}
+            className={cn(
+              "size-4 transition-colors",
+              isSaved && "fill-orange text-orange",
+            )}
             aria-hidden
           />
         </button>
@@ -99,7 +104,10 @@ export function SaveForLater({
           aria-pressed={isSaved}
           className={className}
         >
-          <Heart className={cn("size-4", isSaved && "fill-orange text-orange")} aria-hidden />
+          <Heart
+            className={cn("size-4", isSaved && "fill-orange text-orange")}
+            aria-hidden
+          />
           {isSaved ? "Saved" : "Save for later"}
         </Button>
       )}

@@ -54,7 +54,10 @@ export async function prerenderOrDefer<T>(
  * one. Baking that fallback into a prerendered page is not: it would ship a
  * navigation that never recovers. Call this in the catch, before falling back.
  */
-export async function deferIfPrerendering(label: string, error: unknown): Promise<void> {
+export async function deferIfPrerendering(
+  label: string,
+  error: unknown,
+): Promise<void> {
   if (!isPrerendering()) return;
   console.warn(
     `[prerender] ${label}: ${error instanceof Error ? error.message : error}. ` +

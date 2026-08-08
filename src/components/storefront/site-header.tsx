@@ -54,7 +54,9 @@ async function getNav(): Promise<NavItem[]> {
 }
 
 /** Entry points offered inside the search overlay before anything is typed. */
-async function getPopularSearches(): Promise<Array<{ label: string; href: string }>> {
+async function getPopularSearches(): Promise<
+  Array<{ label: string; href: string }>
+> {
   try {
     const brands = await cachedPopularBrands(5);
     return [
@@ -108,7 +110,9 @@ export async function SiteHeader() {
         <MegaNav items={nav} />
 
         <SearchButton popular={popular} />
-        <AccountMenu user={user ? { name: user.name, email: user.email } : null} />
+        <AccountMenu
+          user={user ? { name: user.name, email: user.email } : null}
+        />
         <SavedLink count={savedCount}>
           <Heart />
         </SavedLink>

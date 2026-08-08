@@ -39,9 +39,15 @@ export function Breadcrumbs({
       <nav aria-label="Breadcrumb" className={className}>
         <ol className="text-muted-foreground flex flex-wrap items-center gap-1 font-mono text-xs tracking-[0.06em]">
           {crumbs.map((crumb, index) => (
-            <li key={`${crumb.label}-${index}`} className="flex items-center gap-1">
+            <li
+              key={`${crumb.label}-${index}`}
+              className="flex items-center gap-1"
+            >
               {index > 0 ? (
-                <ChevronRight className="size-3 shrink-0 opacity-60" aria-hidden />
+                <ChevronRight
+                  className="size-3 shrink-0 opacity-60"
+                  aria-hidden
+                />
               ) : null}
               {crumb.href ? (
                 <Link
@@ -51,7 +57,10 @@ export function Breadcrumbs({
                   {crumb.label}
                 </Link>
               ) : (
-                <span className="text-foreground inline-flex min-h-8 items-center" aria-current="page">
+                <span
+                  className="text-foreground inline-flex min-h-8 items-center"
+                  aria-current="page"
+                >
                   {crumb.label}
                 </span>
               )}

@@ -1,0 +1,15 @@
+-- Hygiene, not a fix. `record_inventory_movement()` carries the PUBLIC EXECUTE
+-- grant that CREATE FUNCTION hands out by default, and it is SECURITY DEFINER
+-- and writes the stock ledger -- so it looks alarming in an ACL audit.
+--
+-- It is not exploitable, and that was verified rather than assumed: calling it
+-- directly fails with `0A000: trigger functions can only be called as triggers`,
+-- which Postgres enforces regardless of who holds EXECUTE. Revoked anyway, so
+-- the next person reading the ACL list does not have to re-derive that.
+--
+-- The seven other functions still holding PUBLIC EXECUTE are deliberate:
+-- catalog_query, color_family and product_is_live are the storefront's own
+-- reads; can_access_cart, owns_order and is_admin are RLS helpers that policies
+-- evaluate as the caller and that only ever answer questions about the caller
+-- themselves; current_guest_token reads a header the caller sent.
+revoke execute on function public.record_inventory_movement() from public, anon, authenticated;

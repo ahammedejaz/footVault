@@ -45,15 +45,21 @@ async function main() {
     await page.waitForTimeout(500);
 
     const geometry = await page.evaluate(() => {
-      const scroller = document.querySelector<HTMLElement>('ul[aria-label$="images"]');
+      const scroller = document.querySelector<HTMLElement>(
+        'ul[aria-label$="images"]',
+      );
       if (!scroller) return null;
       const box = scroller.getBoundingClientRect();
-      const slides = Array.from(scroller.querySelectorAll<HTMLElement>(":scope > li")).map(
-        (slide) => {
-          const slideBox = slide.getBoundingClientRect();
-          return { left: slideBox.left, right: slideBox.right, width: slideBox.width };
-        },
-      );
+      const slides = Array.from(
+        scroller.querySelectorAll<HTMLElement>(":scope > li"),
+      ).map((slide) => {
+        const slideBox = slide.getBoundingClientRect();
+        return {
+          left: slideBox.left,
+          right: slideBox.right,
+          width: slideBox.width,
+        };
+      });
       return {
         viewport: window.innerWidth,
         documentScrollWidth: document.documentElement.scrollWidth,
@@ -78,7 +84,9 @@ async function main() {
     // a visible sliver; zero or negative means it starts at or past the edge.
     const sliver = second ? geometry.viewport - second.left : 0;
 
-    console.log(`  [${width}] viewport ${geometry.viewport}px, ${geometry.slides.length} slides`);
+    console.log(
+      `  [${width}] viewport ${geometry.viewport}px, ${geometry.slides.length} slides`,
+    );
     console.log(
       `         scroller  left ${first ? geometry.scroller.left.toFixed(1) : "?"}  ` +
         `right ${geometry.scroller.right.toFixed(1)}  width ${geometry.scroller.width.toFixed(1)}`,
@@ -98,7 +106,9 @@ async function main() {
     );
 
     if (sliver > 0.5) {
-      console.log(`  [${width}] FAIL  a ${sliver.toFixed(1)}px sliver of slide 2 is on screen at rest`);
+      console.log(
+        `  [${width}] FAIL  a ${sliver.toFixed(1)}px sliver of slide 2 is on screen at rest`,
+      );
       failures++;
     }
     if (Math.abs(first.width - geometry.viewport) > 0.5) {

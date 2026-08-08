@@ -56,7 +56,10 @@ export function CheckRow({
           {label}
         </span>
         {hint ? (
-          <span id={hintId} className="text-muted-foreground mt-0.5 block text-xs text-pretty">
+          <span
+            id={hintId}
+            className="text-muted-foreground mt-0.5 block text-xs text-pretty"
+          >
             {hint}
           </span>
         ) : null}

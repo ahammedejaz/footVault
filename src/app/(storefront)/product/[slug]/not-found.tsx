@@ -8,7 +8,11 @@ import { TreadMark } from "@/components/brand/logo";
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/client";
 
-type Hint = { name: string; category_slug: string | null; category_name: string | null };
+type Hint = {
+  name: string;
+  category_slug: string | null;
+  category_name: string | null;
+};
 
 /**
  * The 404 for a product that is no longer stocked.
@@ -71,7 +75,9 @@ export default function ProductNotFound() {
         {hint ? (
           <>
             The {hint.name} has sold through and is not coming back.
-            {hint.category_name ? ` The rest of ${hint.category_name} is still on the shelf.` : ""}
+            {hint.category_name
+              ? ` The rest of ${hint.category_name} is still on the shelf.`
+              : ""}
           </>
         ) : (
           "This product has moved or never existed. The catalogue is still where you left it."

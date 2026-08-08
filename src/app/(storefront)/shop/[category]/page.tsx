@@ -30,7 +30,9 @@ export async function generateMetadata({
   const { category: slug } = await params;
   const category = await getCategory(slug);
   if (!category) return {};
-  const title = category.parent ? `${category.parent.name} · ${category.name}` : category.name;
+  const title = category.parent
+    ? `${category.parent.name} · ${category.name}`
+    : category.name;
   return {
     title,
     description:
@@ -50,7 +52,10 @@ export default async function CategoryPage({
   params: Promise<{ category: string }>;
   searchParams: Promise<RawSearchParams>;
 }) {
-  const [{ category: slug }, search] = await Promise.all([params, searchParams]);
+  const [{ category: slug }, search] = await Promise.all([
+    params,
+    searchParams,
+  ]);
   const category = await getCategory(slug);
   if (!category) notFound();
 
@@ -63,7 +68,9 @@ export default async function CategoryPage({
           crumbs={[
             { label: "Home", href: "/" },
             { label: "Shop", href: "/shop" },
-            ...(parent ? [{ label: parent.name, href: `/shop/${parent.slug}` }] : []),
+            ...(parent
+              ? [{ label: parent.name, href: `/shop/${parent.slug}` }]
+              : []),
             { label: category.name },
           ]}
         />
@@ -78,7 +85,10 @@ export default async function CategoryPage({
         description={category.description}
         escape={
           parent
-            ? { href: `/shop/${parent.slug}`, label: `Browse all of ${parent.name}` }
+            ? {
+                href: `/shop/${parent.slug}`,
+                label: `Browse all of ${parent.name}`,
+              }
             : { href: "/shop", label: "Browse all footwear" }
         }
       />

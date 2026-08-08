@@ -31,20 +31,53 @@ export type SeedCategory = {
 };
 
 export const categories: SeedCategory[] = [
-  { slug: "men", name: "Men", sortOrder: 1, description: "Sneakers, formal shoes, boots and sandals for men.", imageUrl: "/seed/category-men.svg" },
-  { slug: "women", name: "Women", sortOrder: 2, description: "Sneakers, flats, sandals and sports shoes for women.", imageUrl: "/seed/category-women.svg" },
-  { slug: "kids", name: "Kids", sortOrder: 3, description: "School shoes, sneakers and sandals built for growing feet.", imageUrl: "/seed/category-kids.svg" },
+  {
+    slug: "men",
+    name: "Men",
+    sortOrder: 1,
+    description: "Sneakers, formal shoes, boots and sandals for men.",
+    imageUrl: "/seed/category-men.svg",
+  },
+  {
+    slug: "women",
+    name: "Women",
+    sortOrder: 2,
+    description: "Sneakers, flats, sandals and sports shoes for women.",
+    imageUrl: "/seed/category-women.svg",
+  },
+  {
+    slug: "kids",
+    name: "Kids",
+    sortOrder: 3,
+    description: "School shoes, sneakers and sandals built for growing feet.",
+    imageUrl: "/seed/category-kids.svg",
+  },
 
   { slug: "mens-sneakers", name: "Sneakers", parent: "men", sortOrder: 1 },
   { slug: "mens-formal", name: "Formal", parent: "men", sortOrder: 2 },
   { slug: "mens-sports", name: "Sports", parent: "men", sortOrder: 3 },
-  { slug: "mens-sandals", name: "Sandals & Slides", parent: "men", sortOrder: 4 },
+  {
+    slug: "mens-sandals",
+    name: "Sandals & Slides",
+    parent: "men",
+    sortOrder: 4,
+  },
   { slug: "mens-boots", name: "Boots", parent: "men", sortOrder: 5 },
 
   { slug: "womens-sneakers", name: "Sneakers", parent: "women", sortOrder: 1 },
-  { slug: "womens-flats", name: "Flats & Loafers", parent: "women", sortOrder: 2 },
+  {
+    slug: "womens-flats",
+    name: "Flats & Loafers",
+    parent: "women",
+    sortOrder: 2,
+  },
   { slug: "womens-sports", name: "Sports", parent: "women", sortOrder: 3 },
-  { slug: "womens-sandals", name: "Sandals & Slides", parent: "women", sortOrder: 4 },
+  {
+    slug: "womens-sandals",
+    name: "Sandals & Slides",
+    parent: "women",
+    sortOrder: 4,
+  },
 
   { slug: "kids-school", name: "School Shoes", parent: "kids", sortOrder: 1 },
   { slug: "kids-sneakers", name: "Sneakers", parent: "kids", sortOrder: 2 },
@@ -90,7 +123,8 @@ export type SeedProduct = {
   brand: string;
   category: string;
   gender: "men" | "women" | "unisex" | "kids";
-  footwearType: "sneaker" | "formal" | "sandal" | "slide" | "boot" | "sports" | "flipflop";
+  footwearType:
+    "sneaker" | "formal" | "sandal" | "slide" | "boot" | "sports" | "flipflop";
   material: string;
   basePrice: number;
   salePrice?: number;
@@ -751,7 +785,16 @@ export const products: SeedProduct[] = [
  * ones. Both are what people actually type.
  */
 export const SEARCH_KEYWORDS: Record<SeedProduct["footwearType"], string[]> = {
-  sports: ["running", "runner", "trainer", "training", "gym", "jogging", "workout", "marathon"],
+  sports: [
+    "running",
+    "runner",
+    "trainer",
+    "training",
+    "gym",
+    "jogging",
+    "workout",
+    "marathon",
+  ],
   sneaker: ["casual", "trainers", "lifestyle", "everyday", "street"],
   formal: ["office", "dress", "wedding", "oxford", "derby", "business"],
   boot: ["ankle", "hiking", "outdoor", "trekking", "winter"],
@@ -776,7 +819,8 @@ export const heroBanner = {
   subtext: "Sneakers, formal shoes, boots and sandals for men, women and kids.",
   ctaLabel: "Shop all footwear",
   ctaHref: "/shop",
-  altText: "A running shoe and its outsole against the Foot Vault tread pattern",
+  altText:
+    "A running shoe and its outsole against the Foot Vault tread pattern",
 };
 
 // -----------------------------------------------------------------------------
@@ -838,7 +882,8 @@ export const pages = [
   {
     slug: "about",
     title: "About Foot Vault",
-    metaDescription: "An independent footwear shop stocking sneakers, formal shoes, boots and sandals for men, women and kids.",
+    metaDescription:
+      "An independent footwear shop stocking sneakers, formal shoes, boots and sandals for men, women and kids.",
     body: `Foot Vault is an independent footwear shop. We stock sneakers, formal shoes, boots, sports shoes and sandals for men, women and kids, from brands people actually ask for.
 
 We hold every size we list. If a size shows as sold out on a product page, it is genuinely out of stock — we do not hide sizes to make a size run look fuller than it is.
@@ -848,7 +893,8 @@ Orders are packed and dispatched from our own shelves, not a drop-shipper's. If 
   {
     slug: "contact",
     title: "Contact us",
-    metaDescription: "Phone, WhatsApp and email for Foot Vault, plus our shop address and opening hours.",
+    metaDescription:
+      "Phone, WhatsApp and email for Foot Vault, plus our shop address and opening hours.",
     body: `The fastest way to reach us is WhatsApp — we answer during shop hours and usually within the hour.
 
 For an existing order, send your order number (it looks like FV-2026-00147) and we can pull it up straight away.
@@ -858,7 +904,8 @@ Our contact details and opening hours are in the footer of every page, and they 
   {
     slug: "shipping",
     title: "Shipping",
-    metaDescription: "Delivery times, shipping charges and free shipping threshold for Foot Vault orders.",
+    metaDescription:
+      "Delivery times, shipping charges and free shipping threshold for Foot Vault orders.",
     body: `We ship across India.
 
 Orders placed before 4pm on a working day are dispatched the same day. Metro addresses usually receive in 2–4 working days; the rest of India in 4–7.
@@ -882,7 +929,8 @@ Refunds are issued to the original payment method within 5 working days of the p
   {
     slug: "size-guide",
     title: "Size guide",
-    metaDescription: "UK, EU and US shoe size conversions, and how to measure your foot at home.",
+    metaDescription:
+      "UK, EU and US shoe size conversions, and how to measure your foot at home.",
     body: `Every size on this site is UK. The conversions below are the ones we use.
 
 UK 6 = EU 40 = US 7. UK 7 = EU 41 = US 8. UK 8 = EU 42 = US 9. UK 9 = EU 43 = US 10. UK 10 = EU 44 = US 11. UK 11 = EU 45.5 = US 12. UK 12 = EU 47 = US 13.
@@ -894,7 +942,8 @@ Where a shoe runs small or large we say so on its product page.`,
   {
     slug: "privacy",
     title: "Privacy policy",
-    metaDescription: "What data Foot Vault collects, why, and how to have it removed.",
+    metaDescription:
+      "What data Foot Vault collects, why, and how to have it removed.",
     body: `We collect what an order needs and nothing else: your name, delivery address, phone number and email.
 
 We use it to pack and deliver your order, to contact you about that order, and to show you your order history when you sign in. We do not sell it, and we do not share it with anyone other than the courier carrying your parcel.
@@ -922,12 +971,28 @@ Nothing here affects your statutory rights.`,
 // storefront reads them rather than the hard-coded values in site-config.ts.
 // -----------------------------------------------------------------------------
 
-export const siteSettings: Array<{ key: string; value: unknown; description: string }> = [
-  { key: "store_name", value: "Foot Vault", description: "Shop name, used in the header, metadata and invoices." },
-  { key: "store_tagline", value: "Every step counts", description: "Wordmark tagline." },
+export const siteSettings: Array<{
+  key: string;
+  value: unknown;
+  description: string;
+}> = [
+  {
+    key: "store_name",
+    value: "Foot Vault",
+    description: "Shop name, used in the header, metadata and invoices.",
+  },
+  {
+    key: "store_tagline",
+    value: "Every step counts",
+    description: "Wordmark tagline.",
+  },
   {
     key: "announcement",
-    value: { text: "Free returns within 7 days · Free shipping over ₹1,999", href: "/page/returns", is_active: true },
+    value: {
+      text: "Free returns within 7 days · Free shipping over ₹1,999",
+      href: "/page/returns",
+      is_active: true,
+    },
     description: "The thin strip above the header.",
   },
   {
@@ -942,24 +1007,42 @@ export const siteSettings: Array<{ key: string; value: unknown; description: str
   },
   {
     key: "business_hours",
-    value: { weekday: "10:30 – 20:30", saturday: "10:30 – 21:00", sunday: "11:00 – 19:00" },
+    value: {
+      weekday: "10:30 – 20:30",
+      saturday: "10:30 – 21:00",
+      sunday: "11:00 – 19:00",
+    },
     description: "Opening hours, shown on the contact page.",
   },
   {
     key: "social",
-    value: { instagram: "https://instagram.com/footvault", facebook: "https://facebook.com/footvault" },
+    value: {
+      instagram: "https://instagram.com/footvault",
+      facebook: "https://facebook.com/footvault",
+    },
     description: "Social links in the footer.",
   },
   {
     key: "shipping",
-    value: { flat_fee_paise: 9900, free_above_paise: 199900, currency: "INR", regions: ["IN"] },
-    description: "Flat shipping fee, and the order value above which it is waived.",
+    value: {
+      flat_fee_paise: 9900,
+      free_above_paise: 199900,
+      currency: "INR",
+      regions: ["IN"],
+    },
+    description:
+      "Flat shipping fee, and the order value above which it is waived.",
   },
-  { key: "return_window_days", value: 7, description: "Days from delivery in which a return is accepted." },
+  {
+    key: "return_window_days",
+    value: 7,
+    description: "Days from delivery in which a return is accepted.",
+  },
   {
     key: "payment_methods",
     value: { cod: true, online: false },
-    description: "Cash on delivery only for now; the online gateway sits behind the same interface.",
+    description:
+      "Cash on delivery only for now; the online gateway sits behind the same interface.",
   },
 ];
 
@@ -972,7 +1055,8 @@ export const homepageSections = [
   {
     sectionType: "hero" as const,
     title: "Every size we hold, shown on every shoe",
-    subtitle: "Sneakers, formal shoes, boots and sandals for men, women and kids.",
+    subtitle:
+      "Sneakers, formal shoes, boots and sandals for men, women and kids.",
     payload: {
       eyebrow: "Foot Vault",
       cta_label: "Shop all footwear",
@@ -992,7 +1076,10 @@ export const homepageSections = [
     sectionType: "product_rail" as const,
     title: "New arrivals",
     subtitle: "Just landed on the shelf.",
-    payload: { collection_slug: "new-arrivals", cta_href: "/collection/new-arrivals" },
+    payload: {
+      collection_slug: "new-arrivals",
+      cta_href: "/collection/new-arrivals",
+    },
     sortOrder: 3,
   },
   {
@@ -1000,10 +1087,19 @@ export const homepageSections = [
     title: "Free returns within 7 days",
     payload: {
       items: [
-        { label: "Free returns within 7 days", detail: "Unworn, in the box, no questions." },
+        {
+          label: "Free returns within 7 days",
+          detail: "Unworn, in the box, no questions.",
+        },
         { label: "Free shipping over ₹1,999", detail: "Flat ₹99 below that." },
-        { label: "Cash on delivery", detail: "On every order, everywhere we ship." },
-        { label: "Live stock counts", detail: "If it says two left, there are two." },
+        {
+          label: "Cash on delivery",
+          detail: "On every order, everywhere we ship.",
+        },
+        {
+          label: "Live stock counts",
+          detail: "If it says two left, there are two.",
+        },
       ],
     },
     sortOrder: 4,
@@ -1012,7 +1108,10 @@ export const homepageSections = [
     sectionType: "product_rail" as const,
     title: "Monsoon ready",
     subtitle: "Waterproof, washable, and happy in standing water.",
-    payload: { collection_slug: "monsoon-ready", cta_href: "/collection/monsoon-ready" },
+    payload: {
+      collection_slug: "monsoon-ready",
+      cta_href: "/collection/monsoon-ready",
+    },
     sortOrder: 5,
   },
   {

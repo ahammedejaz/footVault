@@ -52,11 +52,15 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     console.warn(
       `[auth] provider returned ${providerError}: ${url.searchParams.get("error_description") ?? ""}`,
     );
-    return NextResponse.redirect(new URL(`${next}${joiner(next)}signin=cancelled`, url.origin));
+    return NextResponse.redirect(
+      new URL(`${next}${joiner(next)}signin=cancelled`, url.origin),
+    );
   }
 
   if (!code) {
-    return NextResponse.redirect(new URL(`${next}${joiner(next)}signin=failed`, url.origin));
+    return NextResponse.redirect(
+      new URL(`${next}${joiner(next)}signin=failed`, url.origin),
+    );
   }
 
   // Built before the exchange, and deliberately so: it captures the guest token
@@ -70,8 +74,13 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   if (error || !data.session) {
     // A code is single-use and short-lived, so the usual cause is a reload of
     // this URL rather than an attack.
-    console.error("[auth] exchangeCodeForSession failed:", error?.message ?? "no session");
-    return NextResponse.redirect(new URL(`${next}${joiner(next)}signin=failed`, url.origin));
+    console.error(
+      "[auth] exchangeCodeForSession failed:",
+      error?.message ?? "no session",
+    );
+    return NextResponse.redirect(
+      new URL(`${next}${joiner(next)}signin=failed`, url.origin),
+    );
   }
 
   // The bag comes with them. A failure here must not cost them the sign-in they
@@ -80,10 +89,16 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   let merged = 0;
   try {
     const guestToken = await readGuestToken();
-    const outcome = await mergeGuestCartIntoAccount(supabase, data.session.user.id, guestToken);
+    const outcome = await mergeGuestCartIntoAccount(
+      supabase,
+      data.session.user.id,
+      guestToken,
+    );
     merged = outcome.merged;
     if (outcome.dropped > 0) {
-      console.warn(`[cart] merge dropped ${outcome.dropped} line(s) that were no longer sellable`);
+      console.warn(
+        `[cart] merge dropped ${outcome.dropped} line(s) that were no longer sellable`,
+      );
     }
 
     // Whatever they bought as a guest is theirs now. Its own try, because an
@@ -93,9 +108,15 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     try {
       const count = await adoptGuestOrders(supabase, guestToken);
       adopted = true;
-      if (count > 0) console.info(`[orders] attached ${count} guest order(s) to the account`);
+      if (count > 0)
+        console.info(
+          `[orders] attached ${count} guest order(s) to the account`,
+        );
     } catch (adoptError) {
-      console.error("[orders] adopting guest orders on sign-in failed:", adoptError);
+      console.error(
+        "[orders] adopting guest orders on sign-in failed:",
+        adoptError,
+      );
     }
 
     // Only once the guest bag is gone *and* the orders have somewhere else to

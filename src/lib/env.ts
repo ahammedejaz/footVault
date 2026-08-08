@@ -35,12 +35,40 @@ export const SITE_URL =
   process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
 
 /**
- * True when Supabase is configured. The storefront degrades to a styled empty
- * state rather than a stack trace when it is not — a fresh clone with no
- * .env.local should still boot and tell you what to do.
+ * Which of the two public Supabase variables are missing. Empty means configured.
+ *
+ * Returning the names rather than a boolean is the point: the value of noticing
+ * this at all is being able to say *which* variable, and a boolean throws that
+ * away at the only moment it is worth having.
  */
-export const isSupabaseConfigured = () =>
-  Boolean(
-    process.env.NEXT_PUBLIC_SUPABASE_URL &&
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-  );
+export function missingSupabaseEnv(): string[] {
+  const missing: string[] = [];
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL)
+    missing.push("NEXT_PUBLIC_SUPABASE_URL");
+  if (!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY)
+    missing.push("NEXT_PUBLIC_SUPABASE_ANON_KEY");
+  return missing;
+}
+
+/**
+ * True when both public Supabase variables are present.
+ *
+ * **Read what this does and does not guarantee**, because for three phases it
+ * claimed more than it delivered. Until Phase 6 its comment said the storefront
+ * "degrades to a styled empty state rather than a stack trace", and the only
+ * caller was `src/lib/supabase/proxy.ts` — nothing on the render path checked
+ * it, so every page went on to call `SUPABASE_URL()` and throw.
+ *
+ * It is now true, and it is true because of two callers rather than one:
+ *
+ *   - the proxy returns early, so middleware does not throw on every request
+ *     (there is no error boundary around middleware; a throw there is a bare
+ *     500 with no markup at all)
+ *   - the root layout renders `<NotConfigured />` instead of the tree, which is
+ *     the styled state the comment was promising
+ *
+ * Anything below the layout may still assume configuration and call
+ * `SUPABASE_URL()` freely. That is the deal: one check, high up, rather than a
+ * null branch in every query.
+ */
+export const isSupabaseConfigured = () => missingSupabaseEnv().length === 0;

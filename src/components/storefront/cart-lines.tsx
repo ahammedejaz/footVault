@@ -141,22 +141,18 @@ function CartLineRow({
       void refreshBag();
       onChanged?.();
 
-      toast.undoable(
-        "Removed from bag",
-        `${name} · UK ${size}`,
-        () => {
-          startTransition(async () => {
-            const back = await addToBag({ variantId, quantity: was });
-            if (!back.ok) {
-              toast.failed(back.message);
-              return;
-            }
-            void refreshBag();
-            onChanged?.();
-            toast.done("Back in your bag", `${name} · UK ${size}`);
-          });
-        },
-      );
+      toast.undoable("Removed from bag", `${name} · UK ${size}`, () => {
+        startTransition(async () => {
+          const back = await addToBag({ variantId, quantity: was });
+          if (!back.ok) {
+            toast.failed(back.message);
+            return;
+          }
+          void refreshBag();
+          onChanged?.();
+          toast.done("Back in your bag", `${name} · UK ${size}`);
+        });
+      });
     });
   };
 

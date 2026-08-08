@@ -40,9 +40,9 @@ export default async function AccountOrdersPage() {
       {!user ? (
         <div className="border-border mt-8 rounded-lg border p-6 text-center">
           <p className="text-base text-pretty">
-            An account puts every order in one place — what you bought, where it went,
-            and where it has got to. You never needed one to buy, and any order you have
-            already placed as a guest is unaffected.
+            An account puts every order in one place — what you bought, where it
+            went, and where it has got to. You never needed one to buy, and any
+            order you have already placed as a guest is unaffected.
           </p>
           <div className="mx-auto mt-5 max-w-xs">
             <GoogleSignInForm next="/account/orders" />
@@ -108,14 +108,18 @@ function OrderRow({ order }: { order: OrderSummary }) {
           </Link>
         </p>
         <p className="text-muted-foreground mt-1 text-sm">
-          <time dateTime={order.placedAt}>{formatOrderDate(order.placedAt)}</time> ·{" "}
-          {order.itemCount} {order.itemCount === 1 ? "item" : "items"}
+          <time dateTime={order.placedAt}>
+            {formatOrderDate(order.placedAt)}
+          </time>{" "}
+          · {order.itemCount} {order.itemCount === 1 ? "item" : "items"}
         </p>
       </div>
 
       <div className="flex items-center gap-4">
         <StatusChip status={order.status} />
-        <p className="font-mono text-sm font-medium">{formatPaise(order.grandTotal)}</p>
+        <p className="font-mono text-sm font-medium">
+          {formatPaise(order.grandTotal)}
+        </p>
       </div>
     </li>
   );

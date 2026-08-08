@@ -13,7 +13,8 @@ import dynamic from "next/dynamic";
  * The children are server-rendered facet links, passed straight through.
  */
 const FilterSheet = dynamic(
-  () => import("@/components/storefront/filter-sheet").then((m) => m.FilterSheet),
+  () =>
+    import("@/components/storefront/filter-sheet").then((m) => m.FilterSheet),
   { ssr: false },
 );
 

@@ -37,8 +37,12 @@ export function WishlistRow({ product }: { product: ProductSummary }) {
 
   if (gone) return null;
 
-  const active = product.colors.find((c) => c.name === colourway) ?? product.colors[0] ?? null;
-  const sizes = active && active.sizes.length > 0 ? active.sizes : product.sizes;
+  const active =
+    product.colors.find((c) => c.name === colourway) ??
+    product.colors[0] ??
+    null;
+  const sizes =
+    active && active.sizes.length > 0 ? active.sizes : product.sizes;
   const available = sizes.filter((entry) => entry.available);
   // One size in stock is not a choice, so it is made for them.
   const chosen = size ?? (available.length === 1 ? available[0]!.size : null);
@@ -52,7 +56,10 @@ export function WishlistRow({ product }: { product: ProductSummary }) {
     }
 
     startTransition(async () => {
-      const added = await addToBag({ variantId: entry.variantId!, quantity: 1 });
+      const added = await addToBag({
+        variantId: entry.variantId!,
+        quantity: 1,
+      });
       if (!added.ok) {
         toast.failed(added.message);
         return;
@@ -97,7 +104,10 @@ export function WishlistRow({ product }: { product: ProductSummary }) {
               </p>
             ) : null}
             <h2 className="mt-0.5 text-sm font-medium">
-              <Link href={`/product/${product.slug}`} className="hover:text-orange-ink">
+              <Link
+                href={`/product/${product.slug}`}
+                className="hover:text-orange-ink"
+              >
                 {product.name}
               </Link>
             </h2>
@@ -139,7 +149,8 @@ export function WishlistRow({ product }: { product: ProductSummary }) {
             className={cn(
               "mt-3 rounded-lg transition-shadow",
               // Cut token: this ring never drew. Same defect as product-viewer.
-              needsSize && "ring-destructive/60 ring-2 ring-offset-4 ring-offset-background",
+              needsSize &&
+                "ring-destructive/60 ring-2 ring-offset-4 ring-offset-background",
             )}
           >
             <p id={`size-label-${product.id}`} className="sr-only">
@@ -188,7 +199,10 @@ export function WishlistRow({ product }: { product: ProductSummary }) {
         </div>
 
         {needsSize ? (
-          <p id={`size-hint-${product.id}`} className="text-destructive mt-2 font-mono text-xs">
+          <p
+            id={`size-hint-${product.id}`}
+            className="text-destructive mt-2 font-mono text-xs"
+          >
             Choose a size first
           </p>
         ) : null}

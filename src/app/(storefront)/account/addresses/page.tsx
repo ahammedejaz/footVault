@@ -34,8 +34,9 @@ export default async function AccountAddressesPage() {
       {!user ? (
         <div className="border-border mt-8 rounded-lg border p-6 text-center">
           <p className="text-base text-pretty">
-            Saved addresses need an account — there is nowhere to keep them otherwise.
-            Checkout never asks for one; this is the part that gets faster if you have it.
+            Saved addresses need an account — there is nowhere to keep them
+            otherwise. Checkout never asks for one; this is the part that gets
+            faster if you have it.
           </p>
           <div className="mx-auto mt-5 max-w-xs">
             <GoogleSignInForm next="/account/addresses" />
@@ -44,8 +45,9 @@ export default async function AccountAddressesPage() {
       ) : (
         <>
           <p className="text-muted-foreground mt-3 text-base text-pretty">
-            The default is the one checkout preselects. Editing anything here never
-            changes an order already placed — what ships is a copy taken at the time.
+            The default is the one checkout preselects. Editing anything here
+            never changes an order already placed — what ships is a copy taken
+            at the time.
           </p>
           <AddressBook addresses={addresses} />
         </>

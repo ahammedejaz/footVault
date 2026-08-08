@@ -63,12 +63,16 @@ export function SearchPanel({
           { signal: controller.signal },
         );
         if (!response.ok) throw new Error(`suggest: ${response.status}`);
-        const data = (await response.json()) as { results: Suggestion[]; total: number };
+        const data = (await response.json()) as {
+          results: Suggestion[];
+          total: number;
+        };
         setResults(data.results);
         setTotal(data.total);
       } catch (error) {
         // An aborted request is the expected outcome of typing another letter.
-        if (error instanceof DOMException && error.name === "AbortError") return;
+        if (error instanceof DOMException && error.name === "AbortError")
+          return;
         console.error("[search] suggestions failed", error);
         setResults([]);
         setTotal(0);
@@ -110,7 +114,10 @@ export function SearchPanel({
             role="search"
             className="border-border mx-auto flex w-full max-w-3xl items-center gap-2 border-b px-4 py-3 sm:px-6"
           >
-            <Search className="text-muted-foreground size-5 shrink-0" aria-hidden />
+            <Search
+              className="text-muted-foreground size-5 shrink-0"
+              aria-hidden
+            />
             <label htmlFor="fv-search" className="sr-only">
               Search for a brand, a model or a category
             </label>
@@ -126,7 +133,10 @@ export function SearchPanel({
               className="h-12 min-w-0 flex-1 bg-transparent text-base outline-none"
             />
             {pending ? (
-              <Loader2 className="text-muted-foreground size-4 shrink-0 animate-spin" aria-hidden />
+              <Loader2
+                className="text-muted-foreground size-4 shrink-0 animate-spin"
+                aria-hidden
+              />
             ) : null}
             <Dialog.Close asChild>
               <Button variant="ghost" size="icon" aria-label="Close search">
@@ -166,7 +176,8 @@ export function SearchPanel({
             ) : visible.length === 0 && !pending ? (
               <div className="py-8 text-center">
                 <p className="text-base">
-                  Nothing matches “<span className="font-medium">{trimmed}</span>”.
+                  Nothing matches “
+                  <span className="font-medium">{trimmed}</span>”.
                 </p>
                 <p className="text-muted-foreground mt-2 text-sm">
                   Spelling is forgiven — a brand on its own usually finds it.
@@ -222,7 +233,9 @@ export function SearchPanel({
                             {formatPaise(result.price)}
                           </span>
                           {!result.inStock ? (
-                            <span className="text-dim block font-mono text-xs">Sold out</span>
+                            <span className="text-dim block font-mono text-xs">
+                              Sold out
+                            </span>
                           ) : null}
                         </span>
                       </Link>
@@ -230,7 +243,11 @@ export function SearchPanel({
                   ))}
                 </ul>
                 {total > visible.length ? (
-                  <Button variant="outline" className="mt-4 w-full" onClick={submit}>
+                  <Button
+                    variant="outline"
+                    className="mt-4 w-full"
+                    onClick={submit}
+                  >
                     See all {total} results
                   </Button>
                 ) : null}

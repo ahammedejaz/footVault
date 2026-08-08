@@ -23,7 +23,9 @@ export function Price({
   const now = salePrice ?? basePrice;
 
   return (
-    <p className={cn("flex flex-wrap items-baseline gap-x-2 gap-y-1", className)}>
+    <p
+      className={cn("flex flex-wrap items-baseline gap-x-2 gap-y-1", className)}
+    >
       <span
         className={cn(
           "font-mono font-medium tracking-[-0.01em]",

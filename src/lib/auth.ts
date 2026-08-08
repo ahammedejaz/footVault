@@ -35,7 +35,8 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
 
   const claims = data.claims;
   const meta = (claims.user_metadata ?? {}) as Record<string, unknown>;
-  const str = (key: string) => (typeof meta[key] === "string" ? (meta[key] as string) : null);
+  const str = (key: string) =>
+    typeof meta[key] === "string" ? (meta[key] as string) : null;
 
   return {
     id: claims.sub,

@@ -79,7 +79,8 @@ export async function claimPaymentEvent(
 
   if (!error) return { claimed: true };
 
-  if (error.code === UNIQUE_VIOLATION) return { claimed: false, reason: "duplicate" };
+  if (error.code === UNIQUE_VIOLATION)
+    return { claimed: false, reason: "duplicate" };
 
   if (MISSING_TABLE.has(error.code ?? "")) {
     throw new Error(
@@ -89,7 +90,9 @@ export async function claimPaymentEvent(
     );
   }
 
-  throw new Error(`claimPaymentEvent(${provider}:${eventId}): ${error.message} [${error.code}]`);
+  throw new Error(
+    `claimPaymentEvent(${provider}:${eventId}): ${error.message} [${error.code}]`,
+  );
 }
 
 /**
@@ -124,11 +127,14 @@ export async function releasePaymentEvent(
       .is("processed_at", null);
 
     if (error) {
-      console.error("[payments] could not release an event claim; it may need clearing by hand", {
-        provider,
-        eventId,
-        code: error.code,
-      });
+      console.error(
+        "[payments] could not release an event claim; it may need clearing by hand",
+        {
+          provider,
+          eventId,
+          code: error.code,
+        },
+      );
     }
   } catch (thrown) {
     console.error("[payments] releasing an event claim threw", {

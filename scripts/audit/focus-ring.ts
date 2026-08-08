@@ -30,7 +30,9 @@ const ORANGE = "rgb(254, 147, 1)";
 let failures = 0;
 function check(name: string, passed: boolean, detail = "") {
   if (!passed) failures++;
-  console.log(`  ${passed ? "PASS" : "FAIL"}  ${name}${detail ? `  — ${detail}` : ""}`);
+  console.log(
+    `  ${passed ? "PASS" : "FAIL"}  ${name}${detail ? `  — ${detail}` : ""}`,
+  );
 }
 
 type Ring = {
@@ -56,11 +58,16 @@ type Ring = {
  * the indicator is deliberately repeated on the label so it appears where the
  * eye is.
  */
-async function tabToRing(page: Page, selector: string, ringHost?: string): Promise<Ring> {
+async function tabToRing(
+  page: Page,
+  selector: string,
+  ringHost?: string,
+): Promise<Ring> {
   for (let stop = 0; stop < 150; stop++) {
     await page.keyboard.press("Tab");
     const landed = await page.evaluate(
-      (match) => Boolean((document.activeElement as HTMLElement | null)?.matches(match)),
+      (match) =>
+        Boolean((document.activeElement as HTMLElement | null)?.matches(match)),
       selector,
     );
     if (!landed) continue;
@@ -91,12 +98,16 @@ async function tabToRing(page: Page, selector: string, ringHost?: string): Promi
             boxShadow: "none",
           };
         }
-        const target = host ? ((active.closest(host) as HTMLElement | null) ?? active) : active;
+        const target = host
+          ? ((active.closest(host) as HTMLElement | null) ?? active)
+          : active;
         const style = getComputedStyle(target);
         return {
           found: true,
           tag: `${active.tagName.toLowerCase()}${
-            active.getAttribute("data-slot") ? `[${active.getAttribute("data-slot")}]` : ""
+            active.getAttribute("data-slot")
+              ? `[${active.getAttribute("data-slot")}]`
+              : ""
           }`,
           focusVisible: active.matches(":focus-visible"),
           outlineStyle: style.outlineStyle,
@@ -152,7 +163,9 @@ function assertRing(label: string, ring: Ring) {
 }
 
 async function main() {
-  console.log("\nThe composite focus indicator, measured on focused controls\n");
+  console.log(
+    "\nThe composite focus indicator, measured on focused controls\n",
+  );
 
   const browser = await chromium.launch();
   // A bag, not the full fixture: nothing here reads an order, and the full
@@ -161,28 +174,45 @@ async function main() {
 
   try {
     /* The header, on a page anybody can reach signed out. */
-    const plain = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+    const plain = await browser.newContext({
+      viewport: { width: 1440, height: 900 },
+    });
     const home = await plain.newPage();
     await home.goto(`${BASE_URL}/`, { waitUntil: "load" });
     assertRing("a header link", await tabToRing(home, "a[href]"));
     await plain.close();
 
     /* Every ui/ primitive that carries a focusable control, on one page. */
-    const shop = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+    const shop = await browser.newContext({
+      viewport: { width: 1440, height: 900 },
+    });
     await shop.addCookies(bag.cookies);
     const checkout = await shop.newPage();
     await checkout.goto(`${BASE_URL}/checkout`, { waitUntil: "load" });
-    await checkout.locator("#checkout-recipientName").waitFor({ state: "visible" });
+    await checkout
+      .locator("#checkout-recipientName")
+      .waitFor({ state: "visible" });
 
-    assertRing("ui/input", await tabToRing(checkout, 'input[data-slot="input"]'));
+    assertRing(
+      "ui/input",
+      await tabToRing(checkout, 'input[data-slot="input"]'),
+    );
 
     await checkout.goto(`${BASE_URL}/checkout`, { waitUntil: "load" });
     await checkout.locator("#checkout-state").waitFor({ state: "visible" });
-    assertRing("ui/select", await tabToRing(checkout, 'select[data-slot="select"]'));
+    assertRing(
+      "ui/select",
+      await tabToRing(checkout, 'select[data-slot="select"]'),
+    );
 
     await checkout.goto(`${BASE_URL}/checkout`, { waitUntil: "load" });
-    await checkout.locator("#checkout-customerNote").waitFor({ state: "visible" });
-    assertRing("the delivery-note textarea", await tabToRing(checkout, "textarea"));
+    await checkout
+      .locator("#checkout-customerNote")
+      .waitFor({ state: "visible" });
+    assertRing(
+      "the delivery-note textarea",
+      await tabToRing(checkout, "textarea"),
+    );
 
     await checkout.goto(`${BASE_URL}/checkout`, { waitUntil: "load" });
     await checkout.locator('input[name="paymentMethod"]').first().waitFor();
@@ -192,8 +222,13 @@ async function main() {
     );
 
     await checkout.goto(`${BASE_URL}/checkout`, { waitUntil: "load" });
-    await checkout.getByRole("button", { name: /place order|^pay /i }).waitFor();
-    assertRing("ui/button", await tabToRing(checkout, 'button[data-slot="button"]'));
+    await checkout
+      .getByRole("button", { name: /place order|^pay /i })
+      .waitFor();
+    assertRing(
+      "ui/button",
+      await tabToRing(checkout, 'button[data-slot="button"]'),
+    );
     await shop.close();
   } finally {
     await browser.close();

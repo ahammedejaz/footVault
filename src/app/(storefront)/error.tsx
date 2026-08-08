@@ -41,8 +41,8 @@ export default function StorefrontError({
         This page did not load
       </h1>
       <p className="text-muted-foreground mt-4 text-base text-pretty">
-        Try again. If it keeps happening, contact us and quote the reference below —
-        it points straight at what went wrong.
+        Try again. If it keeps happening, contact us and quote the reference
+        below — it points straight at what went wrong.
       </p>
       {error.digest ? (
         <p className="text-muted-foreground mt-3 font-mono text-xs tracking-[0.06em]">

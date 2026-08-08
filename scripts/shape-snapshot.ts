@@ -66,14 +66,25 @@ function createProgram(): ts.Program {
   const configPath = resolve("tsconfig.json");
   const raw = ts.readConfigFile(configPath, ts.sys.readFile);
   if (raw.error) {
-    throw new Error(ts.flattenDiagnosticMessageText(raw.error.messageText, "\n"));
+    throw new Error(
+      ts.flattenDiagnosticMessageText(raw.error.messageText, "\n"),
+    );
   }
-  const parsed = ts.parseJsonConfigFileContent(raw.config, ts.sys, resolve("."));
+  const parsed = ts.parseJsonConfigFileContent(
+    raw.config,
+    ts.sys,
+    resolve("."),
+  );
   // The snapshot only needs types resolved, never emitted, and `incremental`
   // would race the other tsc runs that share tsconfig.tsbuildinfo.
   return ts.createProgram({
     rootNames: parsed.fileNames,
-    options: { ...parsed.options, noEmit: true, incremental: false, composite: false },
+    options: {
+      ...parsed.options,
+      noEmit: true,
+      incremental: false,
+      composite: false,
+    },
   });
 }
 
@@ -149,7 +160,9 @@ function expand(
       ? expand(checker, element, node, nested, depth + 1)
       : (() => {
           const indexed = checker.getIndexTypeOfType(type, ts.IndexKind.Number);
-          return indexed ? expand(checker, indexed, node, nested, depth + 1) : "unknown";
+          return indexed
+            ? expand(checker, indexed, node, nested, depth + 1)
+            : "unknown";
         })();
     return `Array<${inner}>`;
   }
@@ -163,14 +176,16 @@ function expand(
   const properties = checker.getPropertiesOfType(type);
   if (properties.length === 0) {
     const indexed = checker.getIndexTypeOfType(type, ts.IndexKind.String);
-    if (indexed) return `{ [key: string]: ${expand(checker, indexed, node, nested, depth + 1)} }`;
+    if (indexed)
+      return `{ [key: string]: ${expand(checker, indexed, node, nested, depth + 1)} }`;
     return checker.typeToString(type);
   }
 
   const rendered = properties
     .map((property) => {
       const propertyType = checker.getTypeOfSymbolAtLocation(property, node);
-      const optional = (property.getFlags() & ts.SymbolFlags.Optional) !== 0 ? "?" : "";
+      const optional =
+        (property.getFlags() & ts.SymbolFlags.Optional) !== 0 ? "?" : "";
       return `${property.getName()}${optional}: ${expand(checker, propertyType, node, nested, depth + 1)}`;
     })
     .sort();
@@ -196,7 +211,9 @@ function readShapeVersion(source: ts.SourceFile): string {
   };
   visit(source);
   if (!found) {
-    throw new Error(`Could not find a string SHAPE_VERSION in ${CACHED_MODULE}.`);
+    throw new Error(
+      `Could not find a string SHAPE_VERSION in ${CACHED_MODULE}.`,
+    );
   }
   return found;
 }
@@ -219,7 +236,13 @@ function collectShapes(
     const returned = signatures.length
       ? checker.getReturnTypeOfSignature(signatures[0])
       : type;
-    shapes[name] = expand(checker, unwrapPromise(checker, returned), node, new Set(), 0);
+    shapes[name] = expand(
+      checker,
+      unwrapPromise(checker, returned),
+      node,
+      new Set(),
+      0,
+    );
   };
 
   const visit = (node: ts.Node): void => {
@@ -228,7 +251,10 @@ function collectShapes(
         record(node.name.text, node, checker.getTypeAtLocation(node.name));
       }
     }
-    if (ts.isFunctionDeclaration(node) && node.name?.text.startsWith("cached")) {
+    if (
+      ts.isFunctionDeclaration(node) &&
+      node.name?.text.startsWith("cached")
+    ) {
       record(node.name.text, node, checker.getTypeAtLocation(node.name));
     }
     ts.forEachChild(node, visit);
@@ -249,7 +275,10 @@ function hashOf(shapeVersion: string, shapes: Record<string, string>): string {
     .sort()
     .map((name) => `${name} = ${shapes[name]}`)
     .join("\n");
-  return createHash("sha256").update(`${shapeVersion}\n${canonical}`).digest("hex").slice(0, 16);
+  return createHash("sha256")
+    .update(`${shapeVersion}\n${canonical}`)
+    .digest("hex")
+    .slice(0, 16);
 }
 
 /* -------------------------------------------------------------------- run -- */
@@ -260,7 +289,8 @@ function main(): void {
   const program = createProgram();
   const checker = program.getTypeChecker();
   const source = program.getSourceFile(resolve(CACHED_MODULE));
-  if (!source) throw new Error(`Could not load ${CACHED_MODULE} into the program.`);
+  if (!source)
+    throw new Error(`Could not load ${CACHED_MODULE} into the program.`);
 
   const shapeVersion = readShapeVersion(source);
   const shapes = collectShapes(checker, source);
@@ -298,7 +328,9 @@ function main(): void {
       );
       process.exit(1);
     }
-    console.log(`${Object.keys(shapes).length} cached shapes unchanged at ${shapeVersion}.`);
+    console.log(
+      `${Object.keys(shapes).length} cached shapes unchanged at ${shapeVersion}.`,
+    );
     return;
   }
 
@@ -314,7 +346,9 @@ function main(): void {
         "objects that are missing the field you just added — silently, with no error\n" +
         "anywhere. That is the Phase 4 `variantId` bug.\n\n" +
         "Changed:\n" +
-        changed.map((name) => diffLine(name, previous.shapes[name], shapes[name])).join("\n") +
+        changed
+          .map((name) => diffLine(name, previous.shapes[name], shapes[name]))
+          .join("\n") +
         `\n\nBump SHAPE_VERSION in ${CACHED_MODULE}, then run \`npm run shapes:write\`.\n`,
     );
     process.exit(1);
@@ -325,7 +359,9 @@ function main(): void {
       `records "${previous.shapeVersion}". Run \`npm run shapes:write\` and commit it, or the\n` +
       "next shape change goes unnoticed.\n\n" +
       "Changed:\n" +
-      changed.map((name) => diffLine(name, previous.shapes[name], shapes[name])).join("\n") +
+      changed
+        .map((name) => diffLine(name, previous.shapes[name], shapes[name]))
+        .join("\n") +
       "\n",
   );
   process.exit(1);
@@ -339,16 +375,28 @@ function main(): void {
  * two strings first diverge rather than printing the first N characters, which
  * would show identical text twice and be worse than useless.
  */
-function diffLine(name: string, before: string | undefined, after: string | undefined): string {
+function diffLine(
+  name: string,
+  before: string | undefined,
+  after: string | undefined,
+): string {
   if (before === undefined) return `  + ${name} (new)`;
   if (after === undefined) return `  - ${name} (removed)`;
 
   let common = 0;
-  while (common < before.length && common < after.length && before[common] === after[common]) {
+  while (
+    common < before.length &&
+    common < after.length &&
+    before[common] === after[common]
+  ) {
     common++;
   }
   // Back up to a property boundary so the window starts at a readable place.
-  const boundary = Math.max(0, before.lastIndexOf("; ", common) + 2, before.lastIndexOf("{ ", common) + 2);
+  const boundary = Math.max(
+    0,
+    before.lastIndexOf("; ", common) + 2,
+    before.lastIndexOf("{ ", common) + 2,
+  );
 
   return (
     `  ~ ${name}  (diverges at character ${common})\n` +

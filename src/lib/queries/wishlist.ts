@@ -1,7 +1,11 @@
 import "server-only";
 
 import { getCurrentUser } from "@/lib/auth";
-import { PRODUCT_FIELDS, toSummary, type RawProduct } from "@/lib/queries/catalog";
+import {
+  PRODUCT_FIELDS,
+  toSummary,
+  type RawProduct,
+} from "@/lib/queries/catalog";
 import { rows } from "@/lib/queries/run";
 import type { ProductSummary } from "@/lib/catalog-types";
 import { createClient } from "@/lib/supabase/server";
@@ -85,7 +89,10 @@ export async function getWishlist(): Promise<ProductSummary[]> {
     supabase
       .from("products")
       .select(PRODUCT_FIELDS)
-      .in("id", saved.map((row) => row.product_id))
+      .in(
+        "id",
+        saved.map((row) => row.product_id),
+      )
       .eq("is_active", true)
       .is("deleted_at", null)
       .overrideTypes<RawProduct[]>(),

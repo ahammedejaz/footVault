@@ -71,21 +71,24 @@ export function AddToBag({
           void refreshBag();
           const { itemId, name, size: chosen, previousQuantity } = result.data;
 
-          toast.undoable(
-            "Added to bag",
-            `${name} · UK ${chosen}`,
-            () => {
-              startTransition(async () => {
-                const undone = await setQuantity({ itemId, quantity: previousQuantity });
-                if (!undone.ok) {
-                  toast.failed(undone.message);
-                  return;
-                }
-                void refreshBag();
-                toast.note(previousQuantity === 0 ? "Removed from bag" : "Back to what it was");
+          toast.undoable("Added to bag", `${name} · UK ${chosen}`, () => {
+            startTransition(async () => {
+              const undone = await setQuantity({
+                itemId,
+                quantity: previousQuantity,
               });
-            },
-          );
+              if (!undone.ok) {
+                toast.failed(undone.message);
+                return;
+              }
+              void refreshBag();
+              toast.note(
+                previousQuantity === 0
+                  ? "Removed from bag"
+                  : "Back to what it was",
+              );
+            });
+          });
         });
       }}
     >

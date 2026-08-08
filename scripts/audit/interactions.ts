@@ -28,8 +28,13 @@ async function announcement(page: Page) {
   const bar = page.locator("[data-announcement]");
   check(await bar.isVisible(), "announcement: not shown on a first visit");
 
-  await page.getByRole("button", { name: /dismiss this announcement/i }).click();
-  check(!(await bar.isVisible()), "announcement: still visible after dismissing");
+  await page
+    .getByRole("button", { name: /dismiss this announcement/i })
+    .click();
+  check(
+    !(await bar.isVisible()),
+    "announcement: still visible after dismissing",
+  );
 
   await page.reload({ waitUntil: "load" });
   check(!(await bar.isVisible()), "announcement: came back after a reload");
@@ -52,7 +57,10 @@ async function announcement(page: Page) {
   // the key of the one that was dismissed rather than a bare flag.
   await page.context().clearCookies();
   await page.reload({ waitUntil: "load" });
-  check(await bar.isVisible(), "announcement: did not return for a fresh visitor");
+  check(
+    await bar.isVisible(),
+    "announcement: did not return for a fresh visitor",
+  );
 }
 
 async function filterSheet(page: Page) {
@@ -69,17 +77,28 @@ async function filterSheet(page: Page) {
   // a facet whose count happens to equal the current total is a legitimate
   // no-change.
   const facet = sheet.getByRole("link", { name: /^UK 9,/ }).first();
-  const promised = /(\d+) style/.exec((await facet.getAttribute("aria-label")) ?? (await facet.textContent()) ?? "")?.[1];
+  const promised = /(\d+) style/.exec(
+    (await facet.getAttribute("aria-label")) ??
+      (await facet.textContent()) ??
+      "",
+  )?.[1];
   await facet.click();
   await page.waitForURL("**size=9**", { timeout: 8000 });
   await sheet.waitFor({ state: "visible", timeout: 5000 });
   await page.waitForTimeout(400);
   const shown = /(\d+)/.exec(
-    (await page.locator("text=/^Show \\d+ styles?$/").first().textContent()) ?? "",
+    (await page.locator("text=/^Show \\d+ styles?$/").first().textContent()) ??
+      "",
   )?.[1];
 
-  check(page.url().includes("size=9"), "filter sheet: the facet did not reach the URL");
-  check(page.url().includes("panel=filters"), "filter sheet: closed itself after a tap");
+  check(
+    page.url().includes("size=9"),
+    "filter sheet: the facet did not reach the URL",
+  );
+  check(
+    page.url().includes("panel=filters"),
+    "filter sheet: closed itself after a tap",
+  );
   check(
     Boolean(promised) && promised === shown,
     `filter sheet: the facet promised ${promised} styles, the action offers ${shown}`,
@@ -94,47 +113,82 @@ async function search(page: Page) {
   await dialog.waitFor({ state: "visible", timeout: 5000 });
 
   await page.getByRole("searchbox").fill("pegasis");
-  await dialog.getByRole("link", { name: /pegasus/i }).first().waitFor({ timeout: 5000 })
-    .catch(() => problems.push("search: no result for the misspelling 'pegasis'"));
+  await dialog
+    .getByRole("link", { name: /pegasus/i })
+    .first()
+    .waitFor({ timeout: 5000 })
+    .catch(() =>
+      problems.push("search: no result for the misspelling 'pegasis'"),
+    );
 }
 
 async function colourway(page: Page) {
-  await page.goto(`${BASE_URL}/product/nike-air-max-90-mens`, { waitUntil: "load" });
+  await page.goto(`${BASE_URL}/product/nike-air-max-90-mens`, {
+    waitUntil: "load",
+  });
   await page.locator("h1").first().waitFor({ state: "visible" });
 
-  const firstFrame = await page.locator("ul[aria-label$='images'] img").first().getAttribute("src");
+  const firstFrame = await page
+    .locator("ul[aria-label$='images'] img")
+    .first()
+    .getAttribute("src");
   await page.getByRole("radio", { name: /black \/ volt/i }).click();
   await page.waitForTimeout(300);
-  const nextFrame = await page.locator("ul[aria-label$='images'] img").first().getAttribute("src");
+  const nextFrame = await page
+    .locator("ul[aria-label$='images'] img")
+    .first()
+    .getAttribute("src");
 
-  check(firstFrame !== nextFrame, "colourway: the gallery did not change with the swatch");
-  check(page.url().includes("color="), "colourway: the choice did not reach the URL");
+  check(
+    firstFrame !== nextFrame,
+    "colourway: the gallery did not change with the swatch",
+  );
+  check(
+    page.url().includes("color="),
+    "colourway: the choice did not reach the URL",
+  );
 }
 
 async function stickyBar(page: Page) {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto(`${BASE_URL}/product/nike-air-max-90-mens`, { waitUntil: "load" });
+  await page.goto(`${BASE_URL}/product/nike-air-max-90-mens`, {
+    waitUntil: "load",
+  });
   await page.locator("h1").first().waitFor({ state: "visible" });
   await page.waitForTimeout(400);
 
-  const bar = page.locator("div").filter({ hasText: /^Pick a size$/ }).last();
+  const bar = page
+    .locator("div")
+    .filter({ hasText: /^Pick a size$/ })
+    .last();
   // `inert`, not `aria-hidden`: the bar carries a live Add to bag button now,
   // and aria-hidden would leave it in the tab order while telling screen
   // readers it is not there. axe flags exactly that as aria-hidden-focus.
   const hiddenAtFirst = await page.evaluate(() => {
-    const fixed = Array.from(document.querySelectorAll<HTMLElement>("div")).find(
-      (el) => getComputedStyle(el).position === "fixed" && el.textContent?.includes("Add to bag"),
+    const fixed = Array.from(
+      document.querySelectorAll<HTMLElement>("div"),
+    ).find(
+      (el) =>
+        getComputedStyle(el).position === "fixed" &&
+        el.textContent?.includes("Add to bag"),
     );
     return fixed ? fixed.hasAttribute("inert") : false;
   });
   check(hiddenAtFirst, "sticky bar: not inert before the CTA has been seen");
 
-  await page.getByRole("button", { name: "Add to bag" }).first().scrollIntoViewIfNeeded();
+  await page
+    .getByRole("button", { name: "Add to bag" })
+    .first()
+    .scrollIntoViewIfNeeded();
   await page.mouse.wheel(0, 1200);
   await page.waitForTimeout(500);
   const shown = await page.evaluate(() => {
-    const fixed = Array.from(document.querySelectorAll<HTMLElement>("div")).find(
-      (el) => getComputedStyle(el).position === "fixed" && el.textContent?.includes("Add to bag"),
+    const fixed = Array.from(
+      document.querySelectorAll<HTMLElement>("div"),
+    ).find(
+      (el) =>
+        getComputedStyle(el).position === "fixed" &&
+        el.textContent?.includes("Add to bag"),
     );
     return fixed ? !fixed.className.includes("translate-y-full") : false;
   });
@@ -144,7 +198,9 @@ async function stickyBar(page: Page) {
 
 async function main() {
   const browser = await chromium.launch();
-  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const page = await browser.newPage({
+    viewport: { width: 1440, height: 900 },
+  });
 
   await announcement(page);
   await filterSheet(page);

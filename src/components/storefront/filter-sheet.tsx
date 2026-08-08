@@ -72,11 +72,14 @@ export function FilterSheet({
             </Dialog.Close>
           </div>
           <Dialog.Description className="sr-only">
-            Every option shows how many styles are behind it. Choosing one applies it
-            straight away.
+            Every option shows how many styles are behind it. Choosing one
+            applies it straight away.
           </Dialog.Description>
 
-          <div data-swipe-scroller className="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
+          <div
+            data-swipe-scroller
+            className="min-h-0 flex-1 overflow-y-auto px-4 pb-4"
+          >
             {children}
           </div>
 

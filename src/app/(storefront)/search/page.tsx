@@ -52,7 +52,10 @@ export default async function SearchPage({
  * they cannot go stale.
  */
 async function SearchLanding() {
-  const [tree, brands] = await Promise.all([getCategoryTree(), getPopularBrands(8)]);
+  const [tree, brands] = await Promise.all([
+    getCategoryTree(),
+    getPopularBrands(8),
+  ]);
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-14 sm:px-6">
@@ -117,7 +120,9 @@ async function SearchLanding() {
                 className="border-border hover:border-foreground inline-flex min-h-11 items-center gap-2 rounded-lg border px-4 text-sm transition-colors"
               >
                 {brand.label}
-                <span className="text-dim font-mono text-xs">{brand.count}</span>
+                <span className="text-dim font-mono text-xs">
+                  {brand.count}
+                </span>
               </Link>
             </li>
           ))}
@@ -126,7 +131,10 @@ async function SearchLanding() {
 
       <p className="text-muted-foreground mt-10 text-sm">
         Or{" "}
-        <Link href="/shop" className="text-orange-ink underline underline-offset-4">
+        <Link
+          href="/shop"
+          className="text-orange-ink underline underline-offset-4"
+        >
           browse everything we hold
         </Link>
         .

@@ -3,7 +3,11 @@ import { Check, SlidersHorizontal, X } from "lucide-react";
 
 import { FilterSheetLoader } from "@/components/storefront/filter-sheet-loader";
 import { Button } from "@/components/ui/button";
-import { COLOR_FAMILY_SWATCH, type CatalogFacets, type Facet } from "@/lib/catalog-types";
+import {
+  COLOR_FAMILY_SWATCH,
+  type CatalogFacets,
+  type Facet,
+} from "@/lib/catalog-types";
 import { formatPaise } from "@/lib/format";
 import {
   LISTING_SORTS,
@@ -52,7 +56,9 @@ function FacetGroup({
 }) {
   return (
     <section className="border-border border-t py-5 first:border-t-0 first:pt-0">
-      <h3 className="font-mono text-xs tracking-[0.06em] uppercase">{legend}</h3>
+      <h3 className="font-mono text-xs tracking-[0.06em] uppercase">
+        {legend}
+      </h3>
       <div className="mt-3">{children}</div>
     </section>
   );
@@ -111,7 +117,10 @@ function FacetLink({
         {count}
       </span>
       <span className="sr-only">
-        {spoken ?? label}, {count === 0 ? "no styles" : `${count} ${count === 1 ? "style" : "styles"}`}
+        {spoken ?? label},{" "}
+        {count === 0
+          ? "no styles"
+          : `${count} ${count === 1 ? "style" : "styles"}`}
         {active ? ", applied" : ""}
       </span>
     </>
@@ -189,8 +198,10 @@ export function FilterBody({ facets, params, pathname }: PanelProps) {
   const rangeHref = (bucket: { min?: number; max?: number }) => {
     const cleared = dropParams(params, ["min", "max"], pathname);
     const url = new URL(cleared, "https://x.invalid");
-    if (bucket.min !== undefined) url.searchParams.append("min", String(bucket.min / 100));
-    if (bucket.max !== undefined) url.searchParams.append("max", String(bucket.max / 100));
+    if (bucket.min !== undefined)
+      url.searchParams.append("min", String(bucket.min / 100));
+    if (bucket.max !== undefined)
+      url.searchParams.append("max", String(bucket.max / 100));
     return `${url.pathname}${url.search}`;
   };
 
@@ -289,7 +300,11 @@ export function FilterBody({ facets, params, pathname }: PanelProps) {
             {buckets.map((bucket) => (
               <li key={bucket.label}>
                 <Link
-                  href={rangeActive(bucket) ? dropParams(params, ["min", "max"], pathname) : rangeHref(bucket)}
+                  href={
+                    rangeActive(bucket)
+                      ? dropParams(params, ["min", "max"], pathname)
+                      : rangeHref(bucket)
+                  }
                   aria-current={rangeActive(bucket) ? "true" : undefined}
                   className={cn(
                     "flex min-h-11 items-center gap-2 rounded-lg border px-3 text-sm transition-colors",
@@ -298,7 +313,9 @@ export function FilterBody({ facets, params, pathname }: PanelProps) {
                       : "border-border hover:border-foreground",
                   )}
                 >
-                  {rangeActive(bucket) ? <Check className="size-3.5" aria-hidden /> : null}
+                  {rangeActive(bucket) ? (
+                    <Check className="size-3.5" aria-hidden />
+                  ) : null}
                   {bucket.label}
                 </Link>
               </li>
@@ -311,7 +328,12 @@ export function FilterBody({ facets, params, pathname }: PanelProps) {
         <ul className="flex flex-wrap gap-2">
           <li>
             <FacetLink
-              href={setParam(params, "in_stock", inStock ? null : "true", pathname)}
+              href={setParam(
+                params,
+                "in_stock",
+                inStock ? null : "true",
+                pathname,
+              )}
               active={inStock}
               count={facets.inStock}
               label="In stock only"
@@ -319,7 +341,12 @@ export function FilterBody({ facets, params, pathname }: PanelProps) {
           </li>
           <li>
             <FacetLink
-              href={setParam(params, "on_sale", onSale ? null : "true", pathname)}
+              href={setParam(
+                params,
+                "on_sale",
+                onSale ? null : "true",
+                pathname,
+              )}
               active={onSale}
               count={facets.onSale}
               label="On sale"
@@ -361,7 +388,10 @@ export function FilterTrigger({
 }) {
   return (
     <Button variant="outline" className="lg:hidden" asChild>
-      <Link href={setParam(params, "panel", "filters", pathname)} scroll={false}>
+      <Link
+        href={setParam(params, "panel", "filters", pathname)}
+        scroll={false}
+      >
         <SlidersHorizontal />
         Filters
         {activeCount > 0 ? (
@@ -401,7 +431,9 @@ export function FilterPanelSheet({
           scroll={false}
           className="bg-primary text-primary-foreground flex h-13 items-center justify-center rounded-lg px-7 text-base font-semibold"
         >
-          {total === 0 ? "No results" : `Show ${total} ${total === 1 ? "style" : "styles"}`}
+          {total === 0
+            ? "No results"
+            : `Show ${total} ${total === 1 ? "style" : "styles"}`}
         </Link>
       }
       clearHref={clearedHref(params, pathname)}
@@ -433,7 +465,12 @@ export function SortLinks({
         {options.map((key) => (
           <li key={key}>
             <Link
-              href={setParam(params, "sort", key === fallback ? null : key, pathname)}
+              href={setParam(
+                params,
+                "sort",
+                key === fallback ? null : key,
+                pathname,
+              )}
               aria-current={current === key ? "true" : undefined}
               className={cn(
                 "inline-flex min-h-11 items-center rounded-lg px-3 text-sm transition-colors",
@@ -451,11 +488,7 @@ export function SortLinks({
   );
 }
 
-export function ActiveFilters({
-  params,
-  pathname,
-  facets,
-}: PanelProps) {
+export function ActiveFilters({ params, pathname, facets }: PanelProps) {
   const chips = activeFilterChips(params, pathname, facets, formatPaise);
   if (chips.length === 0) return null;
 

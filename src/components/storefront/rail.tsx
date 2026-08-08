@@ -47,6 +47,17 @@ export function Rail({
   const scroller = React.useRef<HTMLUListElement | null>(null);
   const [atStart, setAtStart] = React.useState(true);
   const [atEnd, setAtEnd] = React.useState(true);
+  /**
+   * How much of the rail is on screen and where it sits, as percentages.
+   *
+   * `null` means "not measured yet or nothing to scroll", and the indicator is
+   * not painted for either — an indicator showing a full-width thumb on a rail
+   * with three cards and room for three is noise that says nothing.
+   */
+  const [extent, setExtent] = React.useState<{
+    width: number;
+    left: number;
+  } | null>(null);
 
   const measure = React.useCallback(() => {
     const el = scroller.current;
@@ -56,6 +67,18 @@ export function Rail({
     // arithmetic maximum, and an arrow that stays enabled at the end is worse
     // than one that disables a pixel early.
     setAtEnd(el.scrollLeft + el.clientWidth >= el.scrollWidth - 1);
+
+    const overflow = el.scrollWidth - el.clientWidth;
+    if (overflow <= 1) {
+      setExtent(null);
+      return;
+    }
+    // Floored at 12% so the thumb on a very long rail is still a thing you can
+    // see rather than a dot, and the left offset is scaled by the remaining
+    // track so a fully scrolled rail lands flush against the right end.
+    const width = Math.max((el.clientWidth / el.scrollWidth) * 100, 12);
+    const left = (el.scrollLeft / overflow) * (100 - width);
+    setExtent({ width, left });
   }, []);
 
   React.useEffect(() => {
@@ -85,9 +108,13 @@ export function Rail({
     const second = el.children[1] as HTMLElement | undefined;
     const pitch =
       first && second
-        ? second.getBoundingClientRect().left - first.getBoundingClientRect().left
+        ? second.getBoundingClientRect().left -
+          first.getBoundingClientRect().left
         : (first?.getBoundingClientRect().width ?? el.clientWidth);
-    const step = pitch > 0 ? Math.max(1, Math.floor(el.clientWidth / pitch)) * pitch : el.clientWidth;
+    const step =
+      pitch > 0
+        ? Math.max(1, Math.floor(el.clientWidth / pitch)) * pitch
+        : el.clientWidth;
 
     el.scrollBy({
       left: direction * step,
@@ -99,7 +126,11 @@ export function Rail({
 
   return (
     <div className={cn("relative", className)}>
-      <div data-rail-controls aria-hidden className="mb-2 hidden justify-end gap-2 lg:flex">
+      <div
+        data-rail-controls
+        aria-hidden
+        className="mb-2 hidden justify-end gap-2 lg:flex"
+      >
         <RailArrow side="left" disabled={atStart} onClick={() => page(-1)} />
         <RailArrow side="right" disabled={atEnd} onClick={() => page(1)} />
       </div>
@@ -113,6 +144,40 @@ export function Rail({
       >
         {children}
       </ul>
+
+      {/*
+        The scroll affordance for touch, below `lg` where there are no arrows.
+
+        Until now the only thing telling a touch user this rail moved was the
+        card peeking in at the right edge — which is an accident of how many
+        cards happen to fit, not a signal. At some widths the last card lands
+        flush and the peek disappears entirely, and with it the only clue that
+        there is anything to the right of it.
+
+        A track and a thumb, sized to the fraction on screen. It says two things
+        the peek never did: that there is more, and roughly how much. It also
+        reads as a scrollbar, which needs no explaining to anybody.
+
+        The strip keeps its height whether or not the thumb is painted, so a
+        rail that turns out not to overflow does not shift the section below it
+        when the measure lands after hydration — the same reason the desktop
+        arrow strip always occupies its 52px.
+
+        `aria-hidden`, like the arrows: the list is a real scroll container, so
+        a screen reader user already moves through the cards and is told the
+        position by the browser. This is a picture of that, for people who can
+        see it.
+      */}
+      <div aria-hidden className="mt-3 h-[3px] lg:hidden">
+        {extent ? (
+          <div className="bg-ink/10 relative h-full overflow-hidden rounded-full">
+            <div
+              className="bg-ink/45 absolute inset-y-0 rounded-full"
+              style={{ width: `${extent.width}%`, left: `${extent.left}%` }}
+            />
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -138,7 +203,10 @@ function RailArrow({
       // Invisible rather than absent at the ends: the strip keeps its width, so
       // the arrow that is still live does not slide sideways when the other one
       // switches off.
-      className={cn("rounded-full border transition-opacity", disabled && "opacity-0")}
+      className={cn(
+        "rounded-full border transition-opacity",
+        disabled && "opacity-0",
+      )}
     >
       <Icon />
     </Button>

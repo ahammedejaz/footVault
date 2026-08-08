@@ -18,7 +18,10 @@
  * customer who followed a mangled link should still end up signed in and
  * looking at the shop.
  */
-export function safeNext(value: string | null | undefined, fallback = "/"): string {
+export function safeNext(
+  value: string | null | undefined,
+  fallback = "/",
+): string {
   if (!value) return fallback;
 
   // Control characters, including CR and LF.

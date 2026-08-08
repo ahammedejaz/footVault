@@ -35,7 +35,10 @@ export function BagDrawer() {
   const failed = useBagUi((state) => state.failed);
   const load = useBagUi((state) => state.refresh);
 
-  const swipe = useSwipeDismiss({ side: "right", onDismiss: () => setOpen(false) });
+  const swipe = useSwipeDismiss({
+    side: "right",
+    onDismiss: () => setOpen(false),
+  });
 
   /**
    * Where focus goes when the drawer closes.
@@ -93,7 +96,8 @@ export function BagDrawer() {
             </Dialog.Close>
           </div>
           <Dialog.Description className="sr-only">
-            What is in your bag. Swipe right, tap outside or press Escape to close.
+            What is in your bag. Swipe right, tap outside or press Escape to
+            close.
           </Dialog.Description>
 
           <div
@@ -104,8 +108,14 @@ export function BagDrawer() {
           >
             {failed ? (
               <div className="py-16 text-center">
-                <p className="text-base text-pretty">Your bag could not be loaded.</p>
-                <Button variant="outline" className="mt-4" onClick={() => void load()}>
+                <p className="text-base text-pretty">
+                  Your bag could not be loaded.
+                </p>
+                <Button
+                  variant="outline"
+                  className="mt-4"
+                  onClick={() => void load()}
+                >
                   Try again
                 </Button>
               </div>
@@ -117,11 +127,16 @@ export function BagDrawer() {
               </p>
             ) : cart.lines.length === 0 ? (
               <div className="py-16 text-center">
-                <ShoppingBag className="text-line mx-auto size-10" aria-hidden />
-                <p className="mt-4 text-base font-medium">Nothing in your bag yet</p>
+                <ShoppingBag
+                  className="text-line mx-auto size-10"
+                  aria-hidden
+                />
+                <p className="mt-4 text-base font-medium">
+                  Nothing in your bag yet
+                </p>
                 <p className="text-muted-foreground mt-2 text-sm text-pretty">
-                  Every card shows the full size run, so you can see what we hold in
-                  your size before you open anything.
+                  Every card shows the full size run, so you can see what we
+                  hold in your size before you open anything.
                 </p>
                 <Button asChild className="mt-6" onClick={() => setOpen(false)}>
                   <Link href="/collection/new-arrivals">See new arrivals</Link>
@@ -167,7 +182,8 @@ export function BagDrawer() {
                   <div className="tread-rule" aria-hidden />
                   <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
                     <p className="text-muted-foreground font-mono text-xs tracking-[0.06em] uppercase tabular-nums">
-                      {cart.count} {cart.count === 1 ? "item" : "items"} in your bag
+                      {cart.count} {cart.count === 1 ? "item" : "items"} in your
+                      bag
                     </p>
                     <Button
                       variant="outline"
@@ -187,7 +203,9 @@ export function BagDrawer() {
             <div className="border-border space-y-4 border-t px-4 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
               <FreeShippingMeter freeShipping={cart.freeShipping} />
               <div className="flex items-baseline justify-between">
-                <span className="font-mono text-xs tracking-[0.06em] uppercase">Subtotal</span>
+                <span className="font-mono text-xs tracking-[0.06em] uppercase">
+                  Subtotal
+                </span>
                 <span className="font-mono text-lg font-medium tabular-nums">
                   {formatPaise(cart.subtotal)}
                 </span>

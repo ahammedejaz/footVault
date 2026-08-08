@@ -52,7 +52,10 @@ export function OrderDetail({ order }: { order: OrderView }) {
           {order.contactEmail || order.contactPhone ? (
             <p className="text-muted-foreground mt-3 text-sm text-pretty">
               We will reach you on{" "}
-              {[order.contactEmail, order.contactPhone ? `+91 ${order.contactPhone}` : null]
+              {[
+                order.contactEmail,
+                order.contactPhone ? `+91 ${order.contactPhone}` : null,
+              ]
                 .filter(Boolean)
                 .join(" and ")}
               .
@@ -61,14 +64,19 @@ export function OrderDetail({ order }: { order: OrderView }) {
 
           {order.customerNote ? (
             <div className="bg-fog mt-4 rounded-lg p-4">
-              <p className="font-mono text-xs tracking-[0.06em] uppercase">Your note</p>
+              <p className="font-mono text-xs tracking-[0.06em] uppercase">
+                Your note
+              </p>
               <p className="mt-1.5 text-sm text-pretty">{order.customerNote}</p>
             </div>
           ) : null}
         </section>
       </div>
 
-      <aside aria-labelledby="order-payment-heading" className="lg:sticky lg:top-24 lg:self-start">
+      <aside
+        aria-labelledby="order-payment-heading"
+        className="lg:sticky lg:top-24 lg:self-start"
+      >
         <div className="bg-fog border-border rounded-lg border p-5">
           <h2
             id="order-payment-heading"
@@ -80,11 +88,15 @@ export function OrderDetail({ order }: { order: OrderView }) {
           <dl className="border-border mt-4 space-y-2 border-b pb-4 text-sm">
             <div className="flex items-baseline justify-between gap-4">
               <dt className="text-muted-foreground">Method</dt>
-              <dd className="font-medium">{METHOD_LABEL[order.paymentMethod]}</dd>
+              <dd className="font-medium">
+                {METHOD_LABEL[order.paymentMethod]}
+              </dd>
             </div>
             <div className="flex items-baseline justify-between gap-4">
               <dt className="text-muted-foreground">Status</dt>
-              <dd className="font-medium">{PAYMENT_STATUS_LABEL[order.paymentStatus]}</dd>
+              <dd className="font-medium">
+                {PAYMENT_STATUS_LABEL[order.paymentStatus]}
+              </dd>
             </div>
           </dl>
 

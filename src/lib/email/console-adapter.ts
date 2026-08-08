@@ -1,6 +1,10 @@
 import "server-only";
 
-import type { EmailAdapter, EmailMessage, EmailSendResult } from "@/lib/email/types";
+import type {
+  EmailAdapter,
+  EmailMessage,
+  EmailSendResult,
+} from "@/lib/email/types";
 
 /**
  * The adapter that runs when nothing is configured.
@@ -28,7 +32,8 @@ export function createConsoleEmailAdapter(): EmailAdapter {
     },
 
     async send(message: EmailMessage): Promise<EmailSendResult> {
-      const detail = process.env.EMAIL_LOG_BODY === "1" ? `\n${message.text}` : "";
+      const detail =
+        process.env.EMAIL_LOG_BODY === "1" ? `\n${message.text}` : "";
       console.info(
         `[email] no provider configured — would send "${message.subject}" to ${message.to}${detail}`,
       );

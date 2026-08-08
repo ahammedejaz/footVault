@@ -38,7 +38,9 @@ export function SizeRun({
             key={entry.size}
             className={cn(
               "leading-4",
-              entry.available ? "text-foreground" : "text-dim line-through decoration-1",
+              entry.available
+                ? "text-foreground"
+                : "text-dim line-through decoration-1",
             )}
           >
             {entry.size}

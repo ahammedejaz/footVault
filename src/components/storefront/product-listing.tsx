@@ -47,10 +47,8 @@ export async function ProductListing({
   const filters = parseFilters(params, overrides);
   // Read alongside the catalog, never into it: which products this customer has
   // saved is per-customer, and listProducts() is shared.
-  const [{ products, total, page, pageCount, facets }, savedIds] = await Promise.all([
-    listProducts(filters),
-    getSavedProductIds(),
-  ]);
+  const [{ products, total, page, pageCount, facets }, savedIds] =
+    await Promise.all([listProducts(filters), getSavedProductIds()]);
 
   const chips = activeFilterChips(params, pathname, facets, formatPaise);
   const cleared = clearedHref(params, pathname);

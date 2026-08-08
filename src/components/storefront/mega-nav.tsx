@@ -57,7 +57,8 @@ export function MegaNav({ items }: { items: NavItem[] }) {
         {items.map((item) => {
           const hasPanel = Boolean(item.children?.length);
           const isOpen = open === item.href;
-          const isCurrent = pathname === item.href || pathname.startsWith(`${item.href}/`);
+          const isCurrent =
+            pathname === item.href || pathname.startsWith(`${item.href}/`);
 
           return (
             <li
@@ -73,7 +74,9 @@ export function MegaNav({ items }: { items: NavItem[] }) {
                 if (hasPanel) setOpen(item.href);
               }}
               onBlur={(event) => {
-                if (!event.currentTarget.contains(event.relatedTarget as Node)) {
+                if (
+                  !event.currentTarget.contains(event.relatedTarget as Node)
+                ) {
                   scheduleClose();
                 }
               }}
@@ -91,7 +94,10 @@ export function MegaNav({ items }: { items: NavItem[] }) {
                 {item.label}
                 {hasPanel ? (
                   <ChevronDown
-                    className={cn("size-3.5 transition-transform", isOpen && "rotate-180")}
+                    className={cn(
+                      "size-3.5 transition-transform",
+                      isOpen && "rotate-180",
+                    )}
                     aria-hidden
                   />
                 ) : null}
@@ -112,7 +118,9 @@ export function MegaNav({ items }: { items: NavItem[] }) {
                             href={child.href}
                             className="hover:bg-muted flex min-h-11 flex-col justify-center rounded-lg px-3 py-1.5"
                           >
-                            <span className="text-sm font-medium">{child.label}</span>
+                            <span className="text-sm font-medium">
+                              {child.label}
+                            </span>
                             {child.description ? (
                               <span className="text-muted-foreground text-xs">
                                 {child.description}
