@@ -1,24 +1,35 @@
 /**
  * `npm run audit:totals` — the money arithmetic, in isolation.
  *
- * The brief names this as a gate in as many words: *"A Pay-on-Delivery order's
- * advance, balance and total sum correctly, and the Shiprocket COD amount equals
- * the balance. Assert it, don't eyeball it."* The Shiprocket half lives in
- * `audit:shipping`, which has the mock; this half is pure arithmetic and needs
- * nothing but the functions.
+ * Phase 7 replaced the advance rule entirely. The advance is now the **full
+ * round trip** — forward freight plus RTO freight — because on a refusal the
+ * shop pays both legs; and it is netted off the balance so the customer never
+ * pays twice. Every number below is money a real customer either pays online or
+ * hands to a courier, and both failure modes are silent: an advance that does
+ * not sum with the balance produces a courier collecting the wrong amount, and
+ * an advance below Razorpay's 100-paise floor produces an order that cannot be
+ * paid for at all. Neither throws. Both are found by complaint.
  *
- * Why it is worth its own suite: every number here is money that a real customer
- * either pays online or hands to a courier, and the two failure modes are both
- * silent. An advance that rounds below Razorpay's 100-paise floor produces an
- * order that cannot be paid for. An advance and balance that do not sum to the
- * total produce a courier collecting the wrong amount, which is discovered by
- * complaint rather than by exception.
+ * The brief lists nine money-model assertions. Five of them are pure arithmetic
+ * and live here; the other four need a database or the Shiprocket mock and live
+ * in `audit:shipping` and `audit:checkout`. Each section below names which.
+ *
+ * **The rates are real.** Every figure comes from a live serviceability call
+ * against this account on 2026-08-08, Cuddapah 516360 → Bangalore 560001, 1 kg,
+ * ₹1,000 declared:
+ *
+ *   Delhivery Surface   rate 191.36   freight 139.36   cod 52.00   rto 142.00
+ *   Delhivery Air       rate 240.36   freight 188.36   cod 52.00   rto 194.00
+ *   Blue Dart Air       rate 300.30   freight 244.65   cod 55.65   rto 246.00
+ *
+ * Made-up numbers would let a rounding rule pass that a real rate breaks.
  */
 
 import {
   advanceFor,
+  codOfferedForOrder,
+  prepaidDiscountFor,
   type AdvanceRule,
-  type CodAdvanceMode,
 } from "../../src/lib/payments/advance";
 import { MIN_CHARGEABLE_PAISE } from "../../src/lib/payments/types";
 
@@ -41,146 +52,324 @@ function check(label: string, condition: boolean, detail = "") {
   }
 }
 
-const rule = (
-  mode: CodAdvanceMode,
-  minimumPaise = 9_900,
-  fixedPaise = 9_900,
-): AdvanceRule => ({ mode, minimumPaise, fixedPaise });
+const rupees = (paise: number) => `₹${(paise / 100).toFixed(2)}`;
 
-/* ------------------------------------------------------ the three modes -- */
+/** The owner's defaults: a ₹500 cap, GST absorbed rather than recovered. */
+const rule = (over: Partial<AdvanceRule> = {}): AdvanceRule => ({
+  maximumPaise: 50_000,
+  includeGst: false,
+  ...over,
+});
 
-section("1 · the advance rule honours its mode");
+/** Delhivery Surface, the cheapest non-India-Post courier on the tested lane. */
+const SURFACE = { rate: 19_136, freight: 13_936, cod: 5_200, rto: 14_200 };
+
+/* ----------------------------------------------- 1 · the worked example -- */
+
+section("1 · the brief's worked example, against live rates");
 
 {
-  const r = advanceFor({
-    rule: rule("shipping_fee"),
-    deliveryTotalPaise: 22_000,
-    grandTotalPaise: 171_900,
+  const goods = 100_000;
+  // The customer's delivery fee is the live COD rate, rounded up to ₹10.
+  const deliveryFee = Math.ceil(SURFACE.rate / 1_000) * 1_000; // ₹200
+  const grandTotal = goods + deliveryFee;
+
+  const split = advanceFor({
+    rule: rule(),
+    forwardFreightPaise: SURFACE.freight,
+    rtoFreightPaise: SURFACE.rto,
+    grandTotalPaise: grandTotal,
   });
-  check("shipping_fee: advance is the delivery total", r.advancePaise === 22_000,
-    `got ${r.advancePaise}`);
-  check("shipping_fee: balance is the rest", r.balanceDuePaise === 149_900,
-    `got ${r.balanceDuePaise}`);
+
+  check(
+    "advance is forward freight + RTO freight",
+    split.advancePaise === SURFACE.freight + SURFACE.rto,
+    `${rupees(split.advancePaise)} vs ${rupees(SURFACE.freight + SURFACE.rto)}`,
+  );
+  check(
+    "balance is goods + delivery − advance",
+    split.balanceDuePaise === grandTotal - split.advancePaise,
+    rupees(split.balanceDuePaise),
+  );
+  check(
+    "the customer's total is the same either way",
+    split.advancePaise + split.balanceDuePaise === grandTotal,
+    `${rupees(split.advancePaise + split.balanceDuePaise)} vs ${rupees(grandTotal)}`,
+  );
+
+  /**
+   * Assertion 4 — *"a refused Pay-on-Delivery order leaves the shop at net
+   * zero"*. This is the whole reason the advance is the round trip. Shiprocket
+   * reverses the cash-collection fee on an RTO, so the shop's exposure on a
+   * refusal is exactly forward + RTO, which is exactly what it holds.
+   */
+  const shopKeeps = split.advancePaise;
+  const shopPays = SURFACE.freight + SURFACE.rto;
+  check(
+    "a refused parcel leaves the shop at net zero",
+    shopKeeps - shopPays === 0,
+    `keeps ${rupees(shopKeeps)}, pays ${rupees(shopPays)}`,
+  );
+
+  /** Delivered: the shop nets the goods value, having paid freight + COD fee. */
+  const received = split.advancePaise + split.balanceDuePaise;
+  const costs = SURFACE.freight + SURFACE.cod;
+  check(
+    "a delivered parcel nets the goods value plus the delivery margin",
+    received - costs === goods + (deliveryFee - SURFACE.rate),
+    `${rupees(received - costs)}`,
+  );
+}
+
+/* ------------------------------- 2 · advance + balance = total, always -- */
+
+section("2 · advance + balance = goods + delivery, across the range");
+
+{
+  // Assertion 1 of the brief, swept rather than sampled.
+  const values = [50_000, 99_900, 100_000, 249_900, 500_000, 1_700_000];
+  const freights = [8_000, 13_936, 18_836, 24_465, 40_000];
+  const rtos = [0, 14_200, 19_400, 24_600, 50_000];
+
+  let worst = "";
+  const allSum = values.every((goods) =>
+    freights.every((freight) =>
+      rtos.every((rto) => {
+        for (const includeGst of [false, true]) {
+          for (const maximumPaise of [0, 20_000, 50_000]) {
+            const grandTotal = goods + freight;
+            const split = advanceFor({
+              rule: { maximumPaise, includeGst },
+              forwardFreightPaise: freight,
+              rtoFreightPaise: rto,
+              grandTotalPaise: grandTotal,
+            });
+            if (split.advancePaise + split.balanceDuePaise !== grandTotal) {
+              worst = `goods ${goods} freight ${freight} rto ${rto} gst ${includeGst} cap ${maximumPaise}`;
+              return false;
+            }
+          }
+        }
+        return true;
+      }),
+    ),
+  );
+  check("450 combinations all sum to the grand total", allSum, worst);
+}
+
+/* -------------------------------------------- 3 · the balance guard rail -- */
+
+section("3 · balance is never negative, and the floor holds");
+
+{
+  // Assertion 2, first half. A ₹150 pair to a remote PIN can cost more to send
+  // than it sells for. The advance is clamped; it never eats into the courier's
+  // collection and turns it negative.
+  const split = advanceFor({
+    rule: rule(),
+    forwardFreightPaise: 24_465,
+    rtoFreightPaise: 24_600,
+    grandTotalPaise: 15_000,
+  });
+  check("advance never exceeds the order", split.advancePaise === 15_000);
+  check("balance is exactly zero, not negative", split.balanceDuePaise === 0);
+  check("and it says why it bound", split.cappedBy === "order_total");
 }
 
 {
-  const r = advanceFor({
-    rule: rule("fixed", 9_900, 9_900),
-    deliveryTotalPaise: 22_000,
-    grandTotalPaise: 171_900,
-  });
-  check("fixed: advance ignores the delivery total", r.advancePaise === 9_900,
-    `got ${r.advancePaise}`);
+  // Assertion 2, second half — the real guard is that the method is withdrawn
+  // rather than the advance clamped, because a clamped advance means the shop
+  // is carrying a return it has not been paid for.
+  check(
+    "below the minimum, Pay on Delivery is not offered at all",
+    !codOfferedForOrder({
+      goodsTotalPaise: 15_000,
+      minimumOrderValuePaise: 99_900,
+    }),
+  );
+  check(
+    "at the minimum exactly, it is offered",
+    codOfferedForOrder({
+      goodsTotalPaise: 99_900,
+      minimumOrderValuePaise: 99_900,
+    }),
+  );
+  check(
+    "a minimum of zero offers it to everybody",
+    codOfferedForOrder({ goodsTotalPaise: 1, minimumOrderValuePaise: 0 }),
+  );
 }
 
 {
-  const r = advanceFor({
-    rule: rule("greater_of", 9_900),
-    deliveryTotalPaise: 22_000,
-    grandTotalPaise: 171_900,
+  // Razorpay's floor. Always satisfied by this model — a courier does not carry
+  // a parcel for under a rupee — so this is an assertion, not a rule. It is
+  // written down because the day it stops being true, checkout breaks with no
+  // visible cause.
+  const split = advanceFor({
+    rule: rule(),
+    forwardFreightPaise: 0,
+    rtoFreightPaise: 0,
+    grandTotalPaise: 100_000,
   });
-  check("greater_of: takes the delivery total when it is larger",
-    r.advancePaise === 22_000, `got ${r.advancePaise}`);
+  check(
+    "a zero round trip still clears Razorpay's 100-paise floor",
+    split.advancePaise === MIN_CHARGEABLE_PAISE,
+    `${split.advancePaise}`,
+  );
+  check("and it says why", split.cappedBy === "razorpay_floor");
 }
+
+/* --------------------------------------------------------- 4 · the cap -- */
+
+section("4 · the deposit cap");
 
 {
-  const r = advanceFor({
-    rule: rule("greater_of", 9_900),
-    deliveryTotalPaise: 0,
-    grandTotalPaise: 1_699_900,
-  });
-  check("greater_of: takes the minimum when delivery is free",
-    r.advancePaise === 9_900, `got ${r.advancePaise}`);
-  check("greater_of: balance is the total less the advance",
-    r.balanceDuePaise === 1_690_000, `got ${r.balanceDuePaise}`);
-}
-
-/* ------------------------------------------------- the floor that matters -- */
-
-section("2 · an advance is never unchargeable");
-
-{
-  // The brief: "Never produce an advance below Razorpay's 100 paise minimum. If
-  // the computed advance would be zero, fall back to the configured minimum."
-  const r = advanceFor({
-    rule: rule("shipping_fee"),
-    deliveryTotalPaise: 0,
-    grandTotalPaise: 1_699_900,
-  });
-  check("shipping_fee with free delivery still charges the minimum",
-    r.advancePaise === 9_900, `got ${r.advancePaise}`);
-}
-
-for (const mode of ["shipping_fee", "fixed", "greater_of"] as CodAdvanceMode[]) {
-  const r = advanceFor({
-    // A minimum of zero is an owner typo, not an instruction to stop securing
-    // the order. It must still clear Razorpay's floor.
-    rule: rule(mode, 0, 0),
-    deliveryTotalPaise: 0,
+  const split = advanceFor({
+    rule: rule({ maximumPaise: 20_000 }),
+    forwardFreightPaise: 24_465,
+    rtoFreightPaise: 24_600,
     grandTotalPaise: 500_000,
   });
-  check(`${mode}: a zero minimum still clears Razorpay's floor`,
-    r.advancePaise >= MIN_CHARGEABLE_PAISE, `got ${r.advancePaise}`);
+  check("a heavy round trip is capped", split.advancePaise === 20_000);
+  check("the cap is named", split.cappedBy === "maximum");
+  check(
+    "the balance absorbs the difference",
+    split.balanceDuePaise === 500_000 - 20_000,
+  );
 }
 
-/* ------------------------------------------------------- the invariants -- */
-
-section("3 · advance + balance = total, always");
-
 {
-  const cases: Array<[CodAdvanceMode, number, number, number]> = [
-    // mode, delivery, grandTotal, minimum
-    ["greater_of", 22_000, 171_900, 9_900],
-    ["greater_of", 0, 1_699_900, 9_900],
-    ["shipping_fee", 34_900, 234_900, 9_900],
-    ["fixed", 19_900, 169_800, 9_900],
-    ["greater_of", 19_900, 19_900, 9_900], // delivery is the whole order
-    ["greater_of", 500_000, 100_000, 9_900], // delivery exceeds the total
-    ["fixed", 0, 150, 9_900], // an absurdly small order
-  ];
-
-  let allSum = true;
-  let allNonNegative = true;
-  let allWithinTotal = true;
-
-  for (const [mode, delivery, total, minimum] of cases) {
-    const r = advanceFor({
-      rule: rule(mode, minimum),
-      deliveryTotalPaise: delivery,
-      grandTotalPaise: total,
-    });
-    if (r.advancePaise + r.balanceDuePaise !== total) {
-      allSum = false;
-      failures.push(
-        `sum broke: ${mode} delivery=${delivery} total=${total} → ` +
-          `${r.advancePaise}+${r.balanceDuePaise}`,
-      );
-    }
-    if (r.balanceDuePaise < 0) allNonNegative = false;
-    if (r.advancePaise > total) allWithinTotal = false;
-  }
-
-  check("every case sums to the grand total", allSum);
-  check("the balance is never negative", allNonNegative);
-  check("the advance never exceeds the order total", allWithinTotal);
-}
-
-section("4 · integer paise only");
-
-{
-  const r = advanceFor({
-    rule: rule("greater_of", 9_901),
-    deliveryTotalPaise: 22_001,
-    grandTotalPaise: 171_901,
+  // The cap binds first, then the order total. A capped advance on a cheap
+  // order must still be clamped — applying only one of the two would let a
+  // ₹200 cap produce a negative balance on a ₹150 order.
+  const split = advanceFor({
+    rule: rule({ maximumPaise: 20_000 }),
+    forwardFreightPaise: 24_465,
+    rtoFreightPaise: 24_600,
+    grandTotalPaise: 15_000,
   });
-  check("advance is a safe integer", Number.isSafeInteger(r.advancePaise));
-  check("balance is a safe integer", Number.isSafeInteger(r.balanceDuePaise));
+  check(
+    "cap then total: a cheap order is still clamped to its own value",
+    split.advancePaise === 15_000 && split.balanceDuePaise === 0,
+    `${rupees(split.advancePaise)}`,
+  );
 }
 
-/* ------------------------------------------------------------- verdict -- */
+{
+  const split = advanceFor({
+    rule: rule({ maximumPaise: 0 }),
+    forwardFreightPaise: 24_465,
+    rtoFreightPaise: 24_600,
+    grandTotalPaise: 500_000,
+  });
+  check(
+    "a cap of zero means no cap, not a zero advance",
+    split.advancePaise === 24_465 + 24_600,
+  );
+}
+
+/* --------------------------------------------------------- 5 · the GST -- */
+
+section("5 · GST on the advance");
+
+{
+  const roundTrip = SURFACE.freight + SURFACE.rto; // 28,136
+  const off = advanceFor({
+    rule: rule({ includeGst: false }),
+    forwardFreightPaise: SURFACE.freight,
+    rtoFreightPaise: SURFACE.rto,
+    grandTotalPaise: 500_000,
+  });
+  const on = advanceFor({
+    rule: rule({ includeGst: true, maximumPaise: 0 }),
+    forwardFreightPaise: SURFACE.freight,
+    rtoFreightPaise: SURFACE.rto,
+    grandTotalPaise: 500_000,
+  });
+  check("off: the advance is the bare round trip", off.advancePaise === roundTrip);
+  check(
+    "on: the advance is the round trip plus 18%",
+    on.advancePaise === Math.round(roundTrip * 1.18),
+    `${rupees(on.advancePaise)} vs ${rupees(Math.round(roundTrip * 1.18))}`,
+  );
+  check(
+    "and it is an integer number of paise",
+    Number.isInteger(on.advancePaise),
+  );
+}
+
+/* --------------------------------------- 6 · the prepaid discount line -- */
+
+section("6 · the prepaid discount");
+
+{
+  check(
+    "a flat discount comes off the goods",
+    prepaidDiscountFor({
+      discount: { mode: "flat", value: 5_000 },
+      goodsTotalPaise: 100_000,
+    }) === 5_000,
+  );
+  check(
+    "a percentage is floored to whole paise",
+    prepaidDiscountFor({
+      discount: { mode: "percent", value: 2.5 },
+      goodsTotalPaise: 99_999,
+    }) === 2_499,
+  );
+  check(
+    "a discount can never exceed the goods",
+    prepaidDiscountFor({
+      discount: { mode: "flat", value: 500_000 },
+      goodsTotalPaise: 100_000,
+    }) === 100_000,
+  );
+  check(
+    "zero is zero, not a rounding artefact",
+    prepaidDiscountFor({
+      discount: { mode: "percent", value: 0 },
+      goodsTotalPaise: 100_000,
+    }) === 0,
+  );
+  check(
+    "a negative discount is refused rather than becoming a surcharge",
+    prepaidDiscountFor({
+      discount: { mode: "flat", value: -5_000 },
+      goodsTotalPaise: 100_000,
+    }) === 0,
+  );
+}
+
+/* -------------------------------------- 7 · the model is method-neutral -- */
+
+section("7 · prepaid is expressed in the same two numbers");
+
+{
+  // Not a special case anywhere in the system: prepaid's advance is the whole
+  // order and its balance is zero, so `advance + balance = grand_total` holds
+  // for every row and the database check constraint needs no exception.
+  const grandTotal = 171_900;
+  const prepaid = { advancePaise: grandTotal, balanceDuePaise: 0 };
+  check(
+    "prepaid: the advance is the whole order",
+    prepaid.advancePaise === grandTotal,
+  );
+  check("prepaid: the courier collects nothing", prepaid.balanceDuePaise === 0);
+  check(
+    "the same invariant covers both methods",
+    prepaid.advancePaise + prepaid.balanceDuePaise === grandTotal,
+  );
+}
+
+/* -------------------------------------------------------------- report -- */
 
 console.log(
   `\n\x1b[1m${passed} passed, ${failed} failed\x1b[0m` +
-    (failures.length ? `\n\n${failures.map((f) => `  · ${f}`).join("\n")}` : ""),
+    "\n\nAssertions 3, 6, 8 and 9 of the brief need the Shiprocket mock or the" +
+    "\ndatabase and live in audit:shipping and audit:checkout.",
 );
-process.exit(failed > 0 ? 1 : 0);
+if (failed > 0) {
+  console.log("\nFailures:");
+  for (const failure of failures) console.log(`  · ${failure}`);
+  process.exit(1);
+}

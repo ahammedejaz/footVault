@@ -74,6 +74,15 @@ export function ProductViewer({
   // moment they choose, so the marking never outlives the thing it is asking
   // for.
   const [needsSize, setNeedsSize] = React.useState(false);
+  /**
+   * The last sold-out size somebody pressed.
+   *
+   * Sold-out chips stopped being selectable in Phase 7, so "UK 8 is sold out"
+   * can no longer be said by reading the selection. It is said from here
+   * instead, into the same live region, and cleared the moment a real size is
+   * chosen so the sentence never outlives the press that caused it.
+   */
+  const [refusedSize, setRefusedSize] = React.useState<string | null>(null);
 
   const active =
     colourways.find((c) => c.name === colourway) ?? colourways[0] ?? null;
@@ -122,6 +131,7 @@ export function ProductViewer({
   const chooseSize = (value: string) => {
     setSize(value);
     setNeedsSize(false);
+    setRefusedSize(null);
     syncUrl({ size: value });
   };
 
@@ -137,7 +147,13 @@ export function ProductViewer({
     const strip = sizeRunRef.current;
     if (!strip) return;
     strip.scrollIntoView({ block: "center", behavior: "smooth" });
-    strip.querySelector<HTMLButtonElement>("button:not([disabled])")?.focus();
+    // `:not([aria-disabled])` rather than `:not([disabled])`: sold-out chips
+    // are aria-disabled so they can still explain themselves, and the old
+    // selector matched them — so "choose a size first" could land the focus on
+    // the one chip that cannot be chosen.
+    strip
+      .querySelector<HTMLButtonElement>("button:not([aria-disabled])")
+      ?.focus();
   };
 
   /*
@@ -275,6 +291,7 @@ export function ProductViewer({
                 sizes={sizes}
                 selected={selected}
                 onSelect={chooseSize}
+                onUnavailable={setRefusedSize}
                 labelledBy="size-label"
               />
             </div>
@@ -295,10 +312,10 @@ export function ProductViewer({
                   {colourways.length > 1 ? " in this colour" : ""}. The run
                   above is the full run — nothing is hidden.
                 </span>
-              ) : selectedEntry && !selectedEntry.available ? (
+              ) : (refusedSize ?? (selectedEntry?.available === false ? selectedEntry.size : null)) ? (
                 <span className="text-muted-foreground">
                   <span className="text-foreground font-medium">
-                    UK {selectedEntry.size}
+                    UK {refusedSize ?? selectedEntry?.size}
                   </span>{" "}
                   is sold out. Sizes without a line through them are on the
                   shelf.
@@ -323,17 +340,32 @@ export function ProductViewer({
             </p>
           </div>
 
+          {/*
+            Sold out replaces the control rather than greying it out.
+
+            A disabled "Add to bag" is still an add-to-bag button: it looks like
+            the thing that is about to work, it invites a press, and the press
+            answers with nothing. The brief asks for the control to be
+            *replaced*, and what replaces it is the only action left — save it,
+            and be told when it is back. `SaveForLater` stays because it is the
+            one thing a customer can usefully do with a shoe that is not there.
+          */}
           <div ref={ctaRef} className="mt-6 flex flex-col gap-3 sm:flex-row">
-            <AddToBag
-              variantId={
-                selectedEntry?.available
-                  ? (selectedEntry.variantId ?? null)
-                  : null
-              }
-              className="sm:flex-1"
-              soldOut={!inStock}
-              onNeedSize={askForSize}
-            />
+            {inStock ? (
+              <AddToBag
+                variantId={
+                  selectedEntry?.available
+                    ? (selectedEntry.variantId ?? null)
+                    : null
+                }
+                className="sm:flex-1"
+                onNeedSize={askForSize}
+              />
+            ) : (
+              <p className="border-border bg-fog/40 text-muted-foreground flex min-h-12 flex-1 items-center justify-center rounded-lg border border-dashed px-4 text-center font-mono text-xs tracking-[0.06em] uppercase">
+                Sold out
+              </p>
+            )}
             <SaveForLater
               productId={product.id}
               productName={product.name}
@@ -384,16 +416,21 @@ export function ProductViewer({
               {selected ? `UK ${selected}` : "Pick a size"}
             </p>
           </div>
-          <AddToBag
-            variantId={
-              selectedEntry?.available
-                ? (selectedEntry.variantId ?? null)
-                : null
-            }
-            soldOut={!inStock}
-            onNeedSize={askForSize}
-            className="shrink-0"
-          />
+          {inStock ? (
+            <AddToBag
+              variantId={
+                selectedEntry?.available
+                  ? (selectedEntry.variantId ?? null)
+                  : null
+              }
+              onNeedSize={askForSize}
+              className="shrink-0"
+            />
+          ) : (
+            <p className="text-muted-foreground shrink-0 font-mono text-xs tracking-[0.06em] uppercase">
+              Sold out
+            </p>
+          )}
         </div>
       </div>
     </>

@@ -61,6 +61,7 @@ type RawLine = {
       deleted_at: string | null;
       effective_price: number | null;
       base_price: number;
+      weight_grams: number | null;
       brand: { name: string } | null;
       images: { url: string; alt_text: string | null; is_primary: boolean }[];
     } | null;
@@ -111,6 +112,7 @@ export async function getCart(): Promise<Cart> {
            id, size, color, sku, stock_quantity, is_active, price_override,
            product:products!inner (
              slug, name, is_active, deleted_at, effective_price, base_price,
+             weight_grams,
              brand:brands ( name ),
              images:product_images ( url, alt_text, is_primary )
            )
@@ -200,6 +202,7 @@ export async function getCart(): Promise<Cart> {
       quantity,
       lineTotal: unitPrice * quantity,
       stock: variant.stock_quantity,
+      weightGrams: product.weight_grams ?? null,
     });
   }
 

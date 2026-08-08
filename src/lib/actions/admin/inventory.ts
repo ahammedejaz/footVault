@@ -3,6 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
+import { stockChanged } from "@/lib/stock-freshness";
+
 import {
   adminAction,
   INVENTORY_NOTE_MAX,
@@ -117,6 +119,13 @@ export async function adjustStock(
       // owner who has just put six pairs back wants to see them on the shop.
       revalidatePath("/admin/inventory");
       revalidatePath("/", "layout");
+      /**
+       * `revalidatePath` expires the *route* cache and leaves every
+       * `unstable_cache` entry untouched — which is why zeroing a size here
+       * used to leave the storefront offering it for the rest of the hour.
+       * The catalog tag is the thing that had to be said.
+       */
+      stockChanged();
 
       return {
         ok: true,

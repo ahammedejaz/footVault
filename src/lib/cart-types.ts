@@ -33,6 +33,17 @@ export type CartLine = {
   lineTotal: number;
   /** Live stock, so the stepper knows where to stop. */
   stock: number;
+  /**
+   * The parcel weight for one of these, from the product.
+   *
+   * Carried on the line so the courier is quoted for the box that will actually
+   * be sent. Null when the owner has not set one, which falls back to the
+   * `shipping_defaults` weight and is flagged in the admin — see
+   * `parcelWeightKg`. A pair of boots and a pair of flip-flops are not the same
+   * parcel and quoting them as one is how the shop under-recovers freight on
+   * exactly its heaviest orders.
+   */
+  weightGrams: number | null;
 };
 
 /** Something changed under the customer since they put this in the bag. */

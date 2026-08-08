@@ -115,11 +115,40 @@ export async function signInWithGoogle(
   redirect(data.url);
 }
 
-/** Sign out, and stay where you are. */
+/**
+ * Sign out, say so, and land somewhere the customer can still be.
+ *
+ * Three things it now does that it did not, all from the same report: *"signing
+ * out gives no feedback"*.
+ *
+ * **It lands somewhere sensible.** It used to redirect to wherever you were
+ * standing, which is right on `/shop` and wrong on `/account/orders` — that
+ * page is only reachable signed in, so signing out from it redirected to a page
+ * that immediately bounced you again. Anything under `/account` sends you home.
+ *
+ * **It says so.** `?signed-out=1` on the destination, read once by
+ * `FlashToast`, which raises the toast and strips the parameter with
+ * `replaceState` so a refresh does not repeat it and the URL is not something
+ * anybody would bookmark. A cookie would be tidier, but a Server Component
+ * cannot delete one, and a flag that outlives the arrival it describes is worse
+ * than a parameter that does not.
+ *
+ * **The header catches up.** `redirect()` from a Server Action re-renders the
+ * destination on the server, so the bag badge, the saved count and the account
+ * icon all come back as the signed-out versions in the same response — there is
+ * no window where the page says you are signed out and the header still says
+ * your name.
+ */
 export async function signOut(formData: FormData): Promise<void> {
-  const next = safeNext(String(formData.get("next") ?? "/"));
+  const asked = safeNext(String(formData.get("next") ?? "/"));
+  const next = asked.startsWith("/account") ? "/" : asked;
+
   const supabase = await createClient();
   const { error } = await supabase.auth.signOut();
-  if (error) console.error("[auth] signOut failed:", error.message);
-  redirect(next);
+  if (error) {
+    console.error("[auth] signOut failed:", error.message);
+    redirect(`${next}${next.includes("?") ? "&" : "?"}signed-out=failed`);
+  }
+
+  redirect(`${next}${next.includes("?") ? "&" : "?"}signed-out=1`);
 }

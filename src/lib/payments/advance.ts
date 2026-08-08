@@ -3,32 +3,71 @@ import { MIN_CHARGEABLE_PAISE } from "@/lib/payments/types";
 /**
  * How much of a Pay-on-Delivery order is paid online, and how much at the door.
  *
- * The model, which replaced unsecured cash on delivery: the customer pays the
- * **advance** through Razorpay at checkout, and the courier collects the
- * **balance** in cash on delivery. The order is not placed until the advance
- * captures, so there is no longer a path that creates a confirmed order with no
- * money against it — `FV-2026-00488` was one of those, `confirmed` and `unpaid`.
+ * ## The model, in one sentence
  *
- * **Why this is a separate module from the settings that configure it.** The
- * settings reader is `server-only` (it holds a Supabase client); this is pure
- * arithmetic over three numbers. Keeping them apart means the checkout UI can
- * import the rule to *display* a split without dragging a database client into
- * the browser bundle — the failure CI already caught once (`9440fa0`).
+ * **The advance is the full round trip — forward freight plus RTO freight —
+ * because on a refusal the shop pays both legs.**
  *
- * Nothing here reads settings, a cart, or an order. It takes the rule and the
- * two amounts and returns the split, which is what makes it exhaustively
- * testable — see `npm run audit:totals`.
+ * It is then netted off what the courier collects, so the customer never pays
+ * twice:
+ *
+ * ```
+ * advance = forward_freight + rto_freight        quoted live, one courier entry
+ * balance = goods_total + delivery_fee − advance
+ * ```
+ *
+ * The customer's total is identical either way; only the timing changes. What
+ * changes for the shop is that a refused parcel is already paid for.
+ *
+ * ### Worked, against real rates from this account
+ *
+ * Cuddapah 516360 → Bangalore 560001, 1 kg, ₹1,000 declared, Delhivery Surface
+ * (`rate: 191.36`, `freight_charge: 139.36`, `cod_charges: 52`,
+ * `rto_charges: 142`):
+ *
+ * | | Amount |
+ * |---|---|
+ * | Goods | ₹1,000.00 |
+ * | Delivery fee the customer pays — the live COD rate | ₹191.36 |
+ * | Advance, online now — freight ₹139.36 + RTO ₹142.00 | **₹281.36** |
+ * | Balance, collected in cash | **₹910.00** |
+ * | Total either way | ₹1,191.36 |
+ *
+ * **Delivered:** ₹281.36 online + ₹910.00 cash = ₹1,191.36. The shop pays
+ * ₹139.36 freight and ₹52 COD fee, and nets ₹1,000 for the goods.
+ * **Refused:** the shop keeps ₹281.36 and pays ₹139.36 forward + ₹142 RTO =
+ * ₹281.36. Net zero, goods back on the shelf. Shiprocket reverses the COD fee
+ * on an RTO, which is exactly why the fee is **not** part of the advance —
+ * recovering it would over-collect on the orders the advance exists to protect.
+ *
+ * ## What replaced what
+ *
+ * `CodAdvanceMode` — `shipping_fee`, `fixed`, `greater_of` — is gone. All three
+ * priced the advance from what the *customer* was charged for delivery, which
+ * has no relationship to what a refusal costs the shop: under `fixed ₹99`
+ * against a ₹281 round trip, every refused parcel lost ₹182 and the shop found
+ * out by reconciliation. The rule now prices the exposure directly.
+ *
+ * ## Why this file is still pure
+ *
+ * No settings reader, no cart, no order, no I/O. The checkout UI imports it to
+ * *display* a split without dragging a Supabase client into the browser bundle
+ * — a failure CI has already caught once. `npm run audit:totals` exercises
+ * every branch and every guard rail below with no database and no browser.
  */
 
-/** How the advance is decided. The owner picks this in `/admin/settings`. */
-export type CodAdvanceMode = "shipping_fee" | "fixed" | "greater_of";
+/**
+ * Shiprocket bills freight plus 18% GST. Not a policy number and not the
+ * owner's to set — it is the rate of tax — so it is a constant here and the
+ * *choice to recover it* is the setting.
+ */
+const GST_MULTIPLIER = 1.18;
 
 export type AdvanceRule = {
-  mode: CodAdvanceMode;
-  /** The advance never falls below this. ₹99 by default. */
-  minimumPaise: number;
-  /** Used only when the mode is `fixed`. */
-  fixedPaise: number;
+  /** Cap on the deposit, whatever the round trip costs. Zero means no cap. */
+  maximumPaise: number;
+  /** When true the advance is `(forward + rto) × 1.18`. */
+  includeGst: boolean;
 };
 
 export type AdvanceSplit = {
@@ -36,51 +75,98 @@ export type AdvanceSplit = {
   advancePaise: number;
   /** Collected by the courier. What Shiprocket must be told to collect. */
   balanceDuePaise: number;
+  /** Which guard rail bound, for the admin and for the audit. Null when none did. */
+  cappedBy: "maximum" | "order_total" | "razorpay_floor" | null;
 };
 
 export function advanceFor(input: {
   rule: AdvanceRule;
-  /** Everything the customer is charged for delivery: shipping + COD handling. */
-  deliveryTotalPaise: number;
+  /** The forward leg **without** the cash-collection fee. */
+  forwardFreightPaise: number;
+  /** The return leg, from the same courier entry as the forward leg. */
+  rtoFreightPaise: number;
   grandTotalPaise: number;
 }): AdvanceSplit {
-  const { rule, deliveryTotalPaise, grandTotalPaise } = input;
+  const { rule, forwardFreightPaise, rtoFreightPaise, grandTotalPaise } = input;
 
-  const requested =
-    rule.mode === "fixed"
-      ? rule.fixedPaise
-      : rule.mode === "shipping_fee"
-        ? deliveryTotalPaise
-        : Math.max(deliveryTotalPaise, rule.minimumPaise);
+  const roundTrip = Math.max(0, forwardFreightPaise) + Math.max(0, rtoFreightPaise);
+  const withTax = rule.includeGst
+    ? Math.round(roundTrip * GST_MULTIPLIER)
+    : roundTrip;
 
   /**
-   * The floor, applied in two steps because they answer different questions.
-   *
-   * The **configured minimum** is the shop's answer to "delivery came out free,
-   * so how much do we still take to secure the order?" — without it, an order
-   * over the free-delivery threshold produces an advance of zero and we are back
-   * to unsecured COD, which is the thing this model removes.
-   *
-   * **Razorpay's floor** is the provider's answer, and it is not negotiable:
-   * an order for less than 100 paise cannot be created at all. An owner who
-   * types 0 into the minimum field gets this rather than a broken checkout.
+   * Razorpay's floor of 100 paise is the provider's and is not negotiable: an
+   * order below it cannot be created at all. Under this model it is always
+   * satisfied — a courier does not carry a parcel for under a rupee — so it is
+   * an assertion rather than a rule, and it is written down because the day it
+   * stops being true is the day checkout breaks with no visible cause.
    */
-  const floored = Math.max(
-    requested > 0 ? requested : rule.minimumPaise,
-    rule.minimumPaise,
-    MIN_CHARGEABLE_PAISE,
-  );
+  const floored = Math.max(withTax, MIN_CHARGEABLE_PAISE);
 
   /**
-   * Never more than the order is worth.
+   * The cap, then the order total, in that order — because they answer
+   * different questions and the second is not negotiable.
    *
-   * Reachable when a courier quote exceeds a cheap basket — a ₹150 pair of
-   * flip-flops to a remote PIN can genuinely cost more to send than it sells
-   * for. Charging an advance larger than the total would leave a negative
-   * balance for the courier to "collect", so the whole order is simply taken
-   * online and the courier collects nothing.
+   * The cap is the owner saying "never ask for more than this deposit". The
+   * order total is arithmetic: an advance above it leaves the courier a
+   * negative amount to collect, which is not a thing a courier can do. Applying
+   * the cap first means a capped advance is still clamped to the total on a
+   * cheap order, rather than the clamp being skipped because the cap already
+   * bound.
    */
-  const advancePaise = Math.min(floored, grandTotalPaise);
+  const capped = rule.maximumPaise > 0 ? Math.min(floored, rule.maximumPaise) : floored;
+  const advancePaise = Math.min(capped, grandTotalPaise);
 
-  return { advancePaise, balanceDuePaise: grandTotalPaise - advancePaise };
+  const cappedBy =
+    advancePaise === grandTotalPaise && floored > grandTotalPaise
+      ? "order_total"
+      : rule.maximumPaise > 0 && capped === rule.maximumPaise && floored > rule.maximumPaise
+        ? "maximum"
+        : floored === MIN_CHARGEABLE_PAISE && withTax < MIN_CHARGEABLE_PAISE
+          ? "razorpay_floor"
+          : null;
+
+  return {
+    advancePaise,
+    balanceDuePaise: grandTotalPaise - advancePaise,
+    cappedBy,
+  };
+}
+
+/**
+ * Is Pay on Delivery offered for a basket of this size?
+ *
+ * Separate from `advanceFor` because it is asked *before* a quote exists — the
+ * payment step has to know which methods to draw, and it must not draw one that
+ * will be refused after the customer has chosen it. Below the minimum, the
+ * method is withdrawn rather than the advance clamped: a clamped advance means
+ * the shop is carrying a return it has not been paid for.
+ */
+export function codOfferedForOrder(input: {
+  goodsTotalPaise: number;
+  minimumOrderValuePaise: number;
+}): boolean {
+  return input.goodsTotalPaise >= input.minimumOrderValuePaise;
+}
+
+/**
+ * What a prepaid customer is given back for paying up front.
+ *
+ * A line item rather than a lower price, because the owner's rule everywhere in
+ * this codebase is that a difference between two payment methods must be
+ * something a customer can see and point at. Rounded down, so the discount is
+ * never a fraction of a paisa the total cannot express, and never more than the
+ * goods it is discounting.
+ */
+export function prepaidDiscountFor(input: {
+  discount: { mode: "flat" | "percent"; value: number };
+  goodsTotalPaise: number;
+}): number {
+  const { discount, goodsTotalPaise } = input;
+  if (discount.value <= 0 || goodsTotalPaise <= 0) return 0;
+  const raw =
+    discount.mode === "percent"
+      ? Math.floor((goodsTotalPaise * discount.value) / 100)
+      : Math.floor(discount.value);
+  return Math.max(0, Math.min(raw, goodsTotalPaise));
 }

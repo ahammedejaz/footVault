@@ -114,11 +114,56 @@ async function isAdmin(
  * a path that cannot exist makes Next render its own not-found page with a real
  * 404 status — so the customer gets the styled page and an attacker gets
  * nothing.
+ *
+ * **Except on the flight path, which is what F-2 actually was.** Carried
+ * unfixed through two security reviews as "`/admin` answers 200", the cause was
+ * never the document response — that has always been 404. It is the *RSC*
+ * response. Measured on a production build at the start of Phase 7:
+ *
+ * ```
+ * /admin                    document=404   rsc=200
+ * /definitely-not-a-route   document=404   rsc=404
+ * ```
+ *
+ * A `<Link href="/admin">` anywhere, or a router prefetch, asks for the flight
+ * payload rather than the document — and a middleware rewrite short-circuits
+ * the status Next would otherwise attach to it, so the rewritten not-found came
+ * back 200 while a genuinely missing path came back 404. Identical bodies,
+ * different status: exactly the one bit the guard exists to withhold, and
+ * readable from a browser console with `fetch('/admin', {headers:{RSC:'1'}})`.
+ *
+ * So a flight request is answered with a bare 404 and no body. The router
+ * treats a non-OK flight response as a cue to fall back to a full navigation,
+ * which lands on the document path above and renders the styled page with the
+ * same 404 — the outcome a non-admin should get either way. Both shapes now
+ * answer 404, and `npm run audit:admin` asserts the pair rather than the body.
  */
 function notFound(request: NextRequest, carrying: NextResponse): NextResponse {
+  if (isFlightRequest(request)) {
+    const response = new NextResponse(null, { status: 404 });
+    for (const cookie of carrying.cookies.getAll()) response.cookies.set(cookie);
+    return response;
+  }
+
   const url = request.nextUrl.clone();
   url.pathname = "/_not-found";
   const response = NextResponse.rewrite(url, { request });
   for (const cookie of carrying.cookies.getAll()) response.cookies.set(cookie);
   return response;
+}
+
+/**
+ * Is this the router asking for a flight payload rather than a document?
+ *
+ * Both signals are checked because they arrive independently: `RSC: 1` on a
+ * client navigation, and `?_rsc=<hash>` on a prefetch the browser may issue as
+ * a plain request. Matching only the header would leave the prefetch answering
+ * 200 and the disclosure open on the path a page is most likely to take.
+ */
+function isFlightRequest(request: NextRequest): boolean {
+  return (
+    request.headers.get("rsc") === "1" ||
+    request.headers.get("next-router-prefetch") === "1" ||
+    request.nextUrl.searchParams.has("_rsc")
+  );
 }

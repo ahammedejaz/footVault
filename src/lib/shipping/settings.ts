@@ -1,6 +1,6 @@
 import "server-only";
 
-import type { AdvanceRule, CodAdvanceMode } from "@/lib/payments/advance";
+import type { AdvanceRule } from "@/lib/payments/advance";
 import { MIN_CHARGEABLE_PAISE, type PaymentMethod } from "@/lib/payments/types";
 import { maybeRow } from "@/lib/queries/run";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -41,11 +41,50 @@ export type ShippingSettings = {
   fallbackFeePaise: Record<PaymentMethod, number>;
   /** Master switch for Pay on Delivery, independent of PIN-code serviceability. */
   codEnabled: boolean;
-  codAdvanceMode: CodAdvanceMode;
-  /** The advance never falls below this. ₹99 by default. */
-  codAdvanceMinimumPaise: number;
-  /** Used only when the mode is `fixed`. */
-  codAdvanceFixedPaise: number;
+
+  /* --- Phase 7: the round-trip advance ---------------------------------- */
+
+  /**
+   * Below this basket value, Pay on Delivery is not offered at all.
+   *
+   * The guard rail that makes `balance >= 0` a property rather than a hope.
+   * Under the round-trip model the advance is `forward + RTO` — on this account,
+   * ₹280-odd to Bangalore — and on a ₹250 pair of flip-flops that is more than
+   * the goods. Clamping the advance would "work" and would leave the shop
+   * carrying a return it has not been paid for, so the method is withdrawn
+   * instead and prepaid is offered in its place.
+   */
+  codMinimumOrderValuePaise: number;
+  /**
+   * A ceiling on the deposit, whatever the courier quotes.
+   *
+   * A heavy parcel to a remote PIN can quote a round trip in the hundreds, and
+   * an advance that large reads as a scam to a customer who came to pay cash.
+   * The shop absorbs the difference above this and keeps the sale.
+   */
+  codAdvanceMaximumPaise: number;
+  /**
+   * Shiprocket bills freight plus 18% GST. On means the advance recovers it.
+   *
+   * Off is a real choice, not a bug: the shop can reclaim input GST, so
+   * absorbing it costs less than the 18% it would add to every deposit.
+   */
+  includeGstInAdvance: boolean;
+  /**
+   * Passed back to prepaid customers, because prepaid orders come back far less
+   * often than cash ones and that is worth money. A named line, never a
+   * silently lower total.
+   */
+  prepaidDiscount: { mode: "flat" | "percent"; value: number };
+  /**
+   * `live` charges what the courier quotes for this PIN. `flat` charges
+   * `customerDeliveryFlatPaise` and the shop absorbs the difference either way.
+   */
+  customerDeliveryFeeMode: "live" | "flat";
+  customerDeliveryFlatPaise: number;
+  /** What a prepaid customer loses when their parcel comes back unaccepted. */
+  rtoDeductionPolicy: "actual_freight" | "flat" | "none";
+  rtoDeductionFlatPaise: number;
 };
 
 /**
@@ -59,12 +98,24 @@ const FALLBACK: ShippingSettings = {
   freeAbovePaise: 249_900,
   fallbackFeePaise: { razorpay: 19_900, cod: 34_900 },
   codEnabled: true,
-  codAdvanceMode: "greater_of",
-  codAdvanceMinimumPaise: 9_900,
-  codAdvanceFixedPaise: 9_900,
+  /**
+   * ₹999. Set so the round trip cannot approach the goods value: the most
+   * expensive round trip measured on this account is ₹281 (Delhivery Surface,
+   * Cuddapah → Bangalore, 1kg), and a floor three and a half times that leaves
+   * the customer paying an advance that is a minority of what they owe. **The
+   * owner sets the real value** — this is what the code does when the row is
+   * unreadable, not a policy decision taken here.
+   */
+  codMinimumOrderValuePaise: 99_900,
+  /** ₹500. Roughly twice the worst round trip seen, so it binds rarely. */
+  codAdvanceMaximumPaise: 50_000,
+  includeGstInAdvance: false,
+  prepaidDiscount: { mode: "flat", value: 0 },
+  customerDeliveryFeeMode: "live",
+  customerDeliveryFlatPaise: 0,
+  rtoDeductionPolicy: "actual_freight",
+  rtoDeductionFlatPaise: 0,
 };
-
-const MODES: readonly CodAdvanceMode[] = ["shipping_fee", "fixed", "greater_of"];
 
 /**
  * The settings, narrowed to just what the advance calculation needs.
@@ -75,9 +126,8 @@ const MODES: readonly CodAdvanceMode[] = ["shipping_fee", "fixed", "greater_of"]
  */
 export function advanceRule(settings: ShippingSettings): AdvanceRule {
   return {
-    mode: settings.codAdvanceMode,
-    minimumPaise: settings.codAdvanceMinimumPaise,
-    fixedPaise: settings.codAdvanceFixedPaise,
+    maximumPaise: settings.codAdvanceMaximumPaise,
+    includeGst: settings.includeGstInAdvance,
   };
 }
 
@@ -109,26 +159,65 @@ export async function shippingSettings(): Promise<ShippingSettings> {
     ),
     fallbackFeePaise: readFallbackFees(partial.fallback_fee_paise),
     codEnabled: partial.cod_enabled !== false,
-    codAdvanceMode: MODES.includes(partial.cod_advance_mode as CodAdvanceMode)
-      ? (partial.cod_advance_mode as CodAdvanceMode)
-      : FALLBACK.codAdvanceMode,
-    /**
-     * Floored at Razorpay's own minimum, not merely at zero.
-     *
-     * An owner who types 0 into `/admin/settings` is asking for an advance of
-     * nothing, which is unsecured COD — the exact thing this phase removes — and
-     * Razorpay would reject the order anyway. Clamping here means the floor
-     * holds no matter which of the three modes is selected.
-     */
-    codAdvanceMinimumPaise: Math.max(
-      MIN_CHARGEABLE_PAISE,
-      paiseOr(partial.cod_advance_minimum_paise, FALLBACK.codAdvanceMinimumPaise),
+
+    // Zero is meaningful for both — "no minimum" and "no cap" — so both are
+    // read with the allow-zero flag rather than falling back on a falsy value.
+    codMinimumOrderValuePaise: paiseOr(
+      partial.cod_minimum_order_value_paise,
+      FALLBACK.codMinimumOrderValuePaise,
+      true,
     ),
-    codAdvanceFixedPaise: Math.max(
-      MIN_CHARGEABLE_PAISE,
-      paiseOr(partial.cod_advance_fixed_paise, FALLBACK.codAdvanceFixedPaise),
+    codAdvanceMaximumPaise: paiseOr(
+      partial.cod_advance_maximum_paise,
+      FALLBACK.codAdvanceMaximumPaise,
+      true,
+    ),
+    includeGstInAdvance: partial.include_gst_in_advance === true,
+    prepaidDiscount: readPrepaidDiscount(partial.prepaid_discount),
+    customerDeliveryFeeMode:
+      partial.customer_delivery_fee_mode === "flat" ? "flat" : "live",
+    customerDeliveryFlatPaise: paiseOr(
+      partial.customer_delivery_flat_paise,
+      FALLBACK.customerDeliveryFlatPaise,
+      true,
+    ),
+    rtoDeductionPolicy: RTO_POLICIES.includes(
+      partial.rto_deduction_policy as ShippingSettings["rtoDeductionPolicy"],
+    )
+      ? (partial.rto_deduction_policy as ShippingSettings["rtoDeductionPolicy"])
+      : FALLBACK.rtoDeductionPolicy,
+    rtoDeductionFlatPaise: paiseOr(
+      partial.rto_deduction_flat_paise,
+      FALLBACK.rtoDeductionFlatPaise,
+      true,
     ),
   };
+}
+
+const RTO_POLICIES: readonly ShippingSettings["rtoDeductionPolicy"][] = [
+  "actual_freight",
+  "flat",
+  "none",
+];
+
+/**
+ * The prepaid discount, refused rather than clamped when it is nonsense.
+ *
+ * A percentage over 100 or a negative flat amount would turn a discount into a
+ * surcharge somewhere downstream, and the safe reading of a malformed money
+ * rule is "there is no discount" rather than "here is one I invented".
+ */
+function readPrepaidDiscount(
+  value: unknown,
+): ShippingSettings["prepaidDiscount"] {
+  if (!value || typeof value !== "object") return FALLBACK.prepaidDiscount;
+  const partial = value as Record<string, unknown>;
+  const mode = partial.mode === "percent" ? "percent" : "flat";
+  const raw = partial.value;
+  const amount =
+    typeof raw === "number" && Number.isFinite(raw) && raw >= 0 ? raw : 0;
+  const ceiling = mode === "percent" ? 100 : Number.MAX_SAFE_INTEGER;
+  return { mode, value: Math.min(amount, ceiling) };
 }
 
 function readFallbackFees(value: unknown): Record<PaymentMethod, number> {

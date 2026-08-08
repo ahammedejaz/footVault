@@ -3,6 +3,7 @@ import Link from "next/link";
 
 import { AnnouncementStrip } from "@/components/storefront/announcement-strip";
 import { ANNOUNCEMENT_COOKIE, announcementKey } from "@/lib/announcement";
+import { contentTokens, fillTokens } from "@/lib/content-tokens";
 import { prerenderOrDefer } from "@/lib/prerender";
 import { cachedSiteSettings } from "@/lib/queries/cached";
 import { setting, type AnnouncementSettings } from "@/lib/queries/content";
@@ -38,12 +39,24 @@ export async function AnnouncementBar() {
 
   if (!announcement.is_active || !announcement.text) return null;
 
+  /**
+   * The strip carried "Free shipping over ₹2,499" above every page on the site
+   * while the setting said ₹6,499. Typed prose cannot hold a number the owner
+   * changes elsewhere, so it holds a token instead.
+   *
+   * **The dismissal key is hashed from the raw text, before substitution.**
+   * Hashing the filled text would bring the strip back for everyone the moment
+   * the owner nudges the free-delivery threshold — the message has not changed,
+   * only a figure inside it, and somebody who dismissed it has not asked to see
+   * it again.
+   */
   const key = announcementKey(announcement.text);
+  const text = fillTokens(announcement.text, await contentTokens());
   if (cookieStore.get(ANNOUNCEMENT_COOKIE)?.value === key) return null;
 
   const content = (
     <span className="font-mono text-xs tracking-[0.06em]">
-      {announcement.text}
+      {text}
     </span>
   );
 

@@ -1,5 +1,6 @@
 import "server-only";
 
+import { stockChanged } from "@/lib/stock-freshness";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import type { Database } from "@/lib/database.types";
@@ -123,6 +124,11 @@ export async function transitionOrder(args: {
             "Refunds are not built yet — refund in Razorpay first, then cancel.",
         };
       }
+      // Whatever the verdict below, the units may have gone back on the shelf.
+      // Said unconditionally rather than only on the happy path: `already_cancelled`
+      // means somebody else restocked, and the cache is no fresher for that.
+      stockChanged();
+
       if (data === "not_found") {
         return {
           ok: false,

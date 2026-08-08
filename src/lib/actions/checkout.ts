@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 
 import { saveAddress as saveAddressToBook } from "@/lib/actions/address";
 import { getCurrentUser } from "@/lib/auth";
+import { stockChanged } from "@/lib/stock-freshness";
 import { readGuestToken } from "@/lib/cart/token";
 import { sendOrderConfirmation } from "@/lib/email";
 import {
@@ -262,13 +263,36 @@ export async function placeOrder(
         // told there is no threshold left to apply. Passing both would let the
         // database silently zero a COD fee that deliberately has no free tier.
         p_shipping_flat_fee: totals.shippingFee,
-        p_free_shipping_above: null,
+        // Omitted, not zero. The parameter defaults to null, which means "no
+        // threshold left to apply"; a zero would mean "free above ₹0", which is
+        // free delivery on everything.
+        p_free_shipping_above: undefined,
         // The advance is passed; the balance is *derived* inside the function
         // as grand_total - advance. Two independently-supplied numbers would
         // break the check constraint the moment a price moved under the row
         // lock, and take the checkout down with an opaque error.
         p_advance_amount: totals.advanceAmount,
         p_cod_handling_fee: totals.codHandlingFee,
+        // The prepaid discount. Passed rather than assumed zero: the function
+        // recomputes the subtotal under the row lock, so a discount applied
+        // only in TypeScript would write a grand total higher than the one the
+        // customer was shown and charge them the difference.
+        p_discount_total: totals.discountTotal,
+        /*
+          The quote, frozen with the order.
+
+          Both freight legs come from **one courier entry** — the brief's rule,
+          and under a round-trip advance a mismatched pair prices a journey no
+          parcel takes. `quote_source` records whether this was a live rate or
+          the fallback, so a fallback can never be read back later as though
+          Shiprocket had quoted it.
+        */
+        p_quoted_courier_name: totals.courierName ?? undefined,
+        p_quoted_courier_id: totals.courierId ?? undefined,
+        p_quoted_forward_paise: totals.quotedForwardPaise ?? undefined,
+        p_quoted_rto_paise: totals.quotedRtoPaise ?? undefined,
+        p_quoted_cod_fee_paise: totals.quotedCodFeePaise ?? undefined,
+        p_quote_source: totals.basis,
         p_user_id: user?.id,
         p_guest_token: guestToken ?? undefined,
         p_contact_email: data.contactEmail ?? user?.email ?? undefined,
@@ -317,6 +341,12 @@ export async function placeOrder(
       console.error("[checkout] create_order_with_stock returned no row");
       return { ok: false, reason: "error", message: GENERIC };
     }
+
+    // The units are claimed. Said here rather than after the payment, because
+    // the decrement has already happened and an unpaid order still holds the
+    // stock until the sweep reclaims it — a size run that goes on offering it
+    // for the rest of the hour is the bug this phase opened with.
+    stockChanged();
 
     const grandTotal = assertPaise("checkout.grandTotal", order.grand_total);
 
@@ -676,6 +706,8 @@ async function cancelWithRestock(
     );
     return "error";
   }
+  // The units are back. Same statement as the claim above, for the same reason.
+  stockChanged();
   return data ?? "error";
 }
 

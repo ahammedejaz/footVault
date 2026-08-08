@@ -19,6 +19,10 @@ import {
   getSiteSettings,
   listPages,
 } from "@/lib/queries/content";
+import {
+  detailWithLiveStock,
+  withLiveStockAll,
+} from "@/lib/queries/availability";
 
 /**
  * The chrome's data, cached across requests.
@@ -139,11 +143,27 @@ export const cachedCollection = unstable_cache(
   catalog,
 );
 
-export const cachedProduct = unstable_cache(
+/**
+ * The product's *content*. Its stock figures are stale by design — see the
+ * wrapper below, and `src/lib/queries/availability.ts` for the bug.
+ */
+const cachedProductContent = unstable_cache(
   (slug: string) => getProduct(slug),
   [SHAPE_VERSION, "catalog:product"],
   catalog,
 );
+
+/**
+ * One product, content from the cache and every stock figure read live.
+ *
+ * This is the page where a customer chooses a size, so it is the one page whose
+ * availability may not be a promise made an hour ago. The cost is one indexed
+ * read on `product_variants`; the cost of not doing it was a size run that went
+ * on offering a size the owner had already zeroed.
+ */
+export async function cachedProduct(slug: string): Promise<ProductDetail | null> {
+  return detailWithLiveStock(await cachedProductContent(slug));
+}
 
 export const cachedPage = unstable_cache(
   (slug: string) => getPage(slug),
@@ -152,20 +172,33 @@ export const cachedPage = unstable_cache(
 );
 
 /** One collection's rail. Bounded: one key per collection. */
-export const cachedCollectionProducts = unstable_cache(
+const cachedCollectionContent = unstable_cache(
   (collectionSlug: string, perPage: number) =>
     listProducts({ collectionSlug, perPage }),
   [SHAPE_VERSION, "catalog:collection-products"],
   catalog,
 );
 
+export async function cachedCollectionProducts(
+  collectionSlug: string,
+  perPage: number,
+) {
+  const page = await cachedCollectionContent(collectionSlug, perPage);
+  return { ...page, products: await withLiveStockAll(page.products) };
+}
+
 /** One category's first page. Bounded: one key per category. */
-const cachedCategoryProducts = unstable_cache(
+const cachedCategoryContent = unstable_cache(
   (categorySlug: string, perPage: number) =>
     listProducts({ categorySlug, perPage }),
   [SHAPE_VERSION, "catalog:category-products"],
   catalog,
 );
+
+async function cachedCategoryProducts(categorySlug: string, perPage: number) {
+  const page = await cachedCategoryContent(categorySlug, perPage);
+  return { ...page, products: await withLiveStockAll(page.products) };
+}
 
 /**
  * "You may also like".
