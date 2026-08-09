@@ -205,11 +205,87 @@ export function parcelWeightKg(
  * and the weight the same way. Three call sites computing a parcel weight three
  * ways is three different answers to one question.
  */
+/**
+ * A ceiling on courier calls that does not depend on the database.
+ *
+ * `consumeRateLimit` is the real control and it is the right shape — but it
+ * **fails open**: when its counter cannot be read it allows the call and logs.
+ * That is correct for a cart write, where failing closed means a customer
+ * cannot add to their bag. It is the wrong trade here, and this is the one
+ * limiter in the codebase where the fail-open direction actually exposes
+ * something.
+ *
+ * The reason is what the two limiters protect. Every other policy bounds work
+ * *against Postgres* using a counter *in* Postgres, so when Postgres is
+ * unreachable the guard and the thing worth guarding disappear together — the
+ * flood cannot do damage because its target is already down. This one guards
+ * the **Shiprocket quota**: an external, paid resource that has nothing to do
+ * with our database. A counter outage removes the guard and leaves the exposure
+ * intact, and a public Server Action reaches this code.
+ *
+ * It is not hypothetical. PostgREST reloads its schema cache on every DDL and
+ * cannot be told not to, so an RPC can fail transiently on exactly the deploys
+ * this shop keeps doing.
+ *
+ * ## Why the number is large and why it is unconditional
+ *
+ * Six hundred an hour, per instance, across every caller. A real shop's
+ * delivery checks are bounded by the number of people shopping; a scraper's are
+ * not. Ten a minute sustained is far above the first and far below what makes a
+ * scrape worth running, which is the only place the line can sit while
+ * satisfying the rule that **no real customer may ever reach it**.
+ *
+ * Unconditional rather than "only when the counter looked broken", because
+ * knowing the counter is broken requires the counter. A budget consulted only
+ * in a state you cannot reliably detect is a budget that is not there.
+ *
+ * ## What a trip does, which is the part that matters
+ *
+ * It returns the same verdict a courier outage returns — `source: "unknown"` —
+ * so the shop degrades to a **labelled estimate** rather than an error.
+ * Prepaid still sells at a settings figure the checkout marks as an estimate;
+ * Pay on Delivery falls to the owner's `fallback_behaviour`. A limiter that
+ * threw here would take Pay on Delivery off the table for a real customer,
+ * which is precisely the outcome the size of the budget exists to prevent.
+ */
+const COURIER_CALLS_PER_HOUR = 600;
+const COURIER_WINDOW_MS = 3_600_000;
+let courierCalls = 0;
+let courierWindowStartedAt = 0;
+
+function withinCourierBudget(now: number): boolean {
+  if (now - courierWindowStartedAt > COURIER_WINDOW_MS) {
+    courierWindowStartedAt = now;
+    courierCalls = 0;
+  }
+  if (courierCalls >= COURIER_CALLS_PER_HOUR) return false;
+  courierCalls += 1;
+  return true;
+}
+
 export async function quoteDelivery(input: {
   deliveryPostcode: string;
   weightKg: number;
   valuePaise?: number;
 }): Promise<ServiceabilityVerdict> {
+  if (!withinCourierBudget(Date.now())) {
+    /*
+      Deliberately `console.error`: this should never happen on a healthy shop,
+      and if it is in the log it means either the database counter is down or
+      somebody is scraping. Both are worth waking up for, and neither is
+      visible from the customer's side — they simply see an estimate.
+    */
+    console.error(
+      "[shiprocket] hourly courier-call budget spent in this instance — " +
+        "serving a labelled estimate instead. Either the rate-limit counter " +
+        "is unavailable or this endpoint is being scraped.",
+    );
+    return {
+      ...UNKNOWN_SERVICEABILITY,
+      reason: "courier call budget spent in this instance",
+    };
+  }
+
   try {
     const defaults = await shippingDefaults();
     return await checkServiceability({
