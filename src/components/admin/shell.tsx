@@ -1,9 +1,12 @@
 "use client";
 
 import * as React from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ExternalLink, Menu } from "lucide-react";
+
+import lockup from "../../../public/brand/logo.png";
 
 import { ADMIN_NAV, isActive, type AdminNavItem } from "@/components/admin/nav";
 import { Button } from "@/components/ui/button";
@@ -142,8 +145,11 @@ export function AdminShell({
             </div>
           </SheetContent>
         </Sheet>
-        <span className="font-display text-base font-extrabold tracking-[-0.02em] uppercase">
-          Admin
+        <span className="inline-flex items-center gap-2">
+          <Image src={lockup} alt="" className="h-8 w-auto" sizes="32px" />
+          <span className="font-display text-base font-extrabold tracking-[-0.02em] uppercase">
+            Admin
+          </span>
         </span>
       </header>
 
@@ -157,13 +163,18 @@ function Wordmark() {
     <div className="px-4 pt-5 pb-4">
       <Link
         href="/admin"
-        className="font-display block text-lg leading-none font-extrabold tracking-[-0.02em] uppercase"
+        className="flex items-center gap-2.5"
       >
-        Foot Vault
+        <Image src={lockup} alt="" className="h-10 w-auto" sizes="40px" />
+        <span className="flex flex-col">
+          <span className="font-display text-lg leading-none font-extrabold tracking-[-0.02em] uppercase">
+            Foot Vault
+          </span>
+          <span className="text-sidebar-foreground/60 mt-1 font-mono text-xs tracking-[0.06em] uppercase">
+            Admin
+          </span>
+        </span>
       </Link>
-      <p className="text-sidebar-foreground/60 mt-1 font-mono text-xs tracking-[0.06em] uppercase">
-        Admin
-      </p>
     </div>
   );
 }

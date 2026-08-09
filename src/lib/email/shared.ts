@@ -59,6 +59,19 @@ export function replacementPolicy(): string {
 export const SIGN_OFF = "— Foot Vault";
 
 /**
+ * The logo, at the top of every template's HTML.
+ *
+ * An absolute URL because an email has no origin to resolve against, and the
+ * flattened-on-white variant because mail clients put unpredictable colours
+ * behind transparency — Gmail's dark mode would otherwise sit navy text on
+ * navy. The plain-text part of every email is untouched: a text-part reader
+ * chose not to load images.
+ */
+export function emailLogo(): string {
+  return `<img src="${SITE_URL}/brand/logo-email.png" width="150" height="148" alt="Foot Vault" style="display:block;border:0;margin:0 0 12px">`;
+}
+
+/**
  * Where a customer's reply goes.
  *
  * **The shop's own domain, now that mail to it reaches a person.** Resend

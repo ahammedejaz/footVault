@@ -218,6 +218,24 @@ check(
   [...replyTos].join(", "),
 );
 
+/* ------------------------------------------------------------ 2b · logo -- */
+
+console.log("\n[1m2b · every email carries the shop's logo[0m");
+
+/*
+ * The flattened-on-white variant, by absolute URL — an email has no origin,
+ * and mail clients put unpredictable colours behind transparency. Checked over
+ * `built` for the same reason as the reply-to: a seventh template fails here
+ * rather than shipping bare.
+ */
+for (const [name, message] of built) {
+  check(
+    `${name}: the HTML part shows /brand/logo-email.png with alt text`,
+    message.html.includes("/brand/logo-email.png") &&
+      message.html.includes('alt="Foot Vault"'),
+  );
+}
+
 /* -------------------------------------------------------- 3 · escaping -- */
 
 console.log(
