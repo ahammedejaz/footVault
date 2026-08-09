@@ -39,6 +39,8 @@ import {
   type FlatDepositRule,
 } from "../../src/lib/payments/advance";
 import { codWithheldFor } from "../../src/lib/orders/totals";
+import { readFileSync } from "node:fs";
+
 import { deliveryFee } from "../../src/lib/shipping/fee";
 import {
   FLAT_SERVICEABILITY,
@@ -710,6 +712,71 @@ section("decision 7 · cod_enabled is refused at the API, not just hidden in the
 }
 
 /* -------------------------------------------------------------- summary -- */
+
+/* ---------------- the courier-call backstop, and how it degrades ---------- */
+
+console.log("\n\x1b[1mThe backstop on courier calls\x1b[0m");
+
+/*
+ * `consumeRateLimit` fails open — right for a cart write, wrong here. This is
+ * the one limiter in the codebase whose fail-open direction exposes something:
+ * every other policy bounds work against Postgres using a counter in Postgres,
+ * so an outage removes the guard and the target together. This one guards the
+ * Shiprocket quota, which an outage does not touch, from a public Server
+ * Action.
+ *
+ * Two properties, and both are the owner's conditions rather than mine:
+ *
+ *   the cap must be high enough that no real customer reaches it, and
+ *   a trip must degrade to the labelled-estimate path, never to an error —
+ *   because a limiter that throws at checkout takes Pay on Delivery away from
+ *   somebody who was about to buy something.
+ */
+{
+  const quoteSource = readFileSync("src/lib/shipping/quote.ts", "utf8");
+  const capMatch = /COURIER_CALLS_PER_HOUR = (\d+)/.exec(quoteSource);
+  const cap = capMatch ? Number(capMatch[1]) : 0;
+
+  check("a per-instance courier budget exists", cap > 0, `${cap}/hour`);
+  check(
+    "it is far above anything a real shop's customers produce",
+    cap >= 300,
+    `${cap}/hour is ${Math.round(cap / 60)}/minute sustained`,
+  );
+
+  const tripBlock = quoteSource.slice(
+    quoteSource.indexOf("if (!withinCourierBudget("),
+    quoteSource.indexOf("try {", quoteSource.indexOf("if (!withinCourierBudget(")),
+  );
+  check(
+    "a trip returns a verdict rather than throwing",
+    !/throw/.test(tripBlock) && /UNKNOWN_SERVICEABILITY/.test(tripBlock),
+  );
+  /*
+    Read from source rather than imported: `serviceability.ts` is server-only.
+    The properties that matter are what the constant *says*, and a gate that
+    cannot load the module can still read it.
+  */
+  const svc = readFileSync("src/lib/shipping/serviceability.ts", "utf8");
+  const unknownBlock = svc.slice(
+    svc.indexOf("export const UNKNOWN_SERVICEABILITY"),
+    svc.indexOf("};", svc.indexOf("export const UNKNOWN_SERVICEABILITY")),
+  );
+  check(
+    "and that verdict is the one a courier outage produces",
+    /source:\s*"unknown"/.test(unknownBlock),
+  );
+  check(
+    "so the customer is never told the shop does not deliver there",
+    /deliverable:\s*true/.test(unknownBlock),
+    "deliverable stays true; only the price becomes an estimate",
+  );
+  check(
+    "the trip is logged loudly, because it should never happen",
+    /console\.error\(/.test(tripBlock),
+    "either the counter is down or the shop is being scraped",
+  );
+}
 
 console.log(
   `\n${failed === 0 ? "\x1b[32m" : "\x1b[31m"}${passed} passed, ${failed} failed\x1b[0m`,

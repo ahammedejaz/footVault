@@ -192,12 +192,31 @@ for (const [name, message] of built) {
     Boolean(message.replyTo),
     message.replyTo ?? "unset — a reply to this email reaches nobody",
   );
+  /*
+    This assertion used to be "not an @footvault.in address", and it was right
+    at the time: nothing accepted mail there, so a reply to the domain went
+    nowhere. That changed when `/api/email/inbound` was proven to forward, and
+    the reply-to moved onto the shop's own domain — so the check has to move
+    with the fact rather than outlive it.
+
+    What still has to hold is that a reply does not come back to the address
+    the mail was *sent* from. `orders@` is the sender; a customer replying to
+    it would be answered by the same machinery that wrote to them, and the
+    thread would have no human in it.
+  */
   check(
-    `${name}: the reply-to is a real mailbox, not the sending domain`,
-    Boolean(message.replyTo) && !message.replyTo!.endsWith("@footvault.in"),
+    `${name}: a reply does not return to the sending address`,
+    Boolean(message.replyTo) && !message.replyTo!.startsWith("orders@"),
     message.replyTo ?? "unset",
   );
 }
+
+const replyTos = new Set(built.map(([, m]) => m.replyTo ?? "unset"));
+check(
+  "all six agree on one reply-to",
+  replyTos.size === 1,
+  [...replyTos].join(", "),
+);
 
 /* -------------------------------------------------------- 3 · escaping -- */
 
