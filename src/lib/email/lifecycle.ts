@@ -2,6 +2,7 @@ import { formatPaise } from "@/lib/format";
 import type { EmailMessage } from "@/lib/email/types";
 import {
   addressLines,
+  emailLogo,
   escapeHtml,
   orderUrl,
   REFUND_ARRIVAL_WINDOW,
@@ -79,6 +80,7 @@ export function buildPaymentCapturedEmail(
   ].join("\n");
 
   const html = [
+    emailLogo(),
     `<p>${escapeHtml(input.customerName)}, we have your payment.</p>`,
     `<p><strong>Order ${escapeHtml(input.orderNumber)}</strong><br>`,
     `<a href="${url}">${url}</a></p>`,
@@ -159,6 +161,7 @@ export function buildShippedEmail(input: ShippedInput): EmailMessage {
   ].join("\n");
 
   const html = [
+    emailLogo(),
     `<p>${escapeHtml(input.customerName)}, your order is on its way.</p>`,
     `<p><strong>Order ${escapeHtml(input.orderNumber)}</strong><br>`,
     `<a href="${url}">${url}</a></p>`,
@@ -222,6 +225,7 @@ export function buildDeliveredEmail(input: DeliveredInput): EmailMessage {
   ].join("\n");
 
   const html = [
+    emailLogo(),
     `<p>${escapeHtml(input.customerName)}, your order has been delivered.</p>`,
     `<p><strong>Order ${escapeHtml(input.orderNumber)}</strong><br>`,
     `<a href="${url}">${url}</a></p>`,
@@ -280,6 +284,7 @@ export function buildRefundedEmail(input: RefundedInput): EmailMessage {
   ].join("\n");
 
   const html = [
+    emailLogo(),
     `<p>${escapeHtml(input.customerName)}, we have refunded <strong>${formatPaise(input.amountPaise)}</strong>.</p>`,
     `<p><strong>Order ${escapeHtml(input.orderNumber)}</strong><br>`,
     `<a href="${url}">${url}</a></p>`,
@@ -382,6 +387,7 @@ export function buildOwnerNewOrderEmail(
     .join("");
 
   const html = [
+    emailLogo(),
     `<p style="font-size:18px"><strong>New order ${escapeHtml(input.orderNumber)}</strong> — ${escapeHtml(method)}</p>`,
     `<p style="font-size:16px;padding:8px;background:#f4f4f5"><strong>${escapeHtml(collects)}</strong></p>`,
     `<ul>${itemHtml}</ul>`,

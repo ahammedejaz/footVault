@@ -1,5 +1,7 @@
 import * as React from "react";
+import Image from "next/image";
 
+import lockup from "../../../public/brand/logo.png";
 import { cn } from "@/lib/utils";
 
 /**
@@ -83,30 +85,51 @@ function TreadMark({
 }
 
 /**
- * The horizontal lockup: mark + wordmark set in the display face. The wordmark
- * is live text rather than an image so it stays crisp at every size, respects
- * the user's font settings, and reads to a screen reader without alt text.
+ * The logo, from the owner's artwork rather than the vector recreation.
+ *
+ * `public/brand/logo.png` is `logo-original.png` trimmed to its content box —
+ * the wordmark and tagline are baked into the art, with enough glow behind
+ * them to stay legible on both the paper header and the navy footer, so one
+ * asset serves every surface.
+ *
+ * Two sizes, one decision between them. At header height the baked-in
+ * wordmark falls under 5px and cannot be read, so the small form keeps the
+ * name as live text beside the art and marks the image decorative. The large
+ * form (`showTagline`) is big enough for the art to speak for itself, and the
+ * name and tagline it shows are delivered to a screen reader as alt text.
  */
 function Logo({
   className,
   showTagline = false,
   ...props
 }: React.ComponentProps<"span"> & { showTagline?: boolean }) {
+  if (showTagline) {
+    return (
+      <span className={cn("inline-block", className)} {...props}>
+        <Image
+          src={lockup}
+          alt="Foot Vault — every step counts"
+          className="h-auto w-44"
+          sizes="176px"
+        />
+      </span>
+    );
+  }
+
   return (
     <span
       className={cn("inline-flex items-center gap-2.5", className)}
       {...props}
     >
-      <TreadMark detail="simple" className="text-orange h-9 w-[1.125rem]" />
-      <span className="flex flex-col leading-none">
-        <span className="font-display text-lg font-extrabold tracking-[-0.02em] whitespace-nowrap uppercase">
-          Foot Vault
-        </span>
-        {showTagline ? (
-          <span className="text-muted-foreground mt-1 font-mono text-xs tracking-[0.06em]">
-            Every step counts
-          </span>
-        ) : null}
+      <Image
+        src={lockup}
+        alt=""
+        className="h-10 w-auto"
+        sizes="40px"
+        priority
+      />
+      <span className="font-display text-lg leading-none font-extrabold tracking-[-0.02em] whitespace-nowrap uppercase">
+        Foot Vault
       </span>
     </span>
   );

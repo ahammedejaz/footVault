@@ -1,3 +1,6 @@
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
+
 import { ImageResponse } from "next/og";
 
 import { prerenderOrDefer } from "@/lib/prerender";
@@ -26,6 +29,16 @@ export default async function OpengraphImage() {
     "Every step counts",
   );
 
+  /**
+   * The owner's logo, read from the tree rather than fetched over HTTP: this
+   * renders at build time, when the site the URL points at may be the previous
+   * deploy or nothing at all.
+   */
+  const logo = await readFile(
+    join(process.cwd(), "public/brand/logo.png"),
+  );
+  const logoSrc = Uint8Array.from(logo).buffer;
+
   return new ImageResponse(
     <div
       style={{
@@ -39,15 +52,9 @@ export default async function OpengraphImage() {
         color: "#fbfcfd",
       }}
     >
-      <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
-        <div
-          style={{
-            width: 18,
-            height: 44,
-            borderRadius: 9,
-            background: "#fe9301",
-          }}
-        />
+      <div style={{ display: "flex", alignItems: "center", gap: 24 }}>
+        {/* satori accepts a raw ArrayBuffer as src; its type says string */}
+        <img src={logoSrc as unknown as string} alt="" width={96} height={95} />
         <div
           style={{
             fontSize: 34,

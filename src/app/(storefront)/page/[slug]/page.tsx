@@ -1,3 +1,5 @@
+import type * as React from "react";
+
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
@@ -33,11 +35,36 @@ export async function generateMetadata({
 /**
  * CMS pages — About, Contact, the policies.
  *
- * The body is stored as plain text with blank lines between paragraphs, so it
- * is rendered as paragraphs rather than through `dangerouslySetInnerHTML`.
- * When the rich-text editor lands in Phase 7 this becomes a sanitised render;
- * until then there is no HTML path from the database into the page at all.
+ * The body is stored as plain text with blank lines between paragraphs. The
+ * owner writes `**emphasis**` and `- ` bullet lines in it — the returns policy
+ * has since day one — and until now both rendered literally: a customer-facing
+ * policy page showing raw asterisks. `Block` below understands exactly those
+ * two forms and nothing more. It builds React elements from split strings, so
+ * there is still no HTML path from the database into the page at all.
  */
+
+/** `**text**` becomes <strong>. Everything else passes through as text. */
+function emphasise(text: string): React.ReactNode[] {
+  return text
+    .split(/\*\*([^*]+)\*\*/)
+    .map((part, i) => (i % 2 === 1 ? <strong key={i}>{part}</strong> : part));
+}
+
+function Block({ text }: { text: string }) {
+  const lines = text.split("\n").map((line) => line.trim());
+  if (lines.length > 1 && lines.every((line) => line.startsWith("- "))) {
+    return (
+      <ul className="list-disc space-y-2 pl-5 text-base">
+        {lines.map((line, i) => (
+          <li key={i} className="text-pretty">
+            {emphasise(line.slice(2))}
+          </li>
+        ))}
+      </ul>
+    );
+  }
+  return <p className="text-base text-pretty">{emphasise(text)}</p>;
+}
 export default async function CmsPage({
   params,
 }: {
@@ -73,9 +100,7 @@ export default async function CmsPage({
       <div className="tread-rule mt-6 w-24" aria-hidden />
       <div className="mt-8 space-y-5">
         {paragraphs.map((paragraph, index) => (
-          <p key={index} className="text-base text-pretty">
-            {paragraph}
-          </p>
+          <Block key={index} text={paragraph} />
         ))}
       </div>
       <p className="text-muted-foreground mt-12 font-mono text-xs tracking-[0.06em]">

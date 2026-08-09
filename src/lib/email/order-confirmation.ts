@@ -3,7 +3,7 @@ import type { EmailMessage } from "@/lib/email/types";
 import type { OrderTotals, ShippingAddress } from "@/lib/orders/types";
 import type { PaymentMethod } from "@/lib/payments/types";
 import { SITE_URL } from "@/lib/env";
-import { REPLY_TO } from "@/lib/email/shared";
+import { emailLogo, REPLY_TO } from "@/lib/email/shared";
 
 /**
  * The one email Phase 5 sends.
@@ -183,6 +183,7 @@ export function buildOrderConfirmationEmail(
     .join("");
 
   const html = [
+    emailLogo(),
     `<p>Thanks, ${escapeHtml(input.customerName)}. Your order is placed.</p>`,
     `<p><strong>Order ${escapeHtml(input.orderNumber)}</strong><br>`,
     `<a href="${orderUrl}">${orderUrl}</a></p>`,
