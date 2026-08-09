@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState, useTransition } from "react";
-import { Plus, Star, Trash2 } from "lucide-react";
+import { Pencil, Plus, Star, Trash2 } from "lucide-react";
 
 import { AddressCard } from "@/components/checkout/address-card";
 import {
@@ -19,10 +19,14 @@ import {
   deleteAddress,
   saveAddress,
   setDefaultAddress,
+  updateAddress,
 } from "@/lib/actions/address";
 import type { SavedAddress } from "@/lib/address-types";
 import { toast } from "@/lib/toast";
-import { addressBookSchema } from "@/lib/validations/address";
+import {
+  addressBookSchema,
+  addressEditSchema,
+} from "@/lib/validations/address";
 
 /**
  * The address book, managed.
@@ -39,6 +43,15 @@ import { addressBookSchema } from "@/lib/validations/address";
  */
 export function AddressBook({ addresses }: { addresses: SavedAddress[] }) {
   const [adding, setAdding] = useState(addresses.length === 0);
+  /**
+   * Which entry the open form is editing, or null when it is adding one.
+   *
+   * The id rather than the row: `addresses` is re-fetched by the revalidate
+   * after every write, so holding the object would pin a stale copy of the
+   * entry being edited — the version from before the save, shown back to the
+   * customer as though it were current.
+   */
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState<AddressDraft>(EMPTY_ADDRESS);
   const [label, setLabel] = useState("");
   const [makeDefault, setMakeDefault] = useState(addresses.length === 0);
@@ -87,13 +100,36 @@ export function AddressBook({ addresses }: { addresses: SavedAddress[] }) {
     setLabel("");
     setErrors({});
     setAttempted(false);
+    setEditingId(null);
+  }
+
+  /** Open the form over an existing entry. */
+  function beginEdit(address: SavedAddress) {
+    setDraft({
+      recipientName: address.recipientName,
+      phone: address.phone,
+      line1: address.line1,
+      // The form's fields are strings throughout; `null` would render the word.
+      line2: address.line2 ?? "",
+      city: address.city,
+      state: address.state,
+      postalCode: address.postalCode,
+    });
+    setLabel(address.label ?? "");
+    setMakeDefault(address.isDefault);
+    setErrors({});
+    setAttempted(false);
+    setEditingId(address.id);
+    setAdding(true);
   }
 
   function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setAttempted(true);
 
-    const parsed = addressBookSchema.safeParse(toEntry());
+    const parsed = editingId
+      ? addressEditSchema.safeParse({ ...toEntry(), id: editingId })
+      : addressBookSchema.safeParse(toEntry());
     if (!parsed.success) {
       const next: FieldErrors = {};
       for (const issue of parsed.error.issues) {
@@ -116,15 +152,18 @@ export function AddressBook({ addresses }: { addresses: SavedAddress[] }) {
       // landmark line into `null`, and feeding that back into the same schema
       // on the server fails — `.optional()` accepts `undefined`, not `null`.
       // The client parse is a pre-check; the server does the real one.
-      const result = await saveAddress(toEntry());
+      const result = editingId
+        ? await updateAddress({ ...toEntry(), id: editingId })
+        : await saveAddress(toEntry());
       if (!result.ok) {
         toast.failed(result.message);
         return;
       }
+      const edited = editingId !== null;
       reset();
       setAdding(false);
       setMakeDefault(false);
-      toast.done("Address saved");
+      toast.done(edited ? "Address updated" : "Address saved");
       addButton.current?.focus();
     });
   }
@@ -208,6 +247,16 @@ export function AddressBook({ addresses }: { addresses: SavedAddress[] }) {
               </div>
 
               <div className="border-border mt-4 flex flex-wrap gap-2 border-t pt-3">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => beginEdit(address)}
+                  disabled={pending}
+                >
+                  <Pencil className="size-3.5" aria-hidden />
+                  Edit
+                  <span className="sr-only"> — {address.recipientName}</span>
+                </Button>
                 {address.isDefault ? null : (
                   <Button
                     variant="ghost"
@@ -242,7 +291,9 @@ export function AddressBook({ addresses }: { addresses: SavedAddress[] }) {
           noValidate
           className="border-border mt-8 rounded-lg border p-5"
         >
-          <h2 className="text-lg font-semibold">Add an address</h2>
+          <h2 className="text-lg font-semibold">
+            {editingId ? "Edit address" : "Add an address"}
+          </h2>
 
           <Field
             name="label"
@@ -285,7 +336,11 @@ export function AddressBook({ addresses }: { addresses: SavedAddress[] }) {
 
           <div className="mt-5 flex flex-wrap gap-3">
             <Button type="submit" disabled={pending}>
-              {pending ? "Saving…" : "Save address"}
+              {pending
+                ? "Saving…"
+                : editingId
+                  ? "Save changes"
+                  : "Save address"}
             </Button>
             {addresses.length > 0 ? (
               <Button
