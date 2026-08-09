@@ -440,7 +440,6 @@ insert into public.site_settings (key, value, description) values
   ('contact', '{"email":"hello@footvault.in","phone":"+91 80 4718 2200","whatsapp":"+91 98450 22001","address":"42 Commercial Street, Shivaji Nagar, Bengaluru 560001"}'::jsonb, 'Shown in the footer and on the contact page.'),
   ('business_hours', '{"weekday":"10:30 – 20:30","saturday":"10:30 – 21:00","sunday":"11:00 – 19:00"}'::jsonb, 'Opening hours, shown on the contact page.'),
   ('social', '{"instagram":"https://instagram.com/footvault","facebook":"https://facebook.com/footvault"}'::jsonb, 'Social links in the footer.'),
-  ('shipping', '{"free_above_paise":249900,"currency":"INR","regions":["IN"],"cod_enabled":true,"cod_advance_mode":"greater_of","cod_advance_minimum_paise":9900,"cod_advance_fixed_paise":9900,"fallback_fee_paise":{"razorpay":19900,"cod":34900}}'::jsonb, 'Free-delivery threshold, the Pay-on-Delivery advance rule, and the amounts used only when Shiprocket cannot be reached. Rates themselves always come from the courier.'),
   ('return_window_days', '1'::jsonb, 'Days from delivery in which shipment damage can be reported. One day — the policy is 24 hours, replacement only, no refunds.'),
   ('payment_methods', '{"cod":true,"online":false}'::jsonb, 'Both methods run through Razorpay: prepaid settles in full, Pay on Delivery takes the advance. Read by nothing today — the checkout gates on isAvailable() and the cod_enabled flag in `shipping`.')
 on conflict (key) do update set value = excluded.value, description = excluded.description;

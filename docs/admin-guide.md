@@ -238,6 +238,37 @@ is returned. That is not a return — it is money taken for goods that will neve
 be sent, and keeping it was never an option. The no-refund policy does not cover
 that case, and it does not override Indian consumer law either. The site says so.
 
+### Sending money back, from the order page
+
+Since Batch 3 there is a panel called **The money back** on each order's page,
+under the money summary. It appears only on orders where something was actually
+paid online. You never type an amount:
+
+1. Open the order and find the panel.
+2. Pick **why** the money is going back — either *the order stopped* (cancelled,
+   refused at the door, undeliverable) or *our mistake* (wrong item, wrong size,
+   damaged before it was dispatched). That is the one thing only you can know.
+3. The panel shows the amount, computed from where the order stopped, with every
+   deduction listed — for example the delivery journeys on a parcel that came
+   back. Read the explanation; it is the same sentence you can say to the
+   customer.
+4. Press the button, then press it again to confirm. The money goes back along
+   the same payment the customer made.
+
+**"Waiting for Razorpay" is normal.** A refund is only marked returned when
+Razorpay confirms it — usually within moments, sometimes minutes. The page
+updates itself on refresh.
+
+**A Pay-on-Delivery order refunds at most the advance**, because the advance is
+all the shop ever held — the cash balance was collected by the courier or never
+collected at all. The panel does this arithmetic for you and will not let you
+send more than was taken.
+
+**If you refunded in the Razorpay dashboard instead** — or ever did in the past
+— press **Check Razorpay** on the same panel. It pulls every refund Razorpay
+holds for the order into the page, so the record stops being wrong. Do this once
+for any order you refunded by hand before this existed.
+
 ---
 
 ## 4 · Shiprocket — the jobs only you can do
@@ -352,9 +383,10 @@ and creates a real parcel.
 **Admin panel → Orders.** Every order, newest first. Search by order number,
 phone or email. Filter by status.
 
-There is no single-order screen yet, so anything that needs opening one order —
-recording a replacement, pressing the Shiprocket buttons, adding a note — cannot
-be done from the panel today.
+Click an order to open it. The single-order screen carries the money summary,
+the refund panel (§3), the Shiprocket buttons, the RTO panel when a parcel is
+coming back (below), replacements and notes. The claim that used to sit in this
+paragraph — that no such screen existed — was three phases stale.
 
 A customer sees their own orders at **/account/orders**. You cannot see somebody
 else's that way, even as an admin. That is deliberate.
@@ -369,14 +401,39 @@ else's that way, even as an admin. That is deliberate.
 | `shipped` | It is with the courier |
 | `delivered` | It arrived. **This is when the 24-hour replacement clock starts** |
 | `cancelled` | It will not happen. Cancelling puts the shoes back on the shelf automatically |
-| `returned` | It came back |
+| `returning` | The courier reported the parcel is coming back to you — refused at the door, undeliverable, or cancelled in transit. It is in a van, not on your shelf |
+| `returned` | It is physically back with you |
 
 `cancelled` and `returned` are final. An order that has to come back from either
 is a new order, not an edited one.
 
-**A returned pair does not go back into stock by itself.** It has to be looked at
-first, and putting it back automatically would sell a damaged shoe to the next
-customer. Put it back by hand from the Inventory screen once you have checked it.
+### When a parcel comes back (RTO)
+
+The shop notices on its own: when tracking is refreshed and the courier's
+status says RTO, the order moves to `returning` and appears under **Returns to
+origin** in the menu. Nothing else happens automatically — and that is the
+design, because parcels are lost and damaged on the way back, and restocking on
+a courier's say-so invents stock you do not have.
+
+When the box is physically in your hands, open the order:
+
+1. **Mark it received**, and say whether the contents are **fine** or
+   **damaged**. Damaged needs a note — what you found is the only record there
+   will be.
+2. If it was fine, press **Put the stock back**. The pairs return to the shelf
+   and the stock ledger records each one, with your name on the entry. The
+   button is safe to press twice; the second press tells you it is already
+   done.
+3. If it was damaged, there is nothing to press — the write-off is the note
+   you just made, and damaged pairs never re-enter stock.
+4. **Type in what Shiprocket actually charged** for the return journey, from
+   their panel, next to the estimate the site quoted. Refunds for the customer
+   compute from the actual figure once you have entered it.
+
+The **Returns to origin** screen totals what coming-back parcels are costing
+you, shows which PIN codes they come from, and flags any phone number that has
+done it more than once — those are the customers to stop offering Pay on
+Delivery to (§1).
 
 ### Orders that cancel themselves
 
@@ -389,10 +446,11 @@ It never touches an order where money is genuinely in flight.
 
 ### Cancelling and status changes
 
-Both need somebody with database access today, because the order screen does not
-exist. Ask your developer, and tell them the order number. **Never cancel a paid
-order by editing it directly** — cancelling has to put the stock back exactly
-once, and there is a proper way to do it that does.
+Both are buttons on the order screen now, and only the legal next steps are
+drawn. Cancelling a **paid** order refuses until the money is dealt with — the
+message points you at the refund panel with the exact amount. **Never ask for
+an order to be edited directly in the database** — cancelling has to put the
+stock back exactly once, and the buttons go through the machinery that does.
 
 ---
 
@@ -440,30 +498,22 @@ second wipes out the other's count and nobody notices. Two differences both land
 
 ## 7 · What is not built yet
 
-So you are not hunting for something that is not there.
+So you are not hunting for something that is not there. This list was rewritten
+in Batch 3; the earlier version predated the order screen and undersold what
+works.
 
-**In the admin panel, these work:** Dashboard, Orders and Inventory.
+**In the admin panel, these work:** Dashboard, Orders, the **single order
+screen** (money, shipping buttons, replacements, notes, and since Batch 3 the
+refund panel), Inventory, and **Settings** — delivery rates, the parcel box,
+Pay on Delivery controls.
 
-**These are in the menu and open to a "page not found":** Products, Categories,
-Brands, Customers, Media, Settings — and the **single order screen**.
+**Still in the menu but opening to "page not found":** Products, Categories,
+Brands, Customers, Media. Adding and editing products still happens in the
+database, not in the panel.
 
-What that costs you, in plain terms:
-
-- **You cannot open one order.** Everything about an individual order — its
-  address, its lines, its notes — has to be looked up in the database.
-- **The five Shiprocket buttons do not exist anywhere.** The steps behind them
-  are written and tested, but there is no screen with the buttons on it, so the
-  test in 4.5 cannot be run and no parcel can be booked from the site.
-- **You cannot record a replacement.** The shop can account for one, but the
-  place to enter it is the order screen, which is not built.
-- **Adding and editing products** still happens in the database, not in the
-  panel.
-- **Delivery settings** (section 2) have no screen — hence "ask your developer".
-
-**Also not built:** refunds of any kind (a refund made in the Razorpay dashboard
-will not show up in the order), coupon codes (the box on the bag page is visibly
-switched off and nothing typed into it can change a total), reviews, and the
-homepage builder.
+**Also not built:** coupon codes (the box on the bag page is visibly switched
+off and nothing typed into it can change a total), reviews, and the homepage
+builder (`/admin/appearance` — promised, still owed, scheduled as Batch 5).
 
 **Order confirmation emails are written but nobody receives them.** No email
 provider is connected yet — see 8.3.

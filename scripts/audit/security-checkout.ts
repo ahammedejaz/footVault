@@ -29,6 +29,14 @@
  * A check that could not run prints SKIP and fails the suite. "I could not test
  * this" is a result, not a pass.
  */
+// clients first, before any other import and before anything reads
+// process.env: importing it repoints this process at staging and refuses to
+// run against production. This file used to read .env.local itself and
+// therefore built its accounts and admin promotions on the LIVE shop while
+// the app under test pointed at staging — found in Batch 3, the exact
+// near-miss clients.ts exists to stop. See the batch 3 report.
+import "./clients";
+
 import { readFileSync } from "node:fs";
 import { createHmac, randomUUID } from "node:crypto";
 
@@ -2059,30 +2067,89 @@ async function main() {
     ).error;
     if (backdated) console.error(`  could not backdate: ${backdated.message}`);
 
-    // Called over raw PostgREST rather than through the typed client: the
-    // function does not exist yet, so `Database` has no name for it and the
-    // typed call would need an `any` the lint gate forbids.
-    const release = await fetch(
-      `${URL_}/rest/v1/rpc/release_abandoned_orders`,
-      {
+    /**
+     * The *route*, not the SQL function, because since
+     * `20260809030000_narrow_release_abandoned_orders` the two are not the
+     * same mechanism and only one of them is allowed to touch this order. The
+     * SQL sweep deliberately skips anything Razorpay-backed — cancelling a
+     * payment-carrying order on age alone is the exact bug the narrowing
+     * removed, an order cancelled while its customer's money was in flight.
+     * For those the deployed mechanism is the cron route: sweep what is
+     * sweepable, then ask Razorpay about the rest through `decideForOrder`,
+     * and only a clear "nobody ever paid" cancels. This check called the bare
+     * RPC and asserted the pre-narrowing contract; it went stale the day the
+     * narrowing landed and nobody noticed because this gate is not in the
+     * default chain. What is asserted now is the real promise: the whole
+     * mechanism, given six hours and a clear answer, returns the unit.
+     */
+    /**
+     * The fixture's invented `order_sec…` id has to become a real one first.
+     * The reconciler asks Razorpay before cancelling, and for an id Razorpay
+     * never issued it answers 404 — which the route treats, correctly, as
+     * "could not verify, leave the order alone": an unverifiable order must
+     * never be cancelled on a guess. That refusal is the safety property, but
+     * it also means a fabricated id can never exercise the release path. A
+     * real shop cannot produce this case — every stored provider id was
+     * issued by Razorpay at checkout — so the fixture matches reality
+     * instead: a real order on the test account, which lists zero payments,
+     * which is the clear "nobody ever paid" the cancel needs.
+     */
+    const keyId = process.env.RAZORPAY_KEY_ID?.trim();
+    const keySecret = process.env.RAZORPAY_KEY_SECRET?.trim();
+    const cronSecret = process.env.CRON_SECRET?.trim();
+    if (keyId && keySecret) {
+      const realOrder = await fetch("https://api.razorpay.com/v1/orders", {
         method: "POST",
         headers: {
-          apikey: SERVICE,
-          Authorization: `Bearer ${SERVICE}`,
-          "content-type": "application/json",
+          Authorization: `Basic ${Buffer.from(`${keyId}:${keySecret}`).toString("base64")}`,
+          "Content-Type": "application/json",
         },
-        body: JSON.stringify({ p_older_than_minutes: 60 }),
-      },
-    );
-    const after = await stockOf(v.id);
-    check(
-      "a six-hour-old unpaid order gives its unit back to the catalog",
-      release.ok && after === before,
-      release.ok
-        ? `${before} -> ${after}`
-        : `no release mechanism exists (HTTP ${release.status} from ` +
-            `rpc/release_abandoned_orders) — the unit is still held, ${before} -> ${after}`,
-    );
+        body: JSON.stringify({
+          amount: target.order.grandTotal,
+          currency: "INR",
+          receipt: `${target.order.orderNumber ?? "audit"}-release`,
+        }),
+      });
+      const realBody = (await realOrder.json()) as { id?: string };
+      if (realOrder.ok && realBody.id) {
+        const { error: repointError } = await admin
+          .from("payments")
+          .update({ provider_order_id: realBody.id })
+          .eq("order_id", target.order.orderId);
+        if (repointError) {
+          console.error(`  could not repoint payment row: ${repointError.message}`);
+        }
+      } else {
+        console.error(
+          `  could not create a real test-mode order: HTTP ${realOrder.status}`,
+        );
+      }
+    }
+    if (!cronSecret) {
+      skip(
+        "a six-hour-old unpaid order gives its unit back to the catalog",
+        "CRON_SECRET is not set, so the cron route cannot be invoked",
+      );
+    } else if (!keyId || !keySecret) {
+      skip(
+        "a six-hour-old unpaid order gives its unit back to the catalog",
+        "RAZORPAY keys are not set, so the reconciler cannot get a real answer",
+      );
+    } else {
+      const release = await fetch(`${BASE}/api/cron/release-abandoned-orders`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${cronSecret}` },
+      });
+      const after = await stockOf(v.id);
+      check(
+        "a six-hour-old unpaid order gives its unit back to the catalog",
+        release.ok && after === before,
+        release.ok
+          ? `${before} -> ${after}`
+          : `the cron route refused (HTTP ${release.status}) — the unit is ` +
+            `still held, ${before} -> ${after}`,
+      );
+    }
   }
 
   /* ═══ 16 · writing straight to the money tables ═══════════════════════════ */

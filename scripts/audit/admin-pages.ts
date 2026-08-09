@@ -16,6 +16,14 @@
  * `finally`; the order it drives is one the checkout suite already abandoned.
  */
 
+// clients first, before any other import and before anything reads
+// process.env: importing it repoints this process at staging and refuses to
+// run against production. This file used to read .env.local itself and
+// therefore built its accounts and admin promotions on the LIVE shop while
+// the app under test pointed at staging — found in Batch 3, the exact
+// near-miss clients.ts exists to stop. See the batch 3 report.
+import "./clients";
+
 import { readFileSync } from "node:fs";
 
 import AxeBuilder from "@axe-core/playwright";
@@ -249,7 +257,35 @@ async function main() {
       originalFree,
     );
 
-    /* Round-trip a real change through the action and back out of the database. */
+    /*
+     * Round-trip a real change through the action and back out of the
+     * database — and prove the save *merges* rather than replaces, with a
+     * sentinel this harness plants rather than a key it hopes still exists.
+     * The old version asserted `currency`/`regions` and `cod_advance_mode`
+     * survived, and all three are dead: the first two were seed fossils
+     * nothing ever read, and the third was deleted by 20260809110100 on
+     * purpose. Against production's pre-migration row the checks passed;
+     * against a rebuilt database they asserted the presence of a bug. A
+     * sentinel tests the property itself — "keys this form does not know
+     * outlive its save" — and cannot go stale with the schema.
+     */
+    const sentinel = `qa-${Date.now().toString(36)}`;
+    {
+      const { data: row, error } = await admin
+        .from("site_settings")
+        .select("value")
+        .eq("key", "shipping")
+        .maybeSingle();
+      if (error || !row?.value || typeof row.value !== "object") {
+        throw new Error(`could not read shipping row to plant sentinel: ${error?.message}`);
+      }
+      const { error: plantError } = await admin
+        .from("site_settings")
+        .update({ value: { ...(row.value as object), qa_sentinel: sentinel } })
+        .eq("key", "shipping");
+      if (plantError) throw new Error(`could not plant sentinel: ${plantError.message}`);
+    }
+
     await freeAbove.fill("3111");
     await page.getByRole("button", { name: /Save delivery settings/ }).click();
     await page.waitForTimeout(3000);
@@ -267,15 +303,12 @@ async function main() {
       String(savedValue.free_above_paise),
     );
     check(
-      "saving preserves the keys the form does not edit",
-      savedValue.currency === "INR" && Array.isArray(savedValue.regions),
-      JSON.stringify({ currency: savedValue.currency, regions: savedValue.regions }),
+      "saving preserves keys the form does not know about",
+      savedValue.qa_sentinel === sentinel,
+      String(savedValue.qa_sentinel),
     );
-    check(
-      "the advance rule survives a delivery save",
-      typeof savedValue.cod_advance_mode === "string",
-      String(savedValue.cod_advance_mode),
-    );
+    // No restore here: the finally at the end of this run puts back the whole
+    // row captured at startup, which predates both the sentinel and the save.
 
     const settingsViolations = await axe(page);
     check(

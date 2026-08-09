@@ -133,11 +133,33 @@ async function colourway(page: Page) {
     .first()
     .getAttribute("src");
   await page.getByRole("radio", { name: /black \/ volt/i }).click();
-  await page.waitForTimeout(300);
+  /**
+   * Wait for the change, not for a duration. The swatch writes `color=` into
+   * the URL and the gallery re-renders off a server round trip, so how long
+   * that takes is the machine's business — a fixed 300ms here passed for
+   * months and then failed on a loaded runner while the URL check two lines
+   * down passed, which is the timing saying "too slow", not the feature
+   * saying "broken". Five seconds is the give-up point, after which the
+   * failure is real.
+   */
   const nextFrame = await page
     .locator("ul[aria-label$='images'] img")
     .first()
-    .getAttribute("src");
+    .evaluate(
+      (img, previous) =>
+        new Promise<string | null>((resolve) => {
+          const deadline = Date.now() + 5_000;
+          const look = () => {
+            const src = img.getAttribute("src");
+            if (src !== previous) return resolve(src);
+            if (Date.now() > deadline) return resolve(src);
+            setTimeout(look, 100);
+          };
+          look();
+        }),
+      firstFrame,
+    )
+    .catch(() => null);
 
   check(
     firstFrame !== nextFrame,

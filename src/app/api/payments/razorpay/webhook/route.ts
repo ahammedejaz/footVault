@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { recordAndApplyRefund } from "@/lib/orders/refunds";
 import { recordAndApply } from "@/lib/payments/apply";
 import { getPaymentAdapter } from "@/lib/payments";
 import { callerIp, consumeRateLimit } from "@/lib/rate-limit";
@@ -149,6 +150,53 @@ export async function POST(request: Request): Promise<NextResponse> {
       reason: parsed.reason,
     });
     return reject();
+  }
+
+  /**
+   * Refund events settle `refunds` rows, not order payment state, so they
+   * take their own path with the same shape of discipline: claim the event id
+   * first, 500 only when redelivery could help, 200 otherwise. A refund the
+   * database has never heard of is recorded rather than refused — that is a
+   * dashboard refund becoming visible, which is the reconciliation the brief
+   * asks for arriving by push instead of pull.
+   */
+  if (parsed.refund) {
+    const application = await recordAndApplyRefund(parsed.refund);
+    switch (application.status) {
+      case "duplicate":
+        console.info("[razorpay-webhook] refund already handled", {
+          providerEventId,
+          eventId: parsed.refund.eventId,
+        });
+        return NextResponse.json({ ok: true, duplicate: true }, noStore(200));
+      case "not_found":
+        // A refund along a payment this deployment has never seen — the
+        // shared test account again. Logged loud enough to investigate,
+        // answered 200 so Razorpay stops resending it.
+        console.error("[razorpay-webhook] refund for unknown payment", {
+          providerEventId,
+          eventId: parsed.refund.eventId,
+        });
+        return NextResponse.json({ ok: true, applied: false }, noStore(200));
+      case "failed":
+        console.error("[razorpay-webhook] refund could not be applied", {
+          providerEventId,
+          eventId: parsed.refund.eventId,
+          retryable: application.retryable,
+          detail: application.message,
+        });
+        return NextResponse.json(
+          { ok: false },
+          noStore(application.retryable ? 500 : 200),
+        );
+      case "applied":
+        console.info("[razorpay-webhook] refund applied", {
+          providerEventId,
+          eventId: parsed.refund.eventId,
+          eventType: parsed.refund.eventType,
+        });
+        return NextResponse.json({ ok: true }, noStore(200));
+    }
   }
 
   const { eventId, eventType, providerOrderId, outcome } = parsed.event;

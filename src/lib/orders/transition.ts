@@ -265,8 +265,16 @@ export function refundInstruction(order: {
       ? ` That is the advance taken at checkout, not the ${formatPaise(order.grand_total)} order total — the balance was never collected.`
       : "";
 
+  /**
+   * Since Batch 3 the panel on the order page moves the money itself, so the
+   * sentence sends the owner there rather than to the Razorpay dashboard. The
+   * amount and payment id stay in it on purpose — they are what the owner
+   * cross-checks the panel against, and `scripts/audit/refund-message.ts`
+   * holds this sentence to naming both and never the grand total.
+   */
   return (
     "This order has been paid, so cancelling it would mean refunding it. " +
-    `Refund ${amount} against ${against} in Razorpay, then cancel.${notTheTotal}`
+    `Use "The money back" panel on this page to send ${amount} back against ` +
+    `${against}, then cancel.${notTheTotal}`
   );
 }

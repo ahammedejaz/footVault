@@ -4,6 +4,8 @@ import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 
 import { OrderActions } from "@/components/admin/orders/order-actions";
+import { RefundPanel } from "@/components/admin/orders/refund-panel";
+import { RtoPanel } from "@/components/admin/orders/rto-panel";
 import { ShipmentErrorNotice } from "@/components/admin/orders/shipment-error";
 import {
   ShippingPanel,
@@ -11,6 +13,8 @@ import {
 } from "@/components/admin/orders/shipping-panel";
 import { AdminPage, Chip, ORDER_STATUS_TONE, Panel, PageHeader } from "@/components/admin/ui";
 import { formatPaise } from "@/lib/format";
+import { refundPanelState } from "@/lib/orders/refunds";
+import { rtoPanelState } from "@/lib/orders/rto";
 import {
   getOrderDetail,
   getOrderShipment,
@@ -42,7 +46,7 @@ export default async function AdminOrderDetailPage({
   const order = await getOrderDetail(id);
   if (!order) notFound();
 
-  const [shipmentRow, shipmentError] = await Promise.all([
+  const [shipmentRow, shipmentError, refundState, rtoState] = await Promise.all([
     getOrderShipment(order.id),
     /**
      * Read even when there is no shipment row, which is the case that matters.
@@ -52,6 +56,16 @@ export default async function AdminOrderDetailPage({
      * the one with nothing to join to. Keyed by order for that reason.
      */
     getOrderShipmentError(order.id),
+    /**
+     * After the RLS-bound `getOrderDetail` has answered, deliberately: that
+     * null-check above is the page's authorisation, and the refund state —
+     * which reads with the service role because the webhook shares its module —
+     * is only computed once this caller has proved they can see the order.
+     */
+    refundPanelState(id),
+    // Null when the order has no RTO dimension, which is the common case and
+    // draws nothing. Same post-authorisation position as the refund state.
+    rtoPanelState(id),
   ]);
 
   /**
@@ -170,6 +184,36 @@ export default async function AdminOrderDetailPage({
               </div>
             </div>
           </Panel>
+
+          {/*
+            Directly under the money, because it is the other half of the same
+            question. Only drawn when something was actually captured — a COD
+            order whose advance never settled has nothing to give back, and an
+            empty refund panel would read as a broken one.
+          */}
+          {refundState && refundState.capturedPaise > 0 ? (
+            <Panel
+              title="The money back"
+              description="Computed from the order's stage — the amount is never typed. A refund is done when Razorpay's webhook confirms it, not when the button answers."
+            >
+              <RefundPanel orderId={order.id} state={refundState} />
+            </Panel>
+          ) : null}
+
+          {/*
+            Between the money and the shipping buttons, because that is where
+            it sits in time: the parcel went out through the panel below and
+            is coming back towards the money above. Restocking lives here and
+            nowhere else — never on a tracking event.
+          */}
+          {rtoState ? (
+            <Panel
+              title="The parcel coming back"
+              description="Stock returns only after the box is physically in hand and inspected. The courier saying RTO is not receipt."
+            >
+              <RtoPanel orderId={order.id} state={rtoState} />
+            </Panel>
+          ) : null}
 
           <Panel
             title="Shipping"

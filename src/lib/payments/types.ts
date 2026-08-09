@@ -173,8 +173,37 @@ export type VerifiedWebhookEvent = {
   outcome: PaymentOutcome | null;
 };
 
+/**
+ * A refund webhook, once it has been proved to have come from the provider.
+ *
+ * A separate shape rather than a `PaymentOutcome` because it *is* separate:
+ * a payment outcome moves an order's payment state, a refund event settles a
+ * `refunds` row, and forcing the second through the first's type is how a
+ * refund ends up un-confirming an order. `eventId` is derived the same way —
+ * `refund.processed:rfnd_x` — so retries and manual resends dedupe in
+ * `payment_events` exactly like payment events do.
+ */
+export type VerifiedRefundEvent = {
+  eventId: string;
+  eventType: "refund.processed" | "refund.failed";
+  /** Razorpay's `rfnd_...` — the join key to `refunds.razorpay_refund_id`. */
+  providerRefundId: string;
+  /** The `pay_...` the money went back along. Resolves dashboard refunds to an order. */
+  providerPaymentId: string;
+  amountPaise: number;
+  /** The provider's own status word, stored verbatim. */
+  rawStatus: string;
+  /**
+   * Our `refunds.id`, when the refund was created by this codebase — carried
+   * in the provider's notes. It is how a refund whose create call timed out is
+   * matched back to the row that was waiting for it.
+   */
+  refundRowId: string | null;
+};
+
 export type WebhookParseResult =
-  | { ok: true; event: VerifiedWebhookEvent }
+  | { ok: true; event: VerifiedWebhookEvent; refund?: undefined }
+  | { ok: true; refund: VerifiedRefundEvent; event?: undefined }
   | {
       ok: false;
       reason: "bad_signature" | "malformed" | "unhandled";

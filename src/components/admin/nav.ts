@@ -32,6 +32,11 @@ export const ADMIN_NAV: readonly AdminNavItem[] = [
     exact: true,
   },
   { href: "/admin/orders", label: "Orders", hint: "Take, pack and ship" },
+  {
+    href: "/admin/rto",
+    label: "Returns to origin",
+    hint: "Parcels coming back",
+  },
   { href: "/admin/products", label: "Products", hint: "Everything you sell" },
   { href: "/admin/inventory", label: "Inventory", hint: "Stock, by size" },
   {

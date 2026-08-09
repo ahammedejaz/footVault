@@ -291,7 +291,20 @@ async function main() {
     '[role="radiogroup"][aria-labelledby="size-label"]',
   );
   await group.waitFor({ state: "visible" });
-  await tabTo(page, (s) => s.role === "radio", "product → the size run");
+  /**
+   * The *size* radios, by their accessible name, not the first radio on the
+   * page. A product with more than one colour renders a colour radiogroup
+   * before the sizes, and each group is one Tab stop under roving tabindex —
+   * so "the first radio" is a colour swatch there, and fourteen ArrowRights
+   * inside that group never meet a size. This matched by role alone until the
+   * staging rebuild reordered the listing and put a two-colour product first,
+   * which is the closest a harness gets to a fuzzer.
+   */
+  await tabTo(
+    page,
+    (s) => s.role === "radio" && /^UK /.test(s.name),
+    "product → the size run",
+  );
 
   // Arrow past anything sold out. A roving tabindex means one Tab reaches the
   // group and the arrows move inside it, which is the whole point of the shape.
@@ -306,10 +319,30 @@ async function main() {
     }
     await page.keyboard.press("ArrowRight");
   }
+  /**
+   * Space, because this group uses manual activation: the arrows move focus
+   * and deliberately do not select (the APG's selection-follows-focus is a
+   * *should*, and a size picker that buys stockroom queries on every arrow
+   * press is the argument for not following it). The harness used to skip
+   * this and still pass — the first product on /shop/men had its first size
+   * in stock, so zero arrows were pressed and the click… did not happen
+   * there either; what actually saved it was never proven and the state was
+   * never asserted. Now it is: the chip must end *checked*, not merely
+   * focused, or the Add to bag below is Enter on a button that will refuse.
+   */
+  await page.keyboard.press("Space");
+  const checked = await page.evaluate(
+    () =>
+      document
+        .querySelector(
+          '[role="radiogroup"][aria-labelledby="size-label"] [aria-checked="true"]',
+        )
+        ?.getAttribute("aria-label") ?? "",
+  );
   check(
     "an in-stock size is selectable with the arrow keys",
-    chosen !== "",
-    chosen || "none found",
+    chosen !== "" && checked === chosen,
+    chosen ? `${chosen}${checked === chosen ? "" : " focused but not selected"}` : "none found",
   );
   await page.waitForTimeout(600);
 

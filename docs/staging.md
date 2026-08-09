@@ -129,65 +129,43 @@ user=postgres.pblgpvcdappfpoxdascd         dbname=postgres  sslmode=require
 Wrong region, and the pooler answers `FATAL: (ENOTFOUND) tenant/user
 postgres.<ref> not found` — that message means the host, not the password.
 
-### a. Enable two extensions first
-
-```sql
-create extension if not exists pg_cron;
-create extension if not exists pg_net;
-```
-
-**This is not optional and it is not what the migrations say.**
-`20260807224044_rate_limits_cleanup_job.sql` calls `cron.schedule(...)`, and the
-`create extension if not exists pg_cron` that would make that legal does not
-appear until `20260808100100`, twelve hours later in the ordering. Production
-has never noticed because pg_cron was enabled there from the dashboard before
-any of this ran. A replay from empty stops dead at migration 33 with `ERROR:
-schema "cron" does not exist`.
-
-### b. Push the migrations
+### The command
 
 ```
-supabase db push --db-url "postgresql://postgres.<ref>:<url-encoded-password>@aws-0-ap-south-1.pooler.supabase.com:5432/postgres" --include-all
+npm run rebuild:stage
 ```
 
-`--db-url` rather than `supabase link`: linking writes a `supabase/config.toml`
-and needs the CLI logged into the account that owns the project, and neither is
-needed to apply SQL.
+One command, from empty to a working shop: cleans the staging database back to
+nothing, replays every file in `supabase/migrations/`, runs
+`supabase/seed.sql`, and then **verifies** — every migration recorded, exactly
+one `cancel_order_with_restock`, all four cron jobs scheduled, the `shipping`
+row present with its required keys and none of the deleted ones, the parcel
+complete, the catalog counted. It exits non-zero on any drift. The script is
+`scripts/db-rebuild.ts` and its header explains every statement in the clean
+step.
 
-### c. Seed, then re-apply the settings migrations
+It is pinned to the staging project by construction — there is no flag to aim
+it anywhere else, deliberately. It needs `SUPABASE_STAGE_DB_PASSWORD` in
+`.env.local` alongside the three staging keys, and `psql` on the PATH (any
+version; the 17-or-newer trap in docs/admin-guide.md §12 is specific to
+`pg_dump`).
 
-```
-npm run seed:stage
-```
+This section used to be four subsections of workarounds — enable `pg_cron` by
+hand first, push, seed, then re-apply a migration to repair what the seed broke.
+Batch 3 fixed the defects those steps routed around (see §6), and the replay it
+proved is run by the command above. If `rebuild:stage` fails, that is a defect
+in the migration set or the seed, not a prompt to reach for the old choreography:
+fix the file that broke, and re-run until it is green. A migration set that
+cannot rebuild the schema is not a backup.
 
-**In that order, and then repair the row.** `npm run seed` upserts
-`site_settings` from `scripts/seed-data.ts`, which still holds the pre-Phase-8
-shape of the `shipping` key — so seeding _after_ migrating throws away every
-field the later migrations added, and the storefront then answers 500 on every
-page with `ShippingSettingsUnavailableError`. Re-run the transformations, which
-are idempotent:
+Two facts from the old procedure worth keeping:
 
-```
-psql "<connection>" -f supabase/migrations/20260809110100_shipping_rate_mode_and_cod_controls.sql
-```
-
-Seeding _before_ migrating avoids the problem, at the cost of migrating a
-populated database.
-
-### d. Check it landed
-
-```sql
-select count(*) from information_schema.tables
- where table_schema = 'public' and table_type = 'BASE TABLE';   -- 30
-select count(*) from supabase_migrations.schema_migrations;     -- one per file
-select count(*) from products;                                  -- 35
-select count(*) from product_variants;                          -- 403
-```
-
-A count query, not the absence of an error. SQL sent through the Supabase MCP
-tool over roughly 5 KB fails **silently** — the call returns, nothing is
-applied. That is why the CLI and psql are the recommendation here and the MCP
-tool is not.
+- `--db-url` rather than `supabase link`, because linking writes a
+  `supabase/config.toml` and needs the CLI logged into the owning account, and
+  neither is needed to apply SQL.
+- Verification is a count query, not the absence of an error. SQL sent through
+  the Supabase MCP tool over roughly 5 KB fails **silently** — the call
+  returns, nothing is applied. That is why the script uses the CLI and psql.
 
 ---
 
@@ -277,41 +255,51 @@ ignored.
 
 None of these are staging defects. They are things that were only ever going to
 be found by replaying the repository from empty, which is what a staging project
-is for and what nobody had done before.
+is for and what nobody had done before. **All were fixed in Batch 3
+(2026-08-09)**, and `npm run rebuild:stage` now proves the fixes on every run;
+the history stays here because the *shape* of each failure is the thing to
+recognise next time.
 
-**The migration set does not replay from an empty project.** Two ordering
-defects, both invisible on a database that grew a migration at a time:
+**The migration set did not replay from an empty project.** Three ordering
+defects, invisible on a database that grew a migration at a time:
 
-1. `20260807224044_rate_limits_cleanup_job.sql` calls `cron.schedule(...)`
-   twelve hours of ordering before anything creates `pg_cron`. Fixed here by
-   enabling the extension first — see §3a — not by editing the migration.
-2. `cancel_order_with_restock` ends up with **two overloads**.
-   `20260807223318_cancel_order_writes_movements.sql` drops the five-argument
-   form and creates a six-argument one; on a fresh replay that drop is a no-op
-   because the five-argument form does not exist yet, and
-   `20260808090600_cancel_order_with_restock.sql` then creates it. PostgREST
-   cannot choose between them, so `teardown.ts` reports `Could not choose the
-best candidate function` on every order and restocks nothing through the RPC.
-   Its seed reconciliation still puts the units back, which is why the run ends
-   `Restored 2 of 2` and looks fine. **Any database that applied these in
-   timestamp order has both**, so this is worth checking on production rather
-   than assuming it is ours.
+1. `20260807224044_rate_limits_cleanup_job.sql` called `cron.schedule(...)`
+   twelve hours of ordering before anything created `pg_cron`. Batch 2 routed
+   around it by enabling the extension by hand; Batch 3 edited the migration to
+   state its own prerequisite — `create extension if not exists pg_cron` — which
+   is inert on any database that already ran it.
+2. `cancel_order_with_restock` ended up with **two overloads** on replay.
+   `20260807223318` (backdated into the sequence) drops the five-argument form
+   and creates the six-argument one; replayed in timestamp order the drop is a
+   no-op and `20260808090600` then recreates the five-argument form beside it.
+   PostgREST could not choose between them — `teardown.ts` reported `Could not
+   choose the best candidate function` on every order. Production applied the
+   files in written order and has exactly one form; staging had both. Fixed by
+   `20260809130000_drop_stale_cancel_order_overload.sql` at the end of the
+   sequence, which repairs both kinds of database.
+3. `20260807141500_revoke_event_trigger_execute.sql` revoked execute on
+   `public.rls_auto_enable()` — a function **no migration created**. It and its
+   `ensure_rls` event trigger were made by hand in the SQL editor before Phase
+   5, so the revoke held everywhere except a replay from empty, which died at
+   migration 21. Found by the first `rebuild:stage` run, the only defect of the
+   four Batch 2's build did not surface. Fixed by editing that migration to
+   create exactly what production carries — the definition read back via
+   `pg_get_functiondef`, not reconstructed.
 
-**The seed and the migrations disagree about `site_settings.shipping`.** See
-§3c. Until `scripts/seed-data.ts` catches up, seeding after migrating needs the
-repair step, and the symptom is a 500 on every page rather than a warning.
+**The seed and the migrations disagreed about `site_settings.shipping`.** The
+seed carried the pre-Phase-8 shape — the ₹2,499 threshold from two phases ago
+plus the exact keys `20260809110100` deletes — so reseeding a migrated database
+un-migrated its settings. The row now belongs to the migrations alone
+(`20260809140000_shipping_settings_row_exists.sql`, the owner's confirmed
+numbers) and the seed no longer contains a `shipping` entry at all.
 
-**`cod_minimum_order_value_paise` is set by no migration at all.**
-`src/lib/shipping/settings.ts` requires it and every page that reads shipping
-settings throws `ShippingSettingsUnavailableError` without it — on any database.
-Staging carries `0`, meaning no minimum, which is the behaviour that existed
-before the field did. It is invented data and should be replaced by whatever
-migration eventually writes it.
+**`cod_minimum_order_value_paise` is set by no migration at all.** Still true,
+and intended now: the reader treats it as optional with zero meaning "no
+minimum" (see the field's comment in `src/lib/shipping/settings.ts`), and an
+unset field renders as an empty box at /admin/settings for the owner to fill.
+The invented `0` staging carried was removed with the seed's `shipping` entry.
 
-**`shipping_defaults.default_parcel_height_cm` is null and staying that way**
-until the owner gives the number — `20260809110000_parcel_defaults.sql` explains
-why guessing it is worse. Two consequences to expect while it is unset, both
-intended: `npm run audit:parcel` fails on that one check by design, and Pay on
-Delivery is refused shop-wide with delivery priced from
-`prepaid_estimate_fee_paise` and labelled an estimate. Neither is a regression
-and neither should be "fixed" by typing a height.
+**`shipping_defaults.default_parcel_height_cm`** was null by instruction until
+the owner gave the number. They did, in the Batch 3 brief: **10 cm**, written by
+`20260809150000_parcel_box_height.sql`, so a rebuilt database ships the owner's
+20 × 10 × 10 cm, 1000 g box and Pay on Delivery can quote.
