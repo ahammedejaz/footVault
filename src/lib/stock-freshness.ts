@@ -54,7 +54,13 @@ export function stockChanged(): void {
   updateTag(CATALOG_CACHE_TAG);
 }
 
-/** The same statement, from a Route Handler — the webhook is the only one. */
+/**
+ * The same statement, from a Route Handler — the webhook and the cron route.
+ * This comment used to say the webhook was the only one, and the cron route,
+ * added later, believed it and imported `stockChanged` instead: the first
+ * tick to actually cancel would have 500'd on `updateTag`'s Server-Action
+ * guard. A Route Handler that moves stock calls THIS one.
+ */
 export function stockChangedFromRoute(): void {
   revalidateTag(CATALOG_CACHE_TAG, { expire: 0 });
 }

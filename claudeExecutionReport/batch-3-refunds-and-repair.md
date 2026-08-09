@@ -237,9 +237,14 @@ day this cost.
 | `npm run shapes` | PASS (in CI on every push) |
 | `npm run rebuild:stage` | **PASS** — staging from empty, one command, every check green |
 | `audit:overflow` | **PASS** — 22 routes + 15 populated states × 6 widths (360/390/768/1024/1440/1920), 9,197 interactive elements: no overflow, no tap target under 44px, no input under 16px |
-| `audit:a11y` | <!-- A11Y --> |
-| remaining browser gates | <!-- BROWSER --> |
-| `audit:actions` / `audit:security` | <!-- SECURITY --> |
+| `audit:a11y` | **PASS** — axe, WCAG 2.2 A/AA, 22 routes + 15 states at 390 and 1440, zero violations |
+| `audit:keyboard` | PASS |
+| `audit:keyboard-checkout` | **PASS 17/17** — browse → bag → checkout → Pay-on-Delivery order (FV-2026-00062) → history, keyboard only, after the harness learned to press Space (below) |
+| `audit:focus` / `audit:gallery` / `audit:hydration` / `audit:links` / `audit:interactions` | PASS — interactions after its colourway wait was fixed (below) |
+| `audit:auth` | **PASS 11/11** — including "/admin is 200 for an admin", the check that exposed the six-harness find |
+| `audit:signedin` / `audit:admin` / `audit:admin-pages` | PASS / PASS / **PASS 56/56** — all re-run after the repoint, since their prior passes partly described the wrong database |
+| `audit:actions` | **PASS 89/89** — every admin action refuses customers and anonymous callers; the positive control runs |
+| `audit:security` | <!-- SECURITY --> |
 | Lighthouse (mobile, devtools throttling) | <!-- LIGHTHOUSE -->
 
 ---

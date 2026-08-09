@@ -2082,11 +2082,58 @@ async function main() {
      * default chain. What is asserted now is the real promise: the whole
      * mechanism, given six hours and a clear answer, returns the unit.
      */
+    /**
+     * The fixture's invented `order_sec…` id has to become a real one first.
+     * The reconciler asks Razorpay before cancelling, and for an id Razorpay
+     * never issued it answers 404 — which the route treats, correctly, as
+     * "could not verify, leave the order alone": an unverifiable order must
+     * never be cancelled on a guess. That refusal is the safety property, but
+     * it also means a fabricated id can never exercise the release path. A
+     * real shop cannot produce this case — every stored provider id was
+     * issued by Razorpay at checkout — so the fixture matches reality
+     * instead: a real order on the test account, which lists zero payments,
+     * which is the clear "nobody ever paid" the cancel needs.
+     */
+    const keyId = process.env.RAZORPAY_KEY_ID?.trim();
+    const keySecret = process.env.RAZORPAY_KEY_SECRET?.trim();
     const cronSecret = process.env.CRON_SECRET?.trim();
+    if (keyId && keySecret) {
+      const realOrder = await fetch("https://api.razorpay.com/v1/orders", {
+        method: "POST",
+        headers: {
+          Authorization: `Basic ${Buffer.from(`${keyId}:${keySecret}`).toString("base64")}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          amount: target.order.grandTotal,
+          currency: "INR",
+          receipt: `${target.order.orderNumber ?? "audit"}-release`,
+        }),
+      });
+      const realBody = (await realOrder.json()) as { id?: string };
+      if (realOrder.ok && realBody.id) {
+        const { error: repointError } = await admin
+          .from("payments")
+          .update({ provider_order_id: realBody.id })
+          .eq("order_id", target.order.orderId);
+        if (repointError) {
+          console.error(`  could not repoint payment row: ${repointError.message}`);
+        }
+      } else {
+        console.error(
+          `  could not create a real test-mode order: HTTP ${realOrder.status}`,
+        );
+      }
+    }
     if (!cronSecret) {
       skip(
         "a six-hour-old unpaid order gives its unit back to the catalog",
         "CRON_SECRET is not set, so the cron route cannot be invoked",
+      );
+    } else if (!keyId || !keySecret) {
+      skip(
+        "a six-hour-old unpaid order gives its unit back to the catalog",
+        "RAZORPAY keys are not set, so the reconciler cannot get a real answer",
       );
     } else {
       const release = await fetch(`${BASE}/api/cron/release-abandoned-orders`, {

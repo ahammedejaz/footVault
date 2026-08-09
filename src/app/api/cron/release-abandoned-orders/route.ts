@@ -6,7 +6,7 @@ import { recordAndApply } from "@/lib/payments/apply";
 import { fetchOrderPayments } from "@/lib/payments/razorpay";
 import { decideForOrder } from "@/lib/payments/reconcile";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { stockChanged } from "@/lib/stock-freshness";
+import { stockChangedFromRoute } from "@/lib/stock-freshness";
 
 /**
  * The half of the abandoned-order sweep that has to ask Razorpay first.
@@ -208,7 +208,16 @@ export async function POST(request: Request): Promise<NextResponse> {
     }
   }
 
-  if (tally.cancelled > 0) stockChanged();
+  /**
+   * The Route Handler variant, not `stockChanged()`. This line shipped with
+   * the Server-Action-only `updateTag` inside it, which throws in a route —
+   * so the first tick that actually *cancelled* something would have died
+   * with a 500 after the cancel, with pg_cron's caller reading only "the
+   * request was queued". Nothing in production ever cancelled through here
+   * before the gate drove this path end to end (Batch 3), which is the only
+   * reason the crash had never been seen.
+   */
+  if (tally.cancelled > 0) stockChangedFromRoute();
 
   console.info("[cron/release-abandoned] tick complete", tally);
   return NextResponse.json({ ok: true, ...tally });
