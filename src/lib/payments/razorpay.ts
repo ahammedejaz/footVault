@@ -77,18 +77,40 @@ const razorpayPaymentSchema = z.object({
   error_reason: z.string().nullable().optional(),
 });
 
+/**
+ * A refund entity, from the webhook or from `GET /payments/{id}/refunds`.
+ *
+ * `notes` is the awkward one: Razorpay serialises an empty notes object as
+ * `[]` and a populated one as a string map, so the union is not defensive
+ * paranoia, it is the wire format. Our own refunds carry `refund_row_id` in
+ * there — written by `createRazorpayRefund` — which is how an attempt whose
+ * response never arrived is matched back to its row.
+ */
+const razorpayRefundSchema = z.object({
+  id: z.string().min(1),
+  payment_id: z.string().min(1),
+  amount: z.number().int().nonnegative(),
+  currency: z.string().min(1),
+  status: z.string().min(1),
+  notes: z
+    .union([z.record(z.string(), z.unknown()), z.array(z.unknown())])
+    .optional(),
+});
+
+type RazorpayRefund = z.infer<typeof razorpayRefundSchema>;
 type RazorpayPayment = z.infer<typeof razorpayPaymentSchema>;
 type RazorpayOrder = z.infer<typeof razorpayOrderSchema>;
 
 /**
  * The webhook envelope. `payload` carries whichever entities the event
- * `contains`, so both are optional and the event type decides which is read.
+ * `contains`, so all are optional and the event type decides which is read.
  */
 const razorpayWebhookSchema = z.object({
   event: z.string().min(1),
   payload: z.object({
     payment: z.object({ entity: razorpayPaymentSchema }).optional(),
     order: z.object({ entity: razorpayOrderSchema }).optional(),
+    refund: z.object({ entity: razorpayRefundSchema }).optional(),
   }),
 });
 
@@ -418,6 +440,182 @@ export async function fetchOrderPayments(
   }
 
   return { ok: true, payments };
+}
+
+/* --------------------------------------------------------------- refunds -- */
+
+/**
+ * One refund, as this module reports it to the order code. Paise, INR-checked,
+ * with the provider's own status word carried verbatim.
+ */
+export type ProviderRefund = {
+  providerRefundId: string;
+  providerPaymentId: string;
+  amountPaise: number;
+  rawStatus: string;
+  /** Our `refunds.id`, if this refund was created by us and said so in notes. */
+  refundRowId: string | null;
+};
+
+export type CreateRefundResult =
+  | { ok: true; refund: ProviderRefund }
+  /**
+   * `unknown` is the dangerous arm and exists so no caller can flatten it into
+   * `failed`: the request may have executed at Razorpay after our timeout, in
+   * which case a refund exists that we have no id for. The caller must not
+   * retry blind — `fetchPaymentRefunds` finds the orphan by the
+   * `refund_row_id` note and reconciles it.
+   */
+  | { ok: false; state: "failed" | "unknown"; description: string };
+
+/**
+ * Move money back along a payment. `POST /payments/{id}/refund`.
+ *
+ * The amount is always sent explicitly — Razorpay treats an omitted amount as
+ * "refund everything left", and an API whose default is the maximum is not one
+ * to call with defaults. Partial refunds are the same call with a smaller
+ * number.
+ *
+ * `notes.refund_row_id` is our idempotency thread: the `refunds` row exists
+ * before this call (that ordering is the double-click guard), and stamping its
+ * id onto the provider's object means a lost response can be recovered by
+ * listing the payment's refunds rather than guessed at.
+ */
+export async function createRazorpayRefund(input: {
+  providerPaymentId: string;
+  amountPaise: number;
+  refundRowId: string;
+  orderNumber: string;
+}): Promise<CreateRefundResult> {
+  const amountPaise = assertPaise("razorpay.refund.amount", input.amountPaise);
+  if (!PROVIDER_ID.test(input.providerPaymentId)) {
+    return {
+      ok: false,
+      state: "failed",
+      description: "That payment id is not a Razorpay payment id.",
+    };
+  }
+
+  const result = await razorpayRequest(
+    "createRefund",
+    `/payments/${encodeURIComponent(input.providerPaymentId)}/refund`,
+    razorpayRefundSchema,
+    {
+      method: "POST",
+      body: {
+        amount: amountPaise,
+        notes: {
+          refund_row_id: input.refundRowId,
+          order_number: input.orderNumber,
+        },
+      },
+    },
+  );
+
+  if (!result.ok) {
+    // Status 0 is "the request never completed" — timeout, DNS, TLS. Razorpay
+    // may still have executed it. Everything else is Razorpay saying no,
+    // which is a real refusal and safe to record as one.
+    if (result.status === 0) {
+      return { ok: false, state: "unknown", description: result.description };
+    }
+    return { ok: false, state: "failed", description: result.description };
+  }
+
+  const refund = toProviderRefund(result.body);
+  if (!refund) {
+    // Non-INR. We never create non-INR payments, so this is unreachable short
+    // of an account-level surprise — but a refund we cannot account for in
+    // paise must not be recorded as though we could.
+    return {
+      ok: false,
+      state: "unknown",
+      description: "Razorpay answered with a currency this shop does not use.",
+    };
+  }
+
+  return { ok: true, refund };
+}
+
+/** Razorpay's collection envelope for `GET /payments/{id}/refunds`. */
+const razorpayRefundListSchema = z.object({
+  count: z.number().int().nonnegative(),
+  items: z.array(razorpayRefundSchema),
+});
+
+export type FetchRefundsResult =
+  | { ok: true; refunds: ProviderRefund[] }
+  | { ok: false; retryable: boolean; description: string };
+
+/**
+ * Every refund Razorpay holds against one payment.
+ *
+ * This is how a refund issued in the Razorpay dashboard — including any issued
+ * by hand before this code existed — stops being invisible: the import action
+ * lists them and records the ones the database has never heard of. It is also
+ * the recovery path for a `createRazorpayRefund` that timed out, via the
+ * `refund_row_id` note.
+ */
+export async function fetchPaymentRefunds(
+  providerPaymentId: string,
+): Promise<FetchRefundsResult> {
+  if (!PROVIDER_ID.test(providerPaymentId)) {
+    return {
+      ok: false,
+      retryable: false,
+      description: "That payment id is not a Razorpay payment id.",
+    };
+  }
+
+  const result = await razorpayRequest(
+    "fetchPaymentRefunds",
+    `/payments/${encodeURIComponent(providerPaymentId)}/refunds`,
+    razorpayRefundListSchema,
+  );
+
+  if (!result.ok) {
+    return {
+      ok: false,
+      retryable: !result.unknownId,
+      description: result.description,
+    };
+  }
+
+  const refunds: ProviderRefund[] = [];
+  for (const item of result.body.items) {
+    const refund = toProviderRefund(item);
+    // Null is the currency guard refusing. Dropped, same as everywhere else.
+    if (refund) refunds.push(refund);
+  }
+  return { ok: true, refunds };
+}
+
+/** INR-checked and paise-asserted, or null. The refund counterpart of `outcomeFromPayment`. */
+function toProviderRefund(refund: RazorpayRefund): ProviderRefund | null {
+  const amountPaise = inrPaiseOrNull(
+    "razorpay.refund.amount",
+    refund.amount,
+    refund.currency,
+  );
+  if (amountPaise === null) {
+    console.error("[razorpay] refund dropped: unexpected currency", {
+      refundId: refund.id,
+      currency: refund.currency,
+    });
+    return null;
+  }
+
+  const notes =
+    refund.notes && !Array.isArray(refund.notes) ? refund.notes : null;
+  const rowId = notes?.refund_row_id;
+
+  return {
+    providerRefundId: refund.id,
+    providerPaymentId: refund.payment_id,
+    amountPaise,
+    rawStatus: refund.status,
+    refundRowId: typeof rowId === "string" && rowId.length > 0 ? rowId : null,
+  };
 }
 
 /**
@@ -869,6 +1067,46 @@ export const razorpayAdapter: PaymentAdapter = {
             eventType: event,
             providerOrderId: order.id,
             outcome,
+          },
+        };
+      }
+
+      /**
+       * A refund settled, or didn't. The brief's rule is absolute — *"a refund
+       * is complete when the webhook says so, not when the API returns 200"* —
+       * and this arm is the only place "complete" can come from. The entity is
+       * the whole message: no order id, no outcome, so it gets its own verified
+       * shape rather than being squeezed into `PaymentOutcome`, which exists to
+       * move order state and must not be reachable from here.
+       */
+      case "refund.processed":
+      case "refund.failed": {
+        const refund = payload.refund?.entity;
+        if (!refund) {
+          return {
+            ok: false,
+            reason: "malformed",
+            message: `${event} carried no refund entity.`,
+          };
+        }
+        const provided = toProviderRefund(refund);
+        if (!provided) {
+          return {
+            ok: false,
+            reason: "malformed",
+            message: "Unexpected currency.",
+          };
+        }
+        return {
+          ok: true,
+          refund: {
+            eventId: webhookEventId(event, refund.id),
+            eventType: event,
+            providerRefundId: provided.providerRefundId,
+            providerPaymentId: provided.providerPaymentId,
+            amountPaise: provided.amountPaise,
+            rawStatus: provided.rawStatus,
+            refundRowId: provided.refundRowId,
           },
         };
       }

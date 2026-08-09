@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 
 import { OrderActions } from "@/components/admin/orders/order-actions";
+import { RefundPanel } from "@/components/admin/orders/refund-panel";
 import { ShipmentErrorNotice } from "@/components/admin/orders/shipment-error";
 import {
   ShippingPanel,
@@ -11,6 +12,7 @@ import {
 } from "@/components/admin/orders/shipping-panel";
 import { AdminPage, Chip, ORDER_STATUS_TONE, Panel, PageHeader } from "@/components/admin/ui";
 import { formatPaise } from "@/lib/format";
+import { refundPanelState } from "@/lib/orders/refunds";
 import {
   getOrderDetail,
   getOrderShipment,
@@ -42,7 +44,7 @@ export default async function AdminOrderDetailPage({
   const order = await getOrderDetail(id);
   if (!order) notFound();
 
-  const [shipmentRow, shipmentError] = await Promise.all([
+  const [shipmentRow, shipmentError, refundState] = await Promise.all([
     getOrderShipment(order.id),
     /**
      * Read even when there is no shipment row, which is the case that matters.
@@ -52,6 +54,13 @@ export default async function AdminOrderDetailPage({
      * the one with nothing to join to. Keyed by order for that reason.
      */
     getOrderShipmentError(order.id),
+    /**
+     * After the RLS-bound `getOrderDetail` has answered, deliberately: that
+     * null-check above is the page's authorisation, and the refund state —
+     * which reads with the service role because the webhook shares its module —
+     * is only computed once this caller has proved they can see the order.
+     */
+    refundPanelState(id),
   ]);
 
   /**
@@ -170,6 +179,21 @@ export default async function AdminOrderDetailPage({
               </div>
             </div>
           </Panel>
+
+          {/*
+            Directly under the money, because it is the other half of the same
+            question. Only drawn when something was actually captured — a COD
+            order whose advance never settled has nothing to give back, and an
+            empty refund panel would read as a broken one.
+          */}
+          {refundState && refundState.capturedPaise > 0 ? (
+            <Panel
+              title="The money back"
+              description="Computed from the order's stage — the amount is never typed. A refund is done when Razorpay's webhook confirms it, not when the button answers."
+            >
+              <RefundPanel orderId={order.id} state={refundState} />
+            </Panel>
+          ) : null}
 
           <Panel
             title="Shipping"
