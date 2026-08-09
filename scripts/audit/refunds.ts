@@ -426,12 +426,40 @@ async function main(): Promise<void> {
     }
   } finally {
     /* ── leave staging as found ──────────────────────────────────────────── */
+    // Deletion order honours the FKs: refunds RESTRICT their order, so they go
+    // first. Each error is printed and counted as a failure — a cleanup that
+    // silently leaves fixtures is how a QA order ends up in a report.
+    const swept = (table: string, error: { message: string } | null): void => {
+      if (!error) return;
+      failures++;
+      console.error(`  FAIL  cleanup of ${table}: ${error.message}`);
+    };
     for (const orderId of cleanup) {
-      await db.from("refunds").delete().eq("order_id", orderId);
-      await db.from("payment_events").delete().eq("order_id", orderId);
-      await db.from("order_status_history").delete().eq("order_id", orderId);
-      await db.from("payments").delete().eq("order_id", orderId);
-      await db.from("orders").delete().eq("id", orderId);
+      const { error: refundsError } = await db
+        .from("refunds")
+        .delete()
+        .eq("order_id", orderId);
+      swept("refunds", refundsError);
+      const { error: eventsError } = await db
+        .from("payment_events")
+        .delete()
+        .eq("order_id", orderId);
+      swept("payment_events", eventsError);
+      const { error: historyError } = await db
+        .from("order_status_history")
+        .delete()
+        .eq("order_id", orderId);
+      swept("order_status_history", historyError);
+      const { error: paymentsError } = await db
+        .from("payments")
+        .delete()
+        .eq("order_id", orderId);
+      swept("payments", paymentsError);
+      const { error: ordersError } = await db
+        .from("orders")
+        .delete()
+        .eq("id", orderId);
+      swept("orders", ordersError);
     }
   }
 

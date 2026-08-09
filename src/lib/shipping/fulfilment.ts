@@ -3,6 +3,10 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import type { Database, Json } from "@/lib/database.types";
+import {
+  detectRtoFromTracking,
+  isRtoTrackingStatus,
+} from "@/lib/orders/rto";
 import { shiprocketFetch, type ShiprocketResult } from "@/lib/shipping/client";
 import { shiprocketPickupLocation } from "@/lib/shipping/config";
 import {
@@ -862,6 +866,32 @@ export async function fetchTracking(
         "[shiprocket] could not record delivery on the order:",
         orderError.message,
       );
+  }
+
+  /**
+   * RTO detection — Batch 3.3. The courier saying "RTO …" is the one tracking
+   * status this module acts on beyond caching, because it is the moment the
+   * shop stops owing a delivery and starts expecting a parcel back.
+   *
+   * `shipment.rto_at` is the cheap pre-filter: once detection has stamped it,
+   * every later poll of the same returning parcel skips the call entirely. The
+   * real guards — order still `shipped`, `orders.rto_at` still null, the
+   * compare-and-swap that lets exactly one of two concurrent polls transition
+   * — live inside `detectRtoFromTracking`, which is idempotent on its own and
+   * repairs a half-written stamp if a previous poll failed partway.
+   *
+   * Best-effort, like every write in this step: the tracking read *succeeded*,
+   * and failing the whole step because our own detection write hiccuped would
+   * tell the admin the courier could not be reached, which is false. The next
+   * poll retries — the pre-filter only skips once `shipments.rto_at` is
+   * actually written, which detection does last.
+   */
+  if (isRtoTrackingStatus(tracking.status) && !shipment.rto_at) {
+    try {
+      await detectRtoFromTracking(orderId, tracking.status ?? "RTO");
+    } catch (thrown) {
+      console.error("[shiprocket] RTO detection failed:", thrown);
+    }
   }
 
   await clearShipmentError(supabase, orderId);

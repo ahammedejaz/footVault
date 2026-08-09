@@ -383,9 +383,10 @@ and creates a real parcel.
 **Admin panel → Orders.** Every order, newest first. Search by order number,
 phone or email. Filter by status.
 
-There is no single-order screen yet, so anything that needs opening one order —
-recording a replacement, pressing the Shiprocket buttons, adding a note — cannot
-be done from the panel today.
+Click an order to open it. The single-order screen carries the money summary,
+the refund panel (§3), the Shiprocket buttons, the RTO panel when a parcel is
+coming back (below), replacements and notes. The claim that used to sit in this
+paragraph — that no such screen existed — was three phases stale.
 
 A customer sees their own orders at **/account/orders**. You cannot see somebody
 else's that way, even as an admin. That is deliberate.
@@ -400,14 +401,39 @@ else's that way, even as an admin. That is deliberate.
 | `shipped` | It is with the courier |
 | `delivered` | It arrived. **This is when the 24-hour replacement clock starts** |
 | `cancelled` | It will not happen. Cancelling puts the shoes back on the shelf automatically |
-| `returned` | It came back |
+| `returning` | The courier reported the parcel is coming back to you — refused at the door, undeliverable, or cancelled in transit. It is in a van, not on your shelf |
+| `returned` | It is physically back with you |
 
 `cancelled` and `returned` are final. An order that has to come back from either
 is a new order, not an edited one.
 
-**A returned pair does not go back into stock by itself.** It has to be looked at
-first, and putting it back automatically would sell a damaged shoe to the next
-customer. Put it back by hand from the Inventory screen once you have checked it.
+### When a parcel comes back (RTO)
+
+The shop notices on its own: when tracking is refreshed and the courier's
+status says RTO, the order moves to `returning` and appears under **Returns to
+origin** in the menu. Nothing else happens automatically — and that is the
+design, because parcels are lost and damaged on the way back, and restocking on
+a courier's say-so invents stock you do not have.
+
+When the box is physically in your hands, open the order:
+
+1. **Mark it received**, and say whether the contents are **fine** or
+   **damaged**. Damaged needs a note — what you found is the only record there
+   will be.
+2. If it was fine, press **Put the stock back**. The pairs return to the shelf
+   and the stock ledger records each one, with your name on the entry. The
+   button is safe to press twice; the second press tells you it is already
+   done.
+3. If it was damaged, there is nothing to press — the write-off is the note
+   you just made, and damaged pairs never re-enter stock.
+4. **Type in what Shiprocket actually charged** for the return journey, from
+   their panel, next to the estimate the site quoted. Refunds for the customer
+   compute from the actual figure once you have entered it.
+
+The **Returns to origin** screen totals what coming-back parcels are costing
+you, shows which PIN codes they come from, and flags any phone number that has
+done it more than once — those are the customers to stop offering Pay on
+Delivery to (§1).
 
 ### Orders that cancel themselves
 
@@ -420,10 +446,11 @@ It never touches an order where money is genuinely in flight.
 
 ### Cancelling and status changes
 
-Both need somebody with database access today, because the order screen does not
-exist. Ask your developer, and tell them the order number. **Never cancel a paid
-order by editing it directly** — cancelling has to put the stock back exactly
-once, and there is a proper way to do it that does.
+Both are buttons on the order screen now, and only the legal next steps are
+drawn. Cancelling a **paid** order refuses until the money is dealt with — the
+message points you at the refund panel with the exact amount. **Never ask for
+an order to be edited directly in the database** — cancelling has to put the
+stock back exactly once, and the buttons go through the machinery that does.
 
 ---
 

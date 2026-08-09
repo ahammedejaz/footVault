@@ -718,3 +718,19 @@ returning 200. A refund Razorpay knows and the database does not — issued from
 their dashboard — becomes a row the moment its webhook or the order page's
 import runs; `payment_events` dedupes deliveries under the derived
 `refund.processed:rfnd_x` key, so a replay is one refund, also proven.
+
+### `restock_rto_order`
+
+| | |
+|---|---|
+| Signature | `restock_rto_order(p_order_id uuid, p_actor uuid) returns text` |
+| Verdicts | `restocked` / `not_found` / `already_restocked` / `wrong_status` / `not_received` / `damaged` |
+| Grants | `service_role` only, like every order-mutating function |
+
+The stock from a returned parcel, back on the shelf exactly once. Locks the
+order row so two presses serialise; refuses unless the order is `returned`,
+physically received, and inspected `ok`; attributes each `inventory_movements`
+row (reason `rto_return`) to the pressing admin through the same
+transaction-local GUCs the cancel path uses. A damaged parcel never reaches the
+stock update — its units left the ledger at sale and a write-off means they
+never re-enter, so the ledger reconciles without a row. `20260809170000`.
