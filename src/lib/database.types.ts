@@ -449,6 +449,7 @@ export type Database = {
           forward_error: string | null
           forwarded_at: string | null
           from_address: string | null
+          last_attempt_at: string | null
           received_at: string
           subject: string | null
           svix_id: string | null
@@ -459,6 +460,7 @@ export type Database = {
           forward_error?: string | null
           forwarded_at?: string | null
           from_address?: string | null
+          last_attempt_at?: string | null
           received_at?: string
           subject?: string | null
           svix_id?: string | null
@@ -469,6 +471,7 @@ export type Database = {
           forward_error?: string | null
           forwarded_at?: string | null
           from_address?: string | null
+          last_attempt_at?: string | null
           received_at?: string
           subject?: string | null
           svix_id?: string | null
