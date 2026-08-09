@@ -5,6 +5,7 @@ import { stockChanged } from "@/lib/stock-freshness";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import type { Database } from "@/lib/database.types";
+import { sendDelivered, sendShipped } from "@/lib/email";
 import { canTransition, type OrderStatus } from "@/lib/orders/types";
 import { maybeRow, rows } from "@/lib/queries/run";
 
@@ -48,6 +49,92 @@ export type TransitionResult =
  * something rewriting the order in a loop, and spinning is the wrong answer.
  */
 const CAS_ATTEMPTS = 3;
+
+/**
+ * Tell the customer their parcel moved.
+ *
+ * **Never allowed to matter.** The order has already changed status by the time
+ * this runs; a missing shipment row, a customer who checked out with no email,
+ * or a dead mail provider all end here as a log line at worst. The owner has
+ * booked a real courier pickup — failing their action because of an email would
+ * be the tail wagging the dog.
+ *
+ * Tracking is read from `shipments` and every field of it is optional. An AWB is
+ * assigned by a separate Shiprocket call from the one that books the pickup, so
+ * a parcel can legitimately be `shipped` with no tracking number yet; the
+ * template renders that case as "a tracking number usually appears within a
+ * day" rather than printing a null.
+ */
+async function notifyStatusChange(
+  supabase: SupabaseClient<Database>,
+  orderId: string,
+  to: "shipped" | "delivered",
+): Promise<void> {
+  try {
+    const order = await maybeRow<{
+      order_number: string;
+      contact_email: string | null;
+      balance_due_on_delivery: number | null;
+      shipping_address: { recipientName?: string } | null;
+    }>(
+      "notifyStatusChange.order",
+      supabase
+        .from("orders")
+        .select(
+          "order_number, contact_email, balance_due_on_delivery, shipping_address",
+        )
+        .eq("id", orderId)
+        .maybeSingle(),
+    );
+    if (!order?.contact_email) return;
+
+    const customerName = order.shipping_address?.recipientName ?? "there";
+
+    if (to === "delivered") {
+      await sendDelivered({
+        orderNumber: order.order_number,
+        to: order.contact_email,
+        customerName,
+      });
+      return;
+    }
+
+    const shipment = await maybeRow<{
+      awb_code: string | null;
+      courier_name: string | null;
+    }>(
+      "notifyStatusChange.shipment",
+      supabase
+        .from("shipments")
+        .select("awb_code, courier_name")
+        .eq("order_id", orderId)
+        .maybeSingle(),
+    );
+
+    await sendShipped({
+      orderNumber: order.order_number,
+      to: order.contact_email,
+      customerName,
+      courierName: shipment?.courier_name ?? null,
+      trackingNumber: shipment?.awb_code ?? null,
+      /*
+        Shiprocket's public tracker takes the AWB, so the link is derived rather
+        than stored. No AWB means no link — never a URL ending in "null", which
+        is the shape of a tracking link that makes a customer think the shop has
+        lost their parcel.
+      */
+      trackingUrl: shipment?.awb_code
+        ? `https://shiprocket.co/tracking/${encodeURIComponent(shipment.awb_code)}`
+        : null,
+      balanceDueOnDelivery: order.balance_due_on_delivery ?? 0,
+    });
+  } catch (error) {
+    console.error(
+      `[email] ${to} notice failed for order ${orderId}: ` +
+        (error instanceof Error ? error.message : "unknown"),
+    );
+  }
+}
 
 export async function transitionOrder(args: {
   /** The caller's RLS client. `admins update orders` is what lets this through. */
@@ -237,6 +324,23 @@ export async function transitionOrder(args: {
         "[admin] order moved but its history row failed:",
         historyError.message,
       );
+    }
+
+    /*
+      The two status changes a customer is told about.
+
+      Hooked here rather than in the admin actions because this is the only
+      function that moves an order between statuses — `schedulePickupForOrder`
+      reaches `shipped` through it, `setOrderStatus` reaches `delivered` through
+      it, and anything added later gets the email without having to remember to.
+      Wiring the two call sites instead would be two places to forget, and the
+      one that gets forgotten is the one nobody notices for a month.
+
+      Inside the CAS, after the swap that won, so a losing attempt cannot send.
+      Never allowed to matter — see `notifyStatusChange`.
+    */
+    if (to === "shipped" || to === "delivered") {
+      await notifyStatusChange(supabase, orderId, to);
     }
 
     return { ok: true, status: to, restocked: false };

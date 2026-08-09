@@ -1,6 +1,7 @@
 import "server-only";
 
 import type { Database } from "@/lib/database.types";
+import { sendRefunded } from "@/lib/email";
 import { formatPaise } from "@/lib/format";
 import { REFUND_ARRIVAL_WINDOW } from "@/lib/orders/customer-copy";
 import {
@@ -849,6 +850,89 @@ async function afterSettle(
         `Refunds usually take ${REFUND_ARRIVAL_WINDOW} to arrive.`
       : null,
   );
+
+  /*
+    The refund email, on the same asymmetry as the timeline note above and for
+    the same reason: a **confirmed** refund is worth an email, a failed one is
+    not. This is also the one email in the system whose trigger had to be chosen
+    rather than being obvious — sending on the admin's refund *request* would
+    tell a customer their money was coming back on the strength of an API call
+    that can still fail.
+
+    It runs after the history row, so the customer's order page and their inbox
+    cannot disagree, and it cannot throw: `notifyRefundProcessed` swallows.
+  */
+  if (settledStatus === "processed") {
+    await notifyRefundProcessed(admin, orderId, provided.amountPaise);
+  }
+}
+
+/**
+ * Tell the customer the refund settled.
+ *
+ * Whether it was the *whole* order is recomputed here rather than passed in,
+ * because `afterSettle` has already established both figures and a partial
+ * refund that claims to settle the order is the kind of sentence that generates
+ * a support thread. Captured minus processed is the same arithmetic the cancel
+ * guard uses, so the email and the guard cannot disagree about what is
+ * outstanding.
+ *
+ * **Never allowed to matter.** The money has already moved.
+ */
+async function notifyRefundProcessed(
+  admin: ReturnType<typeof createAdminClient>,
+  orderId: string,
+  amountPaise: number,
+): Promise<void> {
+  try {
+    const order = await maybeRow<{
+      order_number: string;
+      contact_email: string | null;
+      shipping_address: { recipientName?: string } | null;
+    }>(
+      "refunds.notify.order",
+      admin
+        .from("orders")
+        .select("order_number, contact_email, shipping_address")
+        .eq("id", orderId)
+        .maybeSingle(),
+    );
+    if (!order?.contact_email) return;
+
+    const [payments, refunds] = await Promise.all([
+      rows<{ amount: number }>(
+        "refunds.notify.captured",
+        admin
+          .from("payments")
+          .select("amount")
+          .eq("order_id", orderId)
+          .eq("status", "captured"),
+      ),
+      rows<{ amount_paise: number }>(
+        "refunds.notify.processed",
+        admin
+          .from("refunds")
+          .select("amount_paise")
+          .eq("order_id", orderId)
+          .eq("status", "processed"),
+      ),
+    ]);
+    const captured = payments.reduce((sum, row) => sum + row.amount, 0);
+    const processed = refunds.reduce((sum, row) => sum + row.amount_paise, 0);
+
+    await sendRefunded({
+      orderNumber: order.order_number,
+      to: order.contact_email,
+      customerName: order.shipping_address?.recipientName ?? "there",
+      amountPaise,
+      isFull: captured > 0 && processed >= captured,
+    });
+  } catch (error) {
+    console.error(
+      `[email] refund notice failed for order ${orderId}: ` +
+        (error instanceof Error ? error.message : "unknown"),
+    );
+  }
 }
 
 /**

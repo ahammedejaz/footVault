@@ -1,6 +1,7 @@
 import "server-only";
 
 import type { Database } from "@/lib/database.types";
+import { sendPaymentCaptured } from "@/lib/email";
 import {
   canTransition,
   isTerminalStatus,
@@ -358,6 +359,58 @@ async function releaseClaim(
   }
 }
 
+/**
+ * Tell the customer the payment settled.
+ *
+ * A second read rather than widening the CAS select: the loop's query is on the
+ * hot path of a webhook and re-runs up to three times, and none of these five
+ * columns has anything to do with the decision. This runs once, after the row
+ * has already moved, so its cost is paid on the transition rather than on every
+ * attempt.
+ *
+ * **Never allowed to matter.** A missing address, a missing email, a dead mail
+ * provider — all of them end here with a log line. The customer's money has
+ * moved and their order is confirmed; nothing about that may depend on an email.
+ */
+async function notifyPaymentCaptured(
+  admin: ReturnType<typeof createAdminClient>,
+  orderId: string,
+  amountPaise: number,
+): Promise<void> {
+  try {
+    const order = await maybeRow<{
+      order_number: string;
+      contact_email: string | null;
+      balance_due_on_delivery: number | null;
+      shipping_address: { recipientName?: string } | null;
+    }>(
+      "notifyPaymentCaptured.order",
+      admin
+        .from("orders")
+        .select(
+          "order_number, contact_email, balance_due_on_delivery, shipping_address",
+        )
+        .eq("id", orderId)
+        .maybeSingle(),
+    );
+
+    if (!order?.contact_email) return;
+
+    await sendPaymentCaptured({
+      orderNumber: order.order_number,
+      to: order.contact_email,
+      customerName: order.shipping_address?.recipientName ?? "there",
+      amountPaise,
+      balanceDueOnDelivery: order.balance_due_on_delivery ?? 0,
+    });
+  } catch (error) {
+    console.error(
+      `[email] payment-captured notice failed for order ${orderId}: ` +
+        (error instanceof Error ? error.message : "unknown"),
+    );
+  }
+}
+
 export async function applyPaymentOutcome(input: {
   eventId: string;
   provider: "cod" | "razorpay";
@@ -552,6 +605,27 @@ export async function applyPaymentOutcome(input: {
         message: settled.illegal,
       };
     }
+
+    /*
+      The customer's "we have your money" email.
+
+      Gated on `customerNote`, which `decide()` sets only on the branch that
+      actually moved a pending order to confirmed. That is deliberately the
+      narrowest possible trigger: a duplicate delivery loses the compare-and-swap
+      and re-decides against `confirmed`, which produces no customerNote, so a
+      redelivered webhook cannot email the same customer twice.
+
+      It runs after `payment_events` is settled, so a mail failure cannot make us
+      return non-2xx to Razorpay and have a delivered payment redelivered.
+    */
+    if (settled.customerNote) {
+      await notifyPaymentCaptured(
+        admin,
+        payment.order_id,
+        input.outcome.amountPaise,
+      );
+    }
+
     return {
       applied: true,
       status: settled.status,

@@ -6,7 +6,7 @@ import { saveAddress as saveAddressToBook } from "@/lib/actions/address";
 import { getCurrentUser } from "@/lib/auth";
 import { stockChanged } from "@/lib/stock-freshness";
 import { readGuestToken } from "@/lib/cart/token";
-import { sendOrderConfirmation } from "@/lib/email";
+import { sendOrderConfirmation, sendOwnerNewOrder } from "@/lib/email";
 import {
   CHECKOUT_SQLSTATE,
   describeOutOfStock,
@@ -508,10 +508,14 @@ export async function placeOrder(
       method,
       lines: cart.lines.map((line) => ({
         productName: line.productName,
+        sku: line.sku,
+        colour: line.color,
         size: line.size,
         quantity: line.quantity,
         lineTotal: line.lineTotal,
       })),
+      contactPhone: address.phone,
+      contactEmail: data.contactEmail ?? user?.email ?? null,
       subtotal: order.subtotal,
       discountTotal: totals.discountTotal,
       prepaidDiscount: totals.prepaidDiscount,
@@ -819,8 +823,76 @@ async function rollBackUnpaidOrder(
   }
 }
 
-/** Never allowed to matter. See src/lib/email/index.ts. */
+/**
+ * Both emails a new order sends, and neither is allowed to matter.
+ *
+ * **Concurrent, not sequential.** Each adapter call has its own eight-second
+ * timeout, so awaiting them one after the other would put sixteen seconds of
+ * worst case between a customer's payment and their confirmation screen. They
+ * are independent messages to different people; nothing about the owner's copy
+ * depends on the customer's having gone out.
+ *
+ * `allSettled` rather than `all` for the same reason stated everywhere else in
+ * this seam: `dispatch` already swallows, but a rejection escaping here would
+ * surface as a failed checkout for an order that exists and is paid for.
+ */
 async function confirmByEmail(args: {
+  orderNumber: string;
+  to: string | null;
+  customerName: string;
+  method: PaymentMethod;
+  lines: {
+    productName: string;
+    sku: string;
+    colour: string;
+    size: string;
+    quantity: number;
+    lineTotal: number;
+  }[];
+  subtotal: number;
+  discountTotal: number;
+  prepaidDiscount: number;
+  shippingFee: number;
+  codHandlingFee: number;
+  grandTotal: number;
+  advanceAmount: number;
+  balanceDueOnDelivery: number;
+  address: ShippingAddress;
+  contactPhone: string;
+  contactEmail: string | null;
+}): Promise<void> {
+  await Promise.allSettled([
+    confirmToCustomer(args),
+    /*
+      The owner's copy goes out on the order being *placed*, not on payment
+      settling. A Pay-on-Delivery order is real the moment it exists, and a
+      prepaid order whose webhook is slow is still one the owner wants to know
+      about — the alternative is an owner who first hears about an order when
+      the customer chases it.
+    */
+    sendOwnerNewOrder({
+      orderNumber: args.orderNumber,
+      placedAt: new Date().toISOString(),
+      paymentMethod: args.method,
+      lines: args.lines.map((line) => ({
+        productName: line.productName,
+        sku: line.sku,
+        size: line.size,
+        colour: line.colour,
+        quantity: line.quantity,
+      })),
+      shippingAddress: args.address,
+      grandTotal: args.grandTotal,
+      advanceAmount: args.advanceAmount,
+      balanceDueOnDelivery: args.balanceDueOnDelivery,
+      contactPhone: args.contactPhone,
+      contactEmail: args.contactEmail,
+    }),
+  ]);
+}
+
+/** Never allowed to matter. See src/lib/email/index.ts. */
+async function confirmToCustomer(args: {
   orderNumber: string;
   to: string | null;
   customerName: string;
