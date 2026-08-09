@@ -3,6 +3,7 @@ import type { EmailMessage } from "@/lib/email/types";
 import type { OrderTotals, ShippingAddress } from "@/lib/orders/types";
 import type { PaymentMethod } from "@/lib/payments/types";
 import { SITE_URL } from "@/lib/env";
+import { REPLY_TO } from "@/lib/email/shared";
 
 /**
  * The one email Phase 5 sends.
@@ -214,5 +215,6 @@ export function buildOrderConfirmationEmail(
     subject: `Order ${input.orderNumber} confirmed — Foot Vault`,
     text,
     html,
+    replyTo: REPLY_TO,
   };
 }

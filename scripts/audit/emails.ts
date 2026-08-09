@@ -165,10 +165,44 @@ for (const [name, message] of built) {
   );
 }
 
-/* -------------------------------------------------------- 2 · escaping -- */
+/* ------------------------------------------------------- 2 · reply-to -- */
 
 console.log(
-  "\n[1m2 · anything a customer typed is escaped in the HTML part[0m",
+  "\n\u001b[1m3 \u00b7 every email can be replied to by a human\u001b[0m",
+);
+
+/*
+ * There is no mailbox at footvault.in. The domain accepts mail — Resend
+ * Inbound is enabled on it — but that mail lands in a dashboard, so a customer
+ * who hits reply on any of these is writing to nobody, and nothing about it
+ * looks like a failure: the send succeeded, the delivery succeeded, and the
+ * reply is gone.
+ *
+ * Checked over `built`, which is every builder in the module, so a seventh
+ * template added next month fails here rather than shipping without it. That
+ * is the whole reason this is a gate and not a code review comment.
+ *
+ * The window makes it concrete: damage has to be claimed within 24 hours of
+ * delivery, and the delivered notice is the email the customer is holding when
+ * they open the box.
+ */
+for (const [name, message] of built) {
+  check(
+    `${name}: sets a reply-to`,
+    Boolean(message.replyTo),
+    message.replyTo ?? "unset — a reply to this email reaches nobody",
+  );
+  check(
+    `${name}: the reply-to is a real mailbox, not the sending domain`,
+    Boolean(message.replyTo) && !message.replyTo!.endsWith("@footvault.in"),
+    message.replyTo ?? "unset",
+  );
+}
+
+/* -------------------------------------------------------- 3 · escaping -- */
+
+console.log(
+  "\n[1m3 · anything a customer typed is escaped in the HTML part[0m",
 );
 
 /*
@@ -191,10 +225,10 @@ check(
   confirmation.html.includes("&quot;Infrared&quot;"),
 );
 
-/* --------------------------------------------------- 3 · the arithmetic -- */
+/* --------------------------------------------------- 4 · the arithmetic -- */
 
 console.log(
-  "\n[1m3 · the confirmation's own lines sum to the total it prints[0m",
+  "\n[1m4 · the confirmation's own lines sum to the total it prints[0m",
 );
 
 /*
@@ -230,10 +264,10 @@ check(
   !noDiscount.text.includes("Paying online"),
 );
 
-/* ------------------------------------------------- 4 · missing tracking -- */
+/* ------------------------------------------------- 5 · missing tracking -- */
 
 console.log(
-  "\n[1m4 · shipped survives having no tracking yet[0m",
+  "\n[1m5 · shipped survives having no tracking yet[0m",
 );
 
 /*
@@ -269,10 +303,10 @@ check(
   /tracking number usually appears/i.test(untracked.text),
 );
 
-/* ------------------------------------------------ 5 · what the courier collects -- */
+/* ------------------------------------------------ 6 · what the courier collects -- */
 
 console.log(
-  "\n[1m5 · the owner's copy always states the cash figure[0m",
+  "\n[1m6 · the owner's copy always states the cash figure[0m",
 );
 
 const ownerCod = built[5]![1];
@@ -314,9 +348,9 @@ check(
   ownerCod.text.includes("12 MG Road") && ownerCod.text.includes("560001"),
 );
 
-/* ----------------------------------------------------- 6 · failing soft -- */
+/* ----------------------------------------------------- 7 · failing soft -- */
 
-console.log("\n[1m6 · a broken provider never throws at the caller[0m");
+console.log("\n[1m7 · a broken provider never throws at the caller[0m");
 
 /*
  * The rule the whole seam exists for. Asserted against the contract rather than

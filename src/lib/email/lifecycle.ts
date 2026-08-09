@@ -6,6 +6,7 @@ import {
   orderUrl,
   REFUND_ARRIVAL_WINDOW,
   replacementPolicy,
+  REPLY_TO,
   SIGN_OFF,
 } from "@/lib/email/shared";
 import type { ShippingAddress } from "@/lib/orders/types";
@@ -96,6 +97,7 @@ export function buildPaymentCapturedEmail(
     subject: `Payment received for order ${input.orderNumber} — Foot Vault`,
     text,
     html,
+    replyTo: REPLY_TO,
   };
 }
 
@@ -184,6 +186,7 @@ export function buildShippedEmail(input: ShippedInput): EmailMessage {
     subject: `Order ${input.orderNumber} has shipped — Foot Vault`,
     text,
     html,
+    replyTo: REPLY_TO,
   };
 }
 
@@ -232,6 +235,7 @@ export function buildDeliveredEmail(input: DeliveredInput): EmailMessage {
     subject: `Order ${input.orderNumber} delivered — Foot Vault`,
     text,
     html,
+    replyTo: REPLY_TO,
   };
 }
 
@@ -289,6 +293,7 @@ export function buildRefundedEmail(input: RefundedInput): EmailMessage {
     subject: `Refund sent for order ${input.orderNumber} — Foot Vault`,
     text,
     html,
+    replyTo: REPLY_TO,
   };
 }
 
@@ -397,5 +402,6 @@ export function buildOwnerNewOrderEmail(
     subject: `New order ${input.orderNumber} — ${collects}`,
     text,
     html,
+    replyTo: REPLY_TO,
   };
 }
