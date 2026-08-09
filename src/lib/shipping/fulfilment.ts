@@ -2,10 +2,13 @@ import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import type { Database } from "@/lib/database.types";
+import type { Database, Json } from "@/lib/database.types";
 import { shiprocketFetch, type ShiprocketResult } from "@/lib/shipping/client";
 import { shiprocketPickupLocation } from "@/lib/shipping/config";
-import { shippingDefaults } from "@/lib/shipping/quote";
+import {
+  ParcelDefaultsIncompleteError,
+  shippingDefaults,
+} from "@/lib/shipping/quote";
 import { maybeRow, rows } from "@/lib/queries/run";
 
 /**
@@ -52,6 +55,98 @@ export async function getShipment(
       .eq("order_id", orderId)
       .maybeSingle(),
   );
+}
+
+/* --------------------------------------------------- why it last failed -- */
+
+/**
+ * The reason the last attempt did not work, kept where the owner can read it
+ * tomorrow.
+ *
+ * Until now a failed step's only trace was a toast. `outcome.message` — which is
+ * usually Shiprocket's own sentence, and usually the actionable one, "Wrong
+ * Pickup location entered" rather than anything this file could write instead —
+ * reached the admin's browser and nowhere else. Reload the page and the shop
+ * knew nothing except that the parcel had not gone out.
+ *
+ * It lives in `shipment_errors`, keyed by order, rather than in columns on
+ * `shipments`. The migration comment on `20260809120000_shipment_errors.sql`
+ * carries the full reasoning; the short version is that `createShipment`
+ * deletes its own row on failure and that delete must stay, and that a customer
+ * can read `shipments` but has no business reading errors about the shop's
+ * Shiprocket account.
+ *
+ * Every write below is best-effort. Losing the note is bad; failing a fulfilment
+ * step that already succeeded at the courier because we could not write the note
+ * is worse.
+ */
+
+export type ShipmentErrorRow = {
+  order_id: string;
+  step: string;
+  /** Shiprocket's own words, stored verbatim and rendered verbatim. */
+  message: string;
+  /** The whole response body: what we were told, beside what we understood. */
+  detail: Json | null;
+  failed_at: string;
+};
+
+export async function getShipmentError(
+  supabase: Db,
+  orderId: string,
+): Promise<ShipmentErrorRow | null> {
+  return maybeRow<ShipmentErrorRow>(
+    "shipping.getShipmentError",
+    supabase
+      .from("shipment_errors")
+      .select("*")
+      .eq("order_id", orderId)
+      .maybeSingle(),
+  );
+}
+
+/**
+ * One row per order, replaced by each new failure.
+ *
+ * Not appended to: the question the owner is asking is "why is this parcel not
+ * moving", which has one answer at a time. What was *tried* is already in
+ * `shipment_events`, and a second append-only table would be a second place to
+ * look for the same incident.
+ */
+async function recordShipmentError(
+  supabase: Db,
+  orderId: string,
+  step: FulfilmentStep,
+  message: string,
+  detail: unknown,
+): Promise<void> {
+  const { error } = await supabase
+    .from("shipment_errors")
+    .upsert(
+      {
+        order_id: orderId,
+        step,
+        message,
+        detail: (detail ?? null) as Json,
+        failed_at: new Date().toISOString(),
+      },
+      { onConflict: "order_id" },
+    );
+  if (error)
+    console.error("[shiprocket] could not record why the step failed:", error.message);
+}
+
+/** A step that worked clears it. A row present means something is wrong *now*. */
+async function clearShipmentError(
+  supabase: Db,
+  orderId: string,
+): Promise<void> {
+  const { error } = await supabase
+    .from("shipment_errors")
+    .delete()
+    .eq("order_id", orderId);
+  if (error)
+    console.error("[shiprocket] could not clear the last error:", error.message);
 }
 
 /* ------------------------------------------------------------ 1 · create -- */
@@ -140,7 +235,41 @@ export async function createShipment(
     }
   }
 
-  const defaults = await shippingDefaults();
+  /**
+   * The shop's default parcel, which now refuses rather than guesses.
+   *
+   * `shippingDefaults()` used to answer a half-filled settings row with a 900g
+   * box nobody had chosen. It throws instead, and this is the call site where
+   * that lands hardest: the claim row has already been inserted, so an
+   * uncaught throw here would leave a shipment stuck at `creating` that no
+   * retry could get past, and the owner would see a generic action failure with
+   * no hint that the cause was one empty field on their own settings page.
+   *
+   * So it is caught, the claim is given back exactly as it is for a Shiprocket
+   * refusal, and the error is recorded with the field names in it. `.missing`
+   * goes into `detail` because "which field" is the whole of the fix.
+   */
+  let defaults: Awaited<ReturnType<typeof shippingDefaults>>;
+  try {
+    defaults = await shippingDefaults();
+  } catch (error) {
+    if (!existing) await releaseClaim(supabase, order.id);
+    const message =
+      error instanceof ParcelDefaultsIncompleteError
+        ? error.message
+        : "The shop's parcel defaults could not be read, so nothing was sent to Shiprocket.";
+    await recordShipmentError(
+      supabase,
+      order.id,
+      "create",
+      message,
+      error instanceof ParcelDefaultsIncompleteError
+        ? { missing: error.missing }
+        : null,
+    );
+    return { ok: false, step: "create", message };
+  }
+
   const weights = await productWeights(
     supabase,
     order.items
@@ -224,6 +353,14 @@ export async function createShipment(
     // Give the claim back so the next press starts clean rather than finding a
     // half-made row it cannot get past.
     if (!existing) await releaseClaim(supabase, order.id);
+    // The row is going away; the reason is not. See recordShipmentError.
+    await recordShipmentError(
+      supabase,
+      order.id,
+      "create",
+      result.message,
+      result.detail,
+    );
     return {
       ok: false,
       step: "create",
@@ -237,12 +374,9 @@ export async function createShipment(
 
   if (!shiprocketOrderId) {
     if (!existing) await releaseClaim(supabase, order.id);
-    return {
-      ok: false,
-      step: "create",
-      message: "Shiprocket accepted the order but did not return an id.",
-      detail: result.data,
-    };
+    const message = "Shiprocket accepted the order but did not return an id.";
+    await recordShipmentError(supabase, order.id, "create", message, result.data);
+    return { ok: false, step: "create", message, detail: result.data };
   }
 
   const { error } = await supabase
@@ -273,13 +407,16 @@ export async function createShipment(
       shiprocketOrderId,
       detail: error.message,
     });
-    return {
-      ok: false,
-      step: "create",
-      message:
-        `Shiprocket created order ${shiprocketOrderId} but we could not save it. ` +
-        "Do not press this again — check the Shiprocket panel first.",
-    };
+    const message =
+      `Shiprocket created order ${shiprocketOrderId} but we could not save it. ` +
+      "Do not press this again — check the Shiprocket panel first.";
+    // The one failure here that a reload must not lose: the id in this sentence
+    // is the only record that a real order exists in the panel.
+    await recordShipmentError(supabase, order.id, "create", message, {
+      shiprocket_order_id: shiprocketOrderId,
+      write_error: error.message,
+    });
+    return { ok: false, step: "create", message };
   }
 
   await recordEvent(
@@ -289,6 +426,7 @@ export async function createShipment(
     "shipment.created",
     result.data,
   );
+  await clearShipmentError(supabase, order.id);
   return {
     ok: true,
     step: "create",
@@ -337,6 +475,13 @@ export async function assignAwb(
   });
 
   if (!result.ok) {
+    await recordShipmentError(
+      supabase,
+      orderId,
+      "awb",
+      result.message,
+      result.detail,
+    );
     return {
       ok: false,
       step: "awb",
@@ -348,13 +493,10 @@ export async function assignAwb(
   const data = result.data?.response?.data;
   const awb = stringify(data?.awb_code);
   if (!awb) {
-    return {
-      ok: false,
-      step: "awb",
-      message:
-        "Shiprocket did not return an AWB. It usually says why in the panel.",
-      detail: result.data,
-    };
+    const message =
+      "Shiprocket did not return an AWB. It usually says why in the panel.";
+    await recordShipmentError(supabase, orderId, "awb", message, result.data);
+    return { ok: false, step: "awb", message, detail: result.data };
   }
 
   const { error: awbWriteError } = await supabase
@@ -376,13 +518,14 @@ export async function assignAwb(
       awb,
       detail: awbWriteError.message,
     });
-    return {
-      ok: false,
-      step: "awb",
-      message:
-        `Shiprocket assigned AWB ${awb} but we could not save it. Do not press this ` +
-        "again — copy the number from the Shiprocket panel first.",
-    };
+    const message =
+      `Shiprocket assigned AWB ${awb} but we could not save it. Do not press this ` +
+      "again — copy the number from the Shiprocket panel first.";
+    await recordShipmentError(supabase, orderId, "awb", message, {
+      awb_code: awb,
+      write_error: awbWriteError.message,
+    });
+    return { ok: false, step: "awb", message };
   }
 
   await recordEvent(
@@ -392,6 +535,7 @@ export async function assignAwb(
     "shipment.awb_assigned",
     result.data,
   );
+  await clearShipmentError(supabase, orderId);
   return {
     ok: true,
     step: "awb",
@@ -435,6 +579,13 @@ export async function schedulePickup(
   });
 
   if (!result.ok) {
+    await recordShipmentError(
+      supabase,
+      orderId,
+      "pickup",
+      result.message,
+      result.detail,
+    );
     return {
       ok: false,
       step: "pickup",
@@ -461,12 +612,12 @@ export async function schedulePickup(
       orderId,
       detail: pickupWriteError.message,
     });
-    return {
-      ok: false,
-      step: "pickup",
-      message:
-        "The pickup was booked but we could not save it. Check the Shiprocket panel before booking again.",
-    };
+    const message =
+      "The pickup was booked but we could not save it. Check the Shiprocket panel before booking again.";
+    await recordShipmentError(supabase, orderId, "pickup", message, {
+      write_error: pickupWriteError.message,
+    });
+    return { ok: false, step: "pickup", message };
   }
 
   await recordEvent(
@@ -476,6 +627,7 @@ export async function schedulePickup(
     "shipment.pickup_scheduled",
     result.data,
   );
+  await clearShipmentError(supabase, orderId);
   return {
     ok: true,
     step: "pickup",
@@ -595,15 +747,19 @@ export async function generateDocuments(
   }
 
   if (failures.length > 0) {
-    return {
-      ok: false,
-      step: "documents",
-      message:
-        `Got ${Object.keys(patch).length} of 3. Still missing: ${failures.join(", ")}. ` +
-        "Pressing again retries only what is missing.",
-    };
+    const message =
+      `Got ${Object.keys(patch).length} of 3. Still missing: ${failures.join(", ")}. ` +
+      "Pressing again retries only what is missing.";
+    // A partial success is still a failure to record: the reason each document
+    // was refused is Shiprocket's, and it is inside `failures`.
+    await recordShipmentError(supabase, orderId, "documents", message, {
+      fetched: Object.keys(patch),
+      failures,
+    });
+    return { ok: false, step: "documents", message };
   }
 
+  await clearShipmentError(supabase, orderId);
   return {
     ok: true,
     step: "documents",
@@ -639,7 +795,16 @@ export async function fetchTracking(
   const result = await shiprocketFetch<TrackingResponse>(
     `/courier/track/awb/${encodeURIComponent(shipment.awb_code)}`,
   );
-  if (!result.ok) return { ok: false, message: result.message };
+  if (!result.ok) {
+    await recordShipmentError(
+      supabase,
+      orderId,
+      "track",
+      result.message,
+      result.detail,
+    );
+    return { ok: false, message: result.message };
+  }
 
   const tracking = readTracking(result);
 
@@ -699,6 +864,7 @@ export async function fetchTracking(
       );
   }
 
+  await clearShipmentError(supabase, orderId);
   return { ok: true, tracking };
 }
 
@@ -831,6 +997,10 @@ async function recordEvent(
  *
  * Only ever called for a row this call inserted moments ago, so it cannot
  * delete a shipment somebody else owns.
+ *
+ * The row goes and the reason stays: `recordShipmentError` writes to
+ * `shipment_errors`, which is keyed by order rather than by shipment precisely
+ * so this delete cannot reach it.
  */
 async function releaseClaim(supabase: Db, orderId: string): Promise<void> {
   const { error } = await supabase

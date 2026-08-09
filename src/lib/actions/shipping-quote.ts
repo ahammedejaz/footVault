@@ -59,8 +59,21 @@ export type ShippingQuoteResult =
       deliverable: boolean;
       codAvailable: boolean;
       estimatedDays: number | null;
-      /** True when priced from a live courier rate rather than the fallback. */
-      live: boolean;
+      /**
+       * True when Shiprocket could not be reached and this price is a settings
+       * figure rather than a courier's. The checkout labels it, because charging
+       * a number presented as a rate when it is a guess is how the shop loses an
+       * argument it should never have had.
+       */
+      estimate: boolean;
+      /** Why Pay on Delivery is missing, so the payment step can explain it. */
+      codWithheldReason:
+        | "below_minimum"
+        | "settings"
+        | "courier"
+        | "no_quote"
+        | "deposit_unset"
+        | null;
     }
   | { ok: false; message: string };
 
@@ -112,7 +125,24 @@ export async function quoteShipping(
       deliverable: totals.deliverable,
       codAvailable: totals.codAvailable,
       estimatedDays: totals.estimatedDays,
-      live: totals.basis === "shiprocket",
+      /**
+       * **The customer is told when this figure is a guess.**
+       *
+       * Decision 4: with no live quote, prepaid still sells but *"with the price
+       * clearly labelled as an estimate"*. Only `unavailable` is an estimate —
+       * a free-delivery total and a flat festival price are both exact, and
+       * labelling either of them a guess would be its own kind of lie.
+       */
+      estimate: totals.basis === "unavailable",
+      /**
+       * Why Pay on Delivery is missing, so the payment step can say so.
+       *
+       * The owner's requirement for the toggle: *"The customer sees a clear
+       * message, not a missing option."* An option that silently disappears
+       * reads as a broken page, and the customer's next move is to abandon
+       * rather than to prepay.
+       */
+      codWithheldReason: totals.codWithheldReason,
     };
   } catch (error) {
     // Never fatal to the page. The customer keeps the estimate already on

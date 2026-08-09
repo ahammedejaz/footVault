@@ -1,9 +1,12 @@
 import "server-only";
 
 import type { OrderTotals } from "@/lib/orders/types";
+import type { AdvanceRule, AdvanceSplit } from "@/lib/payments/advance";
 import {
   advanceFor,
+  advanceForFlat,
   codOfferedForOrder,
+  flatModeDepositPaise,
   prepaidDiscountFor,
 } from "@/lib/payments/advance";
 import type { PaymentMethod } from "@/lib/payments/types";
@@ -39,12 +42,20 @@ export type CheckoutTotals = OrderTotals & {
   codAvailable: boolean;
   estimatedDays: number | null;
   courierName: string | null;
-  /** `shiprocket` when priced from a live rate, `fallback` when Shiprocket was unreachable. */
-  basis: "free" | "shiprocket" | "fallback";
+  /** How the fee was arrived at. `unavailable` means the customer sees an estimate. */
+  basis: "free" | "live" | "flat" | "unavailable";
+  /** The pricing mode in force, frozen onto the order beside the quote. */
+  rateMode: "live" | "flat";
   /** What was passed back for paying online. A named line; zero on Pay on Delivery. */
   prepaidDiscount: number;
   /** Why Pay on Delivery is not on offer, when it is not. Null when it is. */
-  codWithheldReason: "below_minimum" | "settings" | "courier" | null;
+  codWithheldReason:
+    | "below_minimum"
+    | "settings"
+    | "courier"
+    | "no_quote"
+    | "deposit_unset"
+    | null;
   /** The two legs the advance is made of, and the courier both came from. */
   quotedForwardPaise: number | null;
   quotedRtoPaise: number | null;
@@ -125,46 +136,75 @@ export async function computeOrderTotals(input: {
    * `advance + balance = grand_total` holds for every row without a special
    * case. The database enforces exactly that.
    */
+  /**
+   * **What secures this order, and the two ways it can be secured.**
+   *
+   * In live mode the deposit is the round trip the courier quoted. The return
+   * leg mirrors the forward one when Shiprocket omits `rto_charges` — that is
+   * still courier data doubled, not a settings constant, and a return whose cost
+   * is unknown is not a free return.
+   *
+   * In flat mode there is no round trip, because no call was made. The deposit
+   * comes from `flat_cod_deposit_*` instead, and when the owner has not set one
+   * this is **null** rather than zero. The owner's instruction was *"never
+   * silently collect nothing"*, so a missing rule withdraws the payment method a
+   * few lines below instead of taking a deposit of a rupee.
+   */
+  const flatMode = quote.rateMode === "flat";
+  const roundTripPaise =
+    flatMode || quote.costForwardPaise === null
+      ? null
+      : Math.max(0, quote.costForwardPaise) +
+        Math.max(0, quote.costRtoPaise ?? quote.costForwardPaise);
+
+  const flatDepositPaise = flatModeDepositPaise({
+    rule: settings.flatCodDeposit,
+    flatShippingFeePaise: settings.flatShippingFeePaise,
+  });
+
   const split =
     input.method === "cod"
-      ? advanceFor({
+      ? codSplit({
           rule: advanceRule(settings),
-          /*
-            `?? 0` would produce an advance of nothing on a fallback quote,
-            which is unsecured Pay on Delivery — the thing this model exists to
-            remove. The fallback fee stands in instead, and the return leg
-            mirrors the forward one, because a return whose cost is unknown is
-            not a free return.
-          */
-          forwardFreightPaise:
-            quote.costForwardPaise ?? settings.fallbackFeePaise.cod,
-          rtoFreightPaise:
-            quote.costRtoPaise ??
-            quote.costForwardPaise ??
-            settings.fallbackFeePaise.cod,
+          roundTripPaise,
+          flatDepositPaise,
+          forwardFreightPaise: quote.costForwardPaise,
+          rtoFreightPaise: quote.costRtoPaise,
           grandTotalPaise: grandTotal,
         })
       : { advancePaise: grandTotal, balanceDuePaise: 0, cappedBy: null };
 
-  /**
-   * Three separate reasons Pay on Delivery may not be offered, kept apart
-   * because they need different words on the payment step. "The shop has turned
-   * it off", "your basket is under the minimum" and "no courier here collects
-   * cash" are three different things to tell a customer, and only one of them
-   * is something they can do anything about.
-   */
   const belowMinimum = !codOfferedForOrder({
     goodsTotalPaise: input.subtotalPaise,
     minimumOrderValuePaise: settings.codMinimumOrderValuePaise,
   });
-  const codWithheldReason: CheckoutTotals["codWithheldReason"] =
-    !settings.codEnabled || input.codBlocked
-      ? "settings"
-      : belowMinimum
-        ? "below_minimum"
-        : !quote.codAvailable
-          ? "courier"
-          : null;
+
+  /**
+   * Five reasons Pay on Delivery may not be offered, kept apart because they
+   * need different words on the payment step.
+   *
+   * "The shop has turned it off", "your basket is under the minimum" and "no
+   * courier here collects cash" are three different things to tell a customer,
+   * and only one of them is something they can act on. Batch 2 added two more,
+   * neither of which is the customer's fault either.
+   *
+   * The cascade is `codWithheldFor` below rather than an expression here,
+   * because it is the API half of the owner's Pay-on-Delivery toggle and it is
+   * the only thing between a cash order and an unsecured one. Inline, it was
+   * reachable only by building a cart, a quote and a settings row — which in
+   * practice means it was reachable only in production. `npm run audit:delivery`
+   * walks every branch and sweeps every input combination.
+   */
+  const codWithheldReason = codWithheldFor({
+    codEnabled: settings.codEnabled,
+    codBlocked: input.codBlocked === true,
+    belowMinimum,
+    flatMode,
+    roundTripPaise,
+    flatDepositPaise,
+    fallbackBehaviour: settings.fallbackBehaviour,
+    courierTakesCash: quote.codAvailable,
+  });
 
   return {
     subtotal: input.subtotalPaise,
@@ -186,5 +226,109 @@ export async function computeOrderTotals(input: {
     quotedRtoPaise: quote.costRtoPaise,
     quotedCodFeePaise: quote.codHandlingPaise,
     basis: quote.basis,
+    rateMode: quote.rateMode,
   };
+}
+
+/**
+ * The Pay-on-Delivery split, from whichever deposit secures this order.
+ *
+ * Separated from `computeOrderTotals` so the one rule that must never bend is
+ * readable on its own: **there is no path through this function that collects
+ * nothing.** Live mode charges the round trip; flat mode charges the owner's
+ * deposit; and with neither available the whole order is taken online, which is
+ * unreachable in practice because `codWithheldReason` has already withdrawn the
+ * method — but it is written as the safe direction rather than left to the
+ * caller's discipline, because the caller's discipline is what produced
+ * FV-2026-00488.
+ */
+function codSplit(input: {
+  rule: AdvanceRule;
+  roundTripPaise: number | null;
+  flatDepositPaise: number | null;
+  forwardFreightPaise: number | null;
+  rtoFreightPaise: number | null;
+  grandTotalPaise: number;
+}): AdvanceSplit {
+  if (input.roundTripPaise !== null && input.forwardFreightPaise !== null) {
+    return advanceFor({
+      rule: input.rule,
+      forwardFreightPaise: input.forwardFreightPaise,
+      rtoFreightPaise: input.rtoFreightPaise ?? input.forwardFreightPaise,
+      grandTotalPaise: input.grandTotalPaise,
+    });
+  }
+
+  if (input.flatDepositPaise !== null) {
+    return advanceForFlat({
+      rule: input.rule,
+      depositPaise: input.flatDepositPaise,
+      grandTotalPaise: input.grandTotalPaise,
+    });
+  }
+
+  return {
+    advancePaise: input.grandTotalPaise,
+    balanceDuePaise: 0,
+    cappedBy: "order_total",
+  };
+}
+
+/**
+ * Whether Pay on Delivery is offered, and if not, which of five reasons.
+ *
+ * **Pure, exported and tested on its own** — `npm run audit:delivery` walks
+ * every branch — because this cascade is the API half of the owner's toggle and
+ * it is the only thing standing between a cash order and an unsecured one.
+ * Inline inside `computeOrderTotals` it was reachable only by building a cart, a
+ * quote and a settings row, which in practice means it was reachable only in
+ * production.
+ *
+ * The order of the tests is the design, not an accident:
+ *
+ *   1. **`settings`** — the shop said no, or this customer has had cash
+ *      withdrawn. Nothing further needs asking.
+ *   2. **`below_minimum`** — the only one the customer can act on, so it must
+ *      not be masked by a courier problem they cannot.
+ *   3. **`no_quote`** — decision 4. Live mode with no round trip means an
+ *      unsecured cash order. Flat mode is excluded here deliberately: it has no
+ *      round trip *by the owner's choice*, and routing it through this branch
+ *      would make switching to a festival price switch off Pay on Delivery for
+ *      the whole shop.
+ *   4. **`deposit_unset`** — there is no round trip and no configured deposit,
+ *      so the only remaining option would be to collect nothing. This is the
+ *      backstop that catches `allow_all` as well as flat mode.
+ *   5. **`courier`** — Shiprocket says nobody there collects cash.
+ *
+ * There is no sixth branch in which the method is offered without something
+ * securing it. That is the property this function exists to hold.
+ */
+export function codWithheldFor(input: {
+  codEnabled: boolean;
+  codBlocked: boolean;
+  belowMinimum: boolean;
+  flatMode: boolean;
+  /** The live round trip, or null when there is no quote to build one from. */
+  roundTripPaise: number | null;
+  /** The configured flat-mode deposit, or null when the owner has not set one. */
+  flatDepositPaise: number | null;
+  fallbackBehaviour: "refuse_cod" | "allow_all";
+  /** What Shiprocket said about cash at this PIN. */
+  courierTakesCash: boolean;
+}): CheckoutTotals["codWithheldReason"] {
+  if (!input.codEnabled || input.codBlocked) return "settings";
+  if (input.belowMinimum) return "below_minimum";
+
+  if (
+    !input.flatMode &&
+    input.roundTripPaise === null &&
+    input.fallbackBehaviour === "refuse_cod"
+  )
+    return "no_quote";
+
+  if (input.roundTripPaise === null && input.flatDepositPaise === null)
+    return "deposit_unset";
+
+  if (!input.courierTakesCash) return "courier";
+  return null;
 }

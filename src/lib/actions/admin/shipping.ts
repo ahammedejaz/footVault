@@ -28,6 +28,15 @@ import {
  * All five are rate-limited under `fulfilment`, which is the tightest policy in
  * the file: these steps cost real money and create real parcels, so the thing
  * being guarded against is a stuck retry loop rather than an attacker.
+ *
+ * **A failure revalidates the page too, and that is new.** `outcome.message`
+ * used to go into a toast and nowhere else: three and a half seconds of red
+ * text, gone on reload, gone for the second admin looking at the same order.
+ * The message is now written to `shipment_errors` by the fulfilment step
+ * itself, so the page has something to render — and it only renders it if the
+ * cache is dropped, which is why every `!outcome.ok` branch below revalidates
+ * before it returns. Without this the stored reason appears on the *next*
+ * navigation, which is exactly when nobody is looking for it.
  */
 
 const orderSchema = z.object({ orderId: z.uuid("That is not an order.") });
@@ -102,8 +111,10 @@ export async function createShipmentForOrder(
         })),
       });
 
-      if (!outcome.ok)
+      if (!outcome.ok) {
+        revalidatePath(`/admin/orders/${order.id}`);
         return { ok: false, reason: "error", message: outcome.message };
+      }
 
       revalidatePath(`/admin/orders/${order.id}`);
       return { ok: true, message: outcome.message, already: outcome.already };
@@ -127,8 +138,10 @@ export async function assignAwbForOrder(
         };
 
       const outcome = await assignAwb(supabase, parsed.data.orderId);
-      if (!outcome.ok)
+      if (!outcome.ok) {
+        revalidatePath(`/admin/orders/${parsed.data.orderId}`);
         return { ok: false, reason: "error", message: outcome.message };
+      }
 
       /**
        * An AWB means the parcel is a parcel, so the order becomes `packed`.
@@ -182,8 +195,10 @@ export async function schedulePickupForOrder(
         };
 
       const outcome = await schedulePickup(supabase, parsed.data.orderId);
-      if (!outcome.ok)
+      if (!outcome.ok) {
+        revalidatePath(`/admin/orders/${parsed.data.orderId}`);
         return { ok: false, reason: "error", message: outcome.message };
+      }
 
       // A booked pickup is the parcel leaving. `shipped` is the honest status the
       // moment a courier is coming for it.
@@ -230,8 +245,10 @@ export async function generateDocumentsForOrder(
         };
 
       const outcome = await generateDocuments(supabase, parsed.data.orderId);
-      if (!outcome.ok)
+      if (!outcome.ok) {
+        revalidatePath(`/admin/orders/${parsed.data.orderId}`);
         return { ok: false, reason: "error", message: outcome.message };
+      }
 
       revalidatePath(`/admin/orders/${parsed.data.orderId}`);
       return { ok: true, message: outcome.message, already: outcome.already };
@@ -255,8 +272,10 @@ export async function trackOrder(
         };
 
       const outcome = await fetchTracking(supabase, parsed.data.orderId);
-      if (!outcome.ok)
+      if (!outcome.ok) {
+        revalidatePath(`/admin/orders/${parsed.data.orderId}`);
         return { ok: false, reason: "error", message: outcome.message };
+      }
 
       revalidatePath(`/admin/orders/${parsed.data.orderId}`);
       return { ok: true, tracking: outcome.tracking };

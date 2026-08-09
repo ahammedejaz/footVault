@@ -262,16 +262,23 @@ export async function placeOrder(
     /**
      * Pay on Delivery, only where and when it is actually on offer.
      *
-     * **Four reasons, and they need four different sentences.** Until Phase 7
+     * **Five reasons, and they need five different sentences.** Until Phase 7
      * every refusal said "no courier will collect cash at your pin code", which
      * is true of exactly one of them — and is a baffling thing to read when the
      * real reason is that the basket is under the minimum, which the customer
      * can fix by adding another pair. `codWithheldReason` carries which it is
      * so the message can be the one that helps.
      *
-     * Fails soft in the same direction as everything else: only an explicit
-     * "couriers serve this pin code and none of them will collect cash"
-     * declines on the courier's behalf.
+     * **This is the API half of the owner's toggle, and it is not decoration.**
+     * The requirement was that `cod_enabled` be honoured at the checkout UI
+     * *and* refused here. The UI hides an unavailable method; this refuses one
+     * that was never drawn, which is what makes the toggle a control rather than
+     * a suggestion. `npm run audit:totals` asserts both halves.
+     *
+     * Two of the five are new and neither is the customer's fault, so neither
+     * says anything that sounds like it is: `no_quote` is a courier outage and
+     * `deposit_unset` is a setting the shop has not filled in. Both offer
+     * prepaid, which works and costs the same.
      */
     if (method === "cod" && !totals.codAvailable) {
       return {
@@ -285,8 +292,12 @@ export async function placeOrder(
             : totals.codWithheldReason === "courier"
               ? `No courier will collect cash at ${address.postalCode}. ` +
                 "Pay online instead and we will send it to the same address."
-              : "Pay on Delivery is not available on this order. Paying online " +
-                "works, and it comes to the same address.",
+              : totals.codWithheldReason === "no_quote"
+                ? "We cannot reach our courier to price this delivery, so we " +
+                  "cannot take a cash order right now. Paying online works and " +
+                  "it comes to the same address."
+                : "Pay on Delivery is not available on this order. Paying " +
+                  "online works, and it comes to the same address.",
       };
     }
 
@@ -339,9 +350,11 @@ export async function placeOrder(
 
           Both freight legs come from **one courier entry** — the brief's rule,
           and under a round-trip advance a mismatched pair prices a journey no
-          parcel takes. `quote_source` records whether this was a live rate or
-          the fallback, so a fallback can never be read back later as though
-          Shiprocket had quoted it.
+          parcel takes. `quote_source` records how the fee was arrived at, so an
+          estimate can never be read back later as though Shiprocket had quoted
+          it, and `quoted_rate_mode` records which pricing regime was in force —
+          the owner's requirement, because `quote_source` reads `free` in both
+          modes and the question gets asked the day after a festival sale.
         */
         p_quoted_courier_name: totals.courierName ?? undefined,
         p_quoted_courier_id: totals.courierId ?? undefined,
@@ -349,6 +362,7 @@ export async function placeOrder(
         p_quoted_rto_paise: totals.quotedRtoPaise ?? undefined,
         p_quoted_cod_fee_paise: totals.quotedCodFeePaise ?? undefined,
         p_quote_source: totals.basis,
+        p_quoted_rate_mode: totals.rateMode,
         p_user_id: user?.id,
         p_guest_token: guestToken ?? undefined,
         p_contact_email: data.contactEmail ?? user?.email ?? undefined,

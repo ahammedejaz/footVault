@@ -660,6 +660,7 @@ export type Database = {
           payment_status: Database["public"]["Enums"]["payment_status"]
           placed_at: string
           quote_source: string | null
+          quoted_rate_mode: string | null
           quote_taken_at: string | null
           quoted_cod_fee_paise: number | null
           quoted_courier_id: number | null
@@ -704,6 +705,7 @@ export type Database = {
           payment_status?: Database["public"]["Enums"]["payment_status"]
           placed_at?: string
           quote_source?: string | null
+          quoted_rate_mode?: string | null
           quote_taken_at?: string | null
           quoted_cod_fee_paise?: number | null
           quoted_courier_id?: number | null
@@ -748,6 +750,7 @@ export type Database = {
           payment_status?: Database["public"]["Enums"]["payment_status"]
           placed_at?: string
           quote_source?: string | null
+          quoted_rate_mode?: string | null
           quote_taken_at?: string | null
           quoted_cod_fee_paise?: number | null
           quoted_courier_id?: number | null
@@ -1289,6 +1292,38 @@ export type Database = {
           },
         ]
       }
+      shipment_errors: {
+        Row: {
+          detail: Json | null
+          failed_at: string
+          message: string
+          order_id: string
+          step: string
+        }
+        Insert: {
+          detail?: Json | null
+          failed_at?: string
+          message: string
+          order_id: string
+          step: string
+        }
+        Update: {
+          detail?: Json | null
+          failed_at?: string
+          message?: string
+          order_id?: string
+          step?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "shipment_errors_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: true
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       shipment_events: {
         Row: {
           created_at: string
@@ -1433,6 +1468,7 @@ export type Database = {
           postal_code: string
           quoted_at: string
           shipping_fee_paise: number
+          rate_mode: string
           source: string
           subtotal_paise: number
         }
@@ -1455,6 +1491,7 @@ export type Database = {
           postal_code: string
           quoted_at?: string
           shipping_fee_paise?: number
+          rate_mode?: string
           source: string
           subtotal_paise: number
         }
@@ -1477,6 +1514,7 @@ export type Database = {
           postal_code?: string
           quoted_at?: string
           shipping_fee_paise?: number
+          rate_mode?: string
           source?: string
           subtotal_paise?: number
         }
@@ -1629,6 +1667,7 @@ export type Database = {
           p_payment_method: string
           p_payment_status: Database["public"]["Enums"]["payment_status"]
           p_quote_source?: string
+          p_quoted_rate_mode?: string
           p_quoted_cod_fee_paise?: number
           p_quoted_courier_id?: number
           p_quoted_courier_name?: string

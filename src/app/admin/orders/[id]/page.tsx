@@ -4,13 +4,18 @@ import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 
 import { OrderActions } from "@/components/admin/orders/order-actions";
+import { ShipmentErrorNotice } from "@/components/admin/orders/shipment-error";
 import {
   ShippingPanel,
   type ShipmentView,
 } from "@/components/admin/orders/shipping-panel";
 import { AdminPage, Chip, ORDER_STATUS_TONE, Panel, PageHeader } from "@/components/admin/ui";
 import { formatPaise } from "@/lib/format";
-import { getOrderDetail, getOrderShipment } from "@/lib/queries/admin/orders";
+import {
+  getOrderDetail,
+  getOrderShipment,
+  getOrderShipmentError,
+} from "@/lib/queries/admin/orders";
 
 export const metadata: Metadata = { title: "Order" };
 export const dynamic = "force-dynamic";
@@ -37,7 +42,17 @@ export default async function AdminOrderDetailPage({
   const order = await getOrderDetail(id);
   if (!order) notFound();
 
-  const shipmentRow = await getOrderShipment(order.id);
+  const [shipmentRow, shipmentError] = await Promise.all([
+    getOrderShipment(order.id),
+    /**
+     * Read even when there is no shipment row, which is the case that matters.
+     *
+     * A failed "create shipment" deletes its own half-made row — see
+     * `releaseClaim` — so the order that most needs an explanation is precisely
+     * the one with nothing to join to. Keyed by order for that reason.
+     */
+    getOrderShipmentError(order.id),
+  ]);
 
   /**
    * Mapped to a plain shape rather than passed through.
@@ -160,6 +175,23 @@ export default async function AdminOrderDetailPage({
             title="Shipping"
             description="Each step is safe to press twice. Nothing here happens automatically."
           >
+            {/*
+              Above the buttons rather than beside them: it is the answer to
+              "why did nothing happen when I pressed that", and it has to be
+              read before the same button is pressed again.
+            */}
+            {shipmentError ? (
+              <div className="mb-4">
+                <ShipmentErrorNotice
+                  failure={{
+                    step: shipmentError.step,
+                    message: shipmentError.message,
+                    failedAt: shipmentError.failed_at,
+                  }}
+                />
+              </div>
+            ) : null}
+
             <ShippingPanel
               orderId={order.id}
               shipment={shipment}

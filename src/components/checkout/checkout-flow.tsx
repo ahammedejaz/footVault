@@ -117,6 +117,16 @@ type StoredQuoteView = {
   deliverable: boolean;
   codAvailable: boolean;
   estimatedDays: number | null;
+  /** True when Shiprocket could not be reached and this figure is a guess. */
+  estimate: boolean;
+  /** Why Pay on Delivery is not on offer. Null when it is. */
+  codWithheldReason:
+    | "below_minimum"
+    | "settings"
+    | "courier"
+    | "no_quote"
+    | "deposit_unset"
+    | null;
 };
 
 /**
@@ -265,6 +275,8 @@ export function CheckoutFlow({
           deliverable: result.deliverable,
           codAvailable: result.codAvailable,
           estimatedDays: result.estimatedDays,
+          estimate: result.estimate,
+          codWithheldReason: result.codWithheldReason,
         };
         QUOTE_CACHE.set(answer.key, answer);
         setQuoted(answer);
@@ -338,6 +350,38 @@ export function CheckoutFlow({
   const offeredMethods = methods.filter(
     (entry) => entry.method !== "cod" || quote?.codAvailable !== false,
   );
+
+  /**
+   * **Why Pay on Delivery is not on the list, in the customer's own terms.**
+   *
+   * The owner's requirement for the toggle: *"The customer sees a clear message,
+   * not a missing option."* An option that silently vanishes reads as a broken
+   * page, and the customer's next move is to close the tab rather than to
+   * prepay. So the method is still withdrawn — it cannot be selected — but the
+   * space it occupied says what happened.
+   *
+   * Five reasons, five sentences, and only one of them is something the customer
+   * can act on. `deposit_unset` is a setting the shop has not filled in and
+   * `no_quote` is a courier outage; neither is phrased so as to sound like the
+   * customer did something wrong, because they did not.
+   *
+   * Nothing is said before a quote exists — "Pay on Delivery is unavailable"
+   * shown while the lookup is still in flight would be a lie a moment later.
+   */
+  const codMissingNote =
+    quote && quote.codWithheldReason && methods.some((m) => m.method === "cod")
+      ? {
+          below_minimum:
+            "Pay on Delivery is not offered on an order this size — the delivery charge would be most of it. Paying online costs the same and comes to the same address.",
+          courier: `No courier will collect cash at ${pin}. Paying online works, and it comes to the same address.`,
+          settings:
+            "Pay on Delivery is switched off at the moment. Paying online costs the same and comes to the same address.",
+          no_quote:
+            "We cannot reach our courier to price this delivery, so we cannot take a cash order right now. Paying online works and comes to the same address.",
+          deposit_unset:
+            "Pay on Delivery is unavailable while we are between delivery rates. Paying online works and comes to the same address.",
+        }[quote.codWithheldReason]
+      : null;
 
   /**
    * A pin code nothing will reach stops checkout here rather than at the
@@ -966,6 +1010,12 @@ export function CheckoutFlow({
               </fieldset>
             )}
 
+            {codMissingNote ? (
+              <p className="border-border bg-fog/40 mt-3 rounded-lg border p-3 text-sm text-pretty">
+                {codMissingNote}
+              </p>
+            ) : null}
+
             {/*
               Disclosed where it is acted on, not buried in the footer.
               The policy is narrow and a customer is entitled to know it before
@@ -1054,6 +1104,23 @@ export function CheckoutFlow({
                 itemCount={itemCount}
                 pendingDelivery={!quote}
               />
+
+              {/*
+                Decision 4: prepaid sells through a courier outage, but *"with
+                the price clearly labelled as an estimate."* Placed under the
+                figure rather than beside the heading so it reads as a caveat on
+                the number the customer is about to be charged, which is what it
+                is. Only shown for `unavailable` — a free total and a flat
+                festival price are both exact.
+              */}
+              {quote?.estimate ? (
+                <p className="text-muted-foreground mt-3 text-sm text-pretty">
+                  Delivery is an <strong>estimate</strong>. We could not reach
+                  our courier for a live rate to {pin}, so this is our usual
+                  charge for a parcel this size. The total above is what you will
+                  be charged.
+                </p>
+              ) : null}
             </div>
 
             {/*
