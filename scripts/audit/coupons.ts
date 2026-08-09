@@ -173,38 +173,42 @@ async function main() {
   }
 
   const couponRow = async (id: string) => {
-    const { data } = await admin
+    const { data, error } = await admin
       .from("coupons")
       .select("used_count, usage_limit")
       .eq("id", id)
       .single();
-    return data!;
+    if (error || !data) throw new Error(`couponRow: ${error?.message}`);
+    return data;
   };
 
   const orderMoney = async (orderId: string) => {
-    const { data } = await admin
+    const { data, error } = await admin
       .from("orders")
       .select(
         "subtotal, discount_total, prepaid_discount, coupon_discount, coupon_code, shipping_fee, grand_total, advance_amount, balance_due_on_delivery",
       )
       .eq("id", orderId)
       .single();
-    return data!;
+    if (error || !data) throw new Error(`orderMoney: ${error?.message}`);
+    return data;
   };
 
   // Variants with enough stock that this run cannot starve itself.
-  const { data: variants } = await admin
+  const { data: variants, error: variantsError } = await admin
     .from("product_variants")
     .select("id, stock_quantity, product:products!inner(is_active, deleted_at)")
     .eq("is_active", true)
     .gte("stock_quantity", 8)
     .limit(6);
-  if (!variants || variants.length < 6)
-    throw new Error("need six variants with stock >= 8");
+  if (variantsError || !variants || variants.length < 6)
+    throw new Error(
+      variantsError?.message ?? "need six variants with stock >= 8",
+    );
   for (const variant of variants)
     stockToRestore.set(variant.id, variant.stock_quantity);
 
-  const [vRules, vMoney, vRaceA, vRaceB, vUser, vRelease] = variants;
+  const [vRules, vMoney, vRaceA, vRaceB, vUser] = variants;
 
   try {
     /* ── 0 · an order with no coupon at all ───────────────────────────────── */
@@ -377,10 +381,11 @@ async function main() {
     console.log("\n4 · one redemption per order, and the counter moves");
 
     if (roundPlaced.ok) {
-      const { data: ledger } = await admin
+      const { data: ledger, error: ledgerError } = await admin
         .from("coupon_redemptions")
         .select("id, code, discount_paise, released_at")
         .eq("order_id", roundPlaced.row.order_id);
+      if (ledgerError) throw new Error(`ledger: ${ledgerError.message}`);
       check(
         "exactly one redemption row for the order",
         (ledger ?? []).length === 1,
@@ -392,14 +397,17 @@ async function main() {
           (ledger?.[0]?.discount_paise ?? 0) > 0,
       );
 
+      const { data: tenPctRow, error: tenPctError } = await admin
+        .from("coupons")
+        .select("id")
+        .eq("code", tenPct.code)
+        .single();
+      if (tenPctError || !tenPctRow)
+        throw new Error(`coupon id: ${tenPctError?.message}`);
       const { error: duplicate } = await admin
         .from("coupon_redemptions")
         .insert({
-          coupon_id: (await admin
-            .from("coupons")
-            .select("id")
-            .eq("code", tenPct.code)
-            .single()).data!.id,
+          coupon_id: tenPctRow.id,
           order_id: roundPlaced.row.order_id,
           code: tenPct.code,
           discount_paise: 100,
@@ -410,13 +418,7 @@ async function main() {
         duplicate?.code ?? "inserted!",
       );
 
-      const counted = await couponRow(
-        (await admin
-          .from("coupons")
-          .select("id")
-          .eq("code", tenPct.code)
-          .single()).data!.id,
-      );
+      const counted = await couponRow(tenPctRow.id);
       check("used_count incremented", counted.used_count === 1);
     }
 
@@ -464,10 +466,11 @@ async function main() {
       raceCoupon.used_count === 1,
       String(raceCoupon.used_count),
     );
-    const { data: raceLedger } = await admin
+    const { data: raceLedger, error: raceLedgerError } = await admin
       .from("coupon_redemptions")
       .select("id")
       .eq("coupon_id", limited.id);
+    if (raceLedgerError) throw new Error(`race ledger: ${raceLedgerError.message}`);
     check(
       "exactly one ledger row exists",
       (raceLedger ?? []).length === 1,
@@ -569,11 +572,12 @@ async function main() {
         cancelError?.message ?? verdict ?? "",
       );
 
-      const { data: released } = await admin
+      const { data: released, error: releasedError } = await admin
         .from("coupon_redemptions")
         .select("released_at")
         .eq("order_id", memberPlaced.row.order_id)
         .single();
+      if (releasedError) throw new Error(`released: ${releasedError.message}`);
       check(
         "the redemption is marked released",
         released?.released_at !== null,
@@ -587,11 +591,16 @@ async function main() {
       );
 
       // Idempotent: a second cancel must not release twice.
-      await admin.rpc("cancel_order_with_restock", {
-        p_order_id: memberPlaced.row.order_id,
-        p_reason: "audit: double cancel",
-        p_require_unpaid: true,
-      });
+      const { error: doubleCancelError } = await admin.rpc(
+        "cancel_order_with_restock",
+        {
+          p_order_id: memberPlaced.row.order_id,
+          p_reason: "audit: double cancel",
+          p_require_unpaid: true,
+        },
+      );
+      if (doubleCancelError)
+        throw new Error(`double cancel: ${doubleCancelError.message}`);
       const again = await couponRow(priv.id);
       check(
         "a second cancel does not release twice",
@@ -669,11 +678,13 @@ async function main() {
     if (placedOrders.length) {
       // Cancelling first restores stock through the function that owns it.
       for (const orderId of placedOrders) {
-        await admin.rpc("cancel_order_with_restock", {
+        const { error } = await admin.rpc("cancel_order_with_restock", {
           p_order_id: orderId,
           p_reason: "audit: cleanup",
           p_require_unpaid: true,
         });
+        if (error)
+          console.error(`  cleanup: cancel ${orderId}: ${error.message}`);
       }
       const { error } = await admin
         .from("orders")
@@ -695,19 +706,27 @@ async function main() {
     // The cancel-and-delete above restores stock; drift would mean a defect in
     // the functions themselves, so it is asserted rather than repaired.
     for (const [variantId, expected] of stockToRestore) {
-      const { data } = await admin
+      const { data, error } = await admin
         .from("product_variants")
         .select("stock_quantity")
         .eq("id", variantId)
         .single();
+      if (error) {
+        console.error(`  cleanup: stock read ${variantId}: ${error.message}`);
+        continue;
+      }
       if (data && data.stock_quantity !== expected) {
         console.error(
           `  cleanup: stock drift on ${variantId}: ${expected} → ${data.stock_quantity} — repairing`,
         );
-        await admin
+        const { error: repairError } = await admin
           .from("product_variants")
           .update({ stock_quantity: expected })
           .eq("id", variantId);
+        if (repairError)
+          console.error(
+            `  cleanup: stock repair ${variantId}: ${repairError.message}`,
+          );
       }
     }
     // The trigger-written movement ledger rows for audit orders.
