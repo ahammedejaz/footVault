@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 
+import { useDisplayedBagCount } from "@/lib/stores/bag";
+
 /**
  * "3 items in your bag", said out loud, only when it changes.
  *
@@ -19,13 +21,17 @@ import { useState } from "react";
  * frame late, and on a slow phone that is after the toast has already spoken.
  */
 export function BagAnnouncer({ count }: { count: number }) {
-  const [seen, setSeen] = useState(count);
+  // Announce optimistic changes too: with addToBag no longer revalidating the
+  // layout, the server prop stays put until a navigation, and a screen-reader
+  // user still has to hear the add they just made.
+  const shown = useDisplayedBagCount(count);
+  const [seen, setSeen] = useState(shown);
 
-  if (count !== seen) setSeen(count);
+  if (shown !== seen) setSeen(shown);
 
   return (
     <p aria-live="polite" aria-atomic="true" className="sr-only">
-      {count === seen ? "" : phrase(count)}
+      {shown === seen ? "" : phrase(shown)}
     </p>
   );
 }

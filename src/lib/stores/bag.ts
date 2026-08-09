@@ -1,5 +1,7 @@
 "use client";
 
+import * as React from "react";
+
 import { create } from "zustand";
 
 import type { Cart } from "@/lib/cart-types";
@@ -39,6 +41,23 @@ type BagUiState = {
   setDrawerOpen: (open: boolean) => void;
   /** Re-read the bag from the server. Call after any mutation. */
   refresh: () => Promise<void>;
+
+  /**
+   * The badge's optimistic half. The server count is still the authority —
+   * the note above about localStorage stands — but it now arrives only with a
+   * navigation, because the cart actions stopped revalidating the whole
+   * layout (the ~340 ms that made adding feel slow). What changed in between
+   * is tracked as a *delta*, never as a count of its own: the badge shows
+   * `server + delta`, and the moment a fresh server count arrives the delta
+   * is retired and the fact wins — so a bag merged, capped or emptied on
+   * another device can be wrong on this one for at most one navigation,
+   * which is exactly the staleness the layout revalidate had anyway.
+   */
+  delta: number;
+  /** An optimistic change of `by` units. */
+  bump: (by: number) => void;
+  /** A fresh server count arrived; the delta has been absorbed or disproved. */
+  settle: () => void;
 };
 
 async function readCart(): Promise<Cart> {
@@ -71,4 +90,32 @@ export const useBagUi = create<BagUiState>()((set, get) => ({
       set({ failed: true });
     }
   },
+
+  delta: 0,
+  bump: (by) => set((state) => ({ delta: state.delta + by })),
+  settle: () => set({ delta: 0 }),
 }));
+
+/**
+ * What the badge should show: the server's count plus the optimistic delta.
+ * A server count that moved underneath (another tab, a merge, a navigation)
+ * retires the delta and wins untouched.
+ */
+export function useDisplayedBagCount(serverCount: number): number {
+  const delta = useBagUi((state) => state.delta);
+  const settle = useBagUi((state) => state.settle);
+
+  // The server spoke: a changed count has absorbed (or disproved) the delta,
+  // and the fact wins. A layout effect so the retirement happens before
+  // paint — the alternative is one frame of double counting after every
+  // navigation that followed an add.
+  const previous = React.useRef(serverCount);
+  React.useLayoutEffect(() => {
+    if (previous.current !== serverCount) {
+      previous.current = serverCount;
+      settle();
+    }
+  }, [serverCount, settle]);
+
+  return Math.max(0, serverCount + delta);
+}

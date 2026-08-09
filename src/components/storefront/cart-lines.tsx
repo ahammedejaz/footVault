@@ -87,6 +87,8 @@ function CartLineRow({
   const [removed, setRemoved] = useState(false);
   const [pending, startTransition] = useTransition();
   const refreshBag = useBagUi((state) => state.refresh);
+  // The header badge counts units; every optimistic change here moves it too.
+  const bump = useBagUi((state) => state.bump);
 
   const quantity = optimistic ?? line.quantity;
   const ceiling = Math.min(line.stock, 10);
@@ -103,19 +105,24 @@ function CartLineRow({
 
   const change = (next: number) => {
     if (next < 1) return;
+    const shown = quantity;
     setOptimistic(next);
+    bump(next - shown);
 
     startTransition(async () => {
       const result = await setQuantity({ itemId: line.id, quantity: next });
 
       if (!result.ok) {
         setOptimistic(null);
+        bump(shown - next);
         toast.failed(result.message);
         onChanged?.();
         return;
       }
 
       if (result.data.capped) {
+        // The server held fewer than asked; the badge follows the truth.
+        bump(result.data.quantity - next);
         toast.note(
           `Only ${result.data.quantity} left in UK ${line.size}`,
           `${line.productName} — your bag has been set to what we hold.`,
@@ -126,13 +133,16 @@ function CartLineRow({
   };
 
   const remove = () => {
+    const shown = quantity;
     setRemoved(true);
+    bump(-shown);
 
     startTransition(async () => {
       const result = await removeLine({ itemId: line.id });
 
       if (!result.ok) {
         setRemoved(false);
+        bump(shown);
         toast.failed(result.message);
         return;
       }
@@ -142,9 +152,11 @@ function CartLineRow({
       onChanged?.();
 
       toast.undoable("Removed from bag", `${name} · UK ${size}`, () => {
+        bump(was);
         startTransition(async () => {
           const back = await addToBag({ variantId, quantity: was });
           if (!back.ok) {
+            bump(-was);
             toast.failed(back.message);
             return;
           }

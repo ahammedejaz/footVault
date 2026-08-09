@@ -164,9 +164,21 @@ async function getOrCreateCartId(): Promise<string> {
   return data.id;
 }
 
-/** The bag changed, so the page and the header badge both need re-rendering. */
+/**
+ * The bag changed. `/cart` is revalidated; the layout deliberately is not.
+ *
+ * This used to be `revalidatePath("/", "layout")`, and that one line was
+ * ~340 ms of every add-to-bag: the action's response re-rendered the layout —
+ * category tree, brand list, settings — for every route, to move one number
+ * in the header. The badge now carries an optimistic delta on the client
+ * (`useDisplayedBagCount`) and re-reads the true count on the next
+ * navigation, which is exactly when the server renders it anyway. The bag
+ * drawer was never covered by revalidation — it refetches through its own
+ * store on open — and the `/cart` page still updates in-flight when a
+ * mutation is made from it, because its own path is the one revalidated.
+ */
 function refreshBag(): void {
-  revalidatePath("/", "layout");
+  revalidatePath("/cart");
 }
 
 /* -------------------------------------------------------------------- add -- */
