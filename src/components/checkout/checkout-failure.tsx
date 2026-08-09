@@ -205,6 +205,21 @@ function ServerCopy({
         </>
       );
 
+    case "coupon_rejected":
+      return (
+        <>
+          <Heading>That coupon no longer works</Heading>
+          <Body>{failure.message}</Body>
+          <NotCharged>
+            Nothing has been placed and nothing has been charged.{" "}
+            <Link href="/cart" className="text-orange-ink underline">
+              Open your bag
+            </Link>{" "}
+            to remove or change the code, then try again.
+          </NotCharged>
+        </>
+      );
+
     case "payment_init_failed":
       return (
         <>

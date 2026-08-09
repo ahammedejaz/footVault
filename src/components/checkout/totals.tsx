@@ -33,11 +33,18 @@ export function Totals({
    * ₹0, which reads as free.
    */
   pendingDelivery = false,
+  couponCode = null,
 }: {
   totals: OrderTotals;
   className?: string;
   itemCount?: number;
   pendingDelivery?: boolean;
+  /**
+   * The applied code, so the row can say *which* coupon rather than a bare
+   * "Discount" — the no-stacking rule means at most one discount is ever in
+   * force, and the screen names the one that won.
+   */
+  couponCode?: string | null;
 }) {
   /**
    * `shippingFee` is the whole delivery charge and `codHandlingFee` says how
@@ -116,7 +123,12 @@ export function Totals({
           </Row>
         ) : null}
 
-        <Row label="Discount" muted>
+        <Row
+          label={
+            otherDiscount > 0 && couponCode ? `Coupon ${couponCode}` : "Discount"
+          }
+          muted={otherDiscount === 0}
+        >
           {otherDiscount > 0 ? `−${formatPaise(otherDiscount)}` : "—"}
         </Row>
       </dl>

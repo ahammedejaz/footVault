@@ -2,6 +2,7 @@
 
 import { z } from "zod";
 
+import { evaluateCoupon } from "@/lib/coupons/validate";
 import { getCart } from "@/lib/queries/cart";
 import { callerIdentity, consumeRateLimit } from "@/lib/rate-limit";
 import { getCurrentUser } from "@/lib/auth";
@@ -70,6 +71,9 @@ export type ShippingQuoteResult =
        */
       discountTotalPaise: number;
       prepaidDiscountPaise: number;
+      /** The coupon's part after no-stacking, and the code, for the named row. */
+      couponDiscountPaise: number;
+      couponCode: string | null;
       /** False means no courier will carry there — checkout must refuse. */
       deliverable: boolean;
       codAvailable: boolean;
@@ -118,7 +122,24 @@ export async function quoteShipping(
   }
 
   try {
+    /**
+     * The code waiting on the cart, priced into the quote so the page and the
+     * eventual charge agree. A code that no longer validates prices as zero
+     * here rather than failing the quote — the customer still needs delivery
+     * priced, and `placeOrder` is where a dead code is refused with a reason.
+     */
+    let couponDiscountPaise = 0;
+    if (cart.couponCode) {
+      const verdict = await evaluateCoupon({
+        code: cart.couponCode,
+        userId: user?.id ?? null,
+        goodsTotalPaise: cart.subtotal,
+      });
+      if (verdict.ok) couponDiscountPaise = verdict.discountPaise;
+    }
+
     const totals = await computeOrderTotals({
+      discountPaise: couponDiscountPaise,
       // Withdrawn from this customer by the owner, for refusing parcels. Read
       // here rather than assumed false: the parameter existed and nothing
       // passed it, so the control was a column.
@@ -139,6 +160,8 @@ export async function quoteShipping(
       grandTotalPaise: totals.grandTotal,
       discountTotalPaise: totals.discountTotal,
       prepaidDiscountPaise: totals.prepaidDiscount,
+      couponDiscountPaise: totals.couponDiscount,
+      couponCode: totals.discountApplied === "coupon" ? cart.couponCode : null,
       deliverable: totals.deliverable,
       codAvailable: totals.codAvailable,
       estimatedDays: totals.estimatedDays,

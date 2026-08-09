@@ -70,12 +70,26 @@ type RawLine = {
 
 /** The active cart's id for this caller, or null. RLS decides which one that is. */
 async function activeCartId(): Promise<string | null> {
+  return (await activeCartRow())?.id ?? null;
+}
+
+/**
+ * The cart row itself — the id, plus the coupon code waiting on it. One
+ * query serving both callers so the "which cart is mine" logic cannot fork.
+ */
+async function activeCartRow(): Promise<{
+  id: string;
+  coupon_code: string | null;
+} | null> {
   const user = await getCurrentUser();
   const guestToken = user ? null : await readGuestToken();
   if (!user && !guestToken) return null;
 
   const supabase = await createClient();
-  const query = supabase.from("carts").select("id").eq("status", "active");
+  const query = supabase
+    .from("carts")
+    .select("id, coupon_code")
+    .eq("status", "active");
 
   // Both filters are belt and braces — the RLS policies already scope this to
   // the caller — but they keep the query honest if a policy is ever loosened.
@@ -83,11 +97,10 @@ async function activeCartId(): Promise<string | null> {
     ? query.eq("user_id", user.id)
     : query.eq("guest_token", guestToken!);
 
-  const row = await maybeRow<{ id: string }>(
-    "activeCartId",
+  return maybeRow<{ id: string; coupon_code: string | null }>(
+    "activeCartRow",
     scoped.maybeSingle(),
   );
-  return row?.id ?? null;
 }
 
 export async function getCart(): Promise<Cart> {
@@ -98,8 +111,9 @@ export async function getCart(): Promise<Cart> {
     regions: ["IN"],
   });
 
-  const cartId = await activeCartId();
-  if (!cartId) return emptyCart(null, shipping);
+  const cartRow = await activeCartRow();
+  if (!cartRow) return emptyCart(null, shipping);
+  const cartId = cartRow.id;
 
   const supabase = await createClient();
   const raw = await rows<RawLine>(
@@ -215,6 +229,7 @@ export async function getCart(): Promise<Cart> {
     count,
     subtotal,
     adjustments,
+    couponCode: cartRow.coupon_code,
     freeShipping: freeShippingFrom(shipping, subtotal),
   };
 }
@@ -277,6 +292,7 @@ function emptyCart(id: string | null, shipping: ShippingSettings): Cart {
     count: 0,
     subtotal: 0,
     adjustments: [],
+    couponCode: null,
     freeShipping: freeShippingFrom(shipping, 0),
   };
 }

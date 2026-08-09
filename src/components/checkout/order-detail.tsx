@@ -163,7 +163,11 @@ export function OrderDetail({
           </dl>
 
           <div className="mt-4">
-            <Totals totals={order.totals} itemCount={order.lines.length} />
+            <Totals
+              totals={order.totals}
+              itemCount={order.lines.length}
+              couponCode={order.couponCode}
+            />
           </div>
         </div>
       </aside>

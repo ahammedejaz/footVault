@@ -75,5 +75,7 @@ export type Cart = {
   count: number;
   subtotal: number;
   adjustments: CartAdjustment[];
+  /** The code applied in the bag, waiting for checkout to make it binding. */
+  couponCode: string | null;
   freeShipping: FreeShipping;
 };

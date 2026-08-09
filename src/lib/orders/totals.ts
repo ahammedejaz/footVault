@@ -48,6 +48,10 @@ export type CheckoutTotals = OrderTotals & {
   rateMode: "live" | "flat";
   /** What was passed back for paying online. A named line; zero on Pay on Delivery. */
   prepaidDiscount: number;
+  /** The coupon's part, after the no-stacking rule. Zero when it lost or there is none. */
+  couponDiscount: number;
+  /** Which discount is in force, for the surface that has to name it. */
+  discountApplied: "coupon" | "prepaid" | null;
   /** Why Pay on Delivery is not on offer, when it is not. Null when it is. */
   codWithheldReason:
     | "below_minimum"
@@ -69,7 +73,7 @@ export async function computeOrderTotals(input: {
   method: PaymentMethod;
   subtotalPaise: number;
   units: number;
-  /** Coupons are Phase 8. The parameter exists so the arithmetic is already right. */
+  /** The coupon's candidate discount, already validated and rounded. */
   discountPaise?: number;
   /** Set when this customer has had Pay on Delivery withdrawn. */
   codBlocked?: boolean;
@@ -97,7 +101,7 @@ export async function computeOrderTotals(input: {
    * it beside the Pay-on-Delivery option, which is the only place a customer can
    * act on it. The owner sets the value; this file only knows it is a line.
    */
-  const prepaidDiscount =
+  const prepaidCandidate =
     input.method === "cod"
       ? 0
       : prepaidDiscountFor({
@@ -105,7 +109,18 @@ export async function computeOrderTotals(input: {
           goodsTotalPaise: input.subtotalPaise,
         });
 
-  const discountTotal = couponDiscount + prepaidDiscount;
+  /**
+   * **No stacking** (owner's decision, 2026-08-10, overruling the plan's
+   * recommendation to sum them): the customer gets the larger of the coupon
+   * and the prepaid incentive, never both, and the screen names which one
+   * applied. A tie goes to the coupon — it is the one the customer typed, so
+   * it is the name they expect to see on the receipt. Both candidates are
+   * computed on the original goods subtotal.
+   */
+  const couponWins = couponDiscount > 0 && couponDiscount >= prepaidCandidate;
+  const appliedCoupon = couponWins ? couponDiscount : 0;
+  const prepaidDiscount = couponWins ? 0 : prepaidCandidate;
+  const discountTotal = appliedCoupon + prepaidDiscount;
 
   /**
    * `shippingFee` is the **total** charged for delivery, and `codHandlingFee`
@@ -219,6 +234,8 @@ export async function computeOrderTotals(input: {
     codAvailable: codWithheldReason === null,
     codWithheldReason,
     prepaidDiscount,
+    couponDiscount: appliedCoupon,
+    discountApplied: couponWins ? "coupon" : prepaidDiscount > 0 ? "prepaid" : null,
     estimatedDays: quote.estimatedDays,
     courierName: quote.courierName,
     courierId: quote.courierId,

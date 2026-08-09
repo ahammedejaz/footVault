@@ -150,7 +150,7 @@ export default async function CartPage({
               </p>
 
               <div className="border-border mt-5 border-t pt-5">
-                <CouponField />
+                <CouponField appliedCode={cart.couponCode} />
               </div>
             </div>
           </aside>
