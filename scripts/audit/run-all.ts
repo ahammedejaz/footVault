@@ -45,6 +45,7 @@ const GATES = [
   "audit:literals",
   "audit:fixtures-guard",
   "audit:emails",
+  "audit:inbound-email",
   "audit:refund-message",
   "audit:customer-copy",
   // Database-backed, read-mostly.

@@ -613,6 +613,63 @@ unverified domain or a mistyped `from` address.
   new-order alerts; customers still get everything. If more than one person
   needs the alert, use a forwarding alias — it is one address.
 
+### 8.3a · Mail *to* footvault.in, and the one rule that must not be broken
+
+Resend is also switched on for **receiving**. Anything sent to any address at
+`footvault.in` — `orders@`, `support@`, a name someone guessed — is accepted and
+forwarded to **footvault3@gmail.com** by the shop, so a customer who replies to
+an order email reaches you. Every order email also carries a **reply-to** of
+that Gmail address, so most replies go straight there without the forwarding
+being involved at all.
+
+#### The rule: the receiving MX record is on the ROOT domain
+
+Receiving works by an **MX** record, and ours is on `footvault.in` itself —
+the bare domain, not a subdomain:
+
+| Type | Name | Value | Priority |
+|---|---|---|---|
+| MX | *(root — blank)* | `inbound-smtp.ap-northeast-1.amazonaws.com` | 10 |
+
+**Before you ever add a mailbox provider to this domain — Google Workspace,
+Zoho Mail, Microsoft 365, anything that gives you a real `you@footvault.in`
+inbox — this record must be moved to a subdomain first.**
+
+Here is why, and it is worth reading once rather than discovering:
+
+A domain gets **one** set of MX records, and they decide which server receives
+*all* mail for it. Google Workspace's setup will tell you to add its MX records
+to `footvault.in`. If ours is still there, the two sets compete. Mail does not
+politely go to both — each message follows whichever record wins for that
+sender at that moment, so **some** mail lands in Google and **some** lands in
+Resend, with no error and no bounce anywhere. You will not discover it from a
+failure; you will discover it weeks later when a customer says they wrote to you
+and you never replied, and there will be no way to tell how many others did the
+same and said nothing.
+
+#### What to do instead
+
+Move receiving to a subdomain **before** the mailbox provider is added:
+
+1. In Resend, add `inbound.footvault.in` (or `mail.footvault.in`) as a domain
+   and enable receiving on it.
+2. Put Resend's MX record on that subdomain.
+3. **Remove the root MX record** shown in the table above.
+4. Only then add the mailbox provider's MX records to the root.
+5. Tell your developer, so the forwarding address in Resend is updated to match.
+
+Sending is unaffected either way — that runs on DKIM at the root and SPF on
+`send.footvault.in`, and neither is an MX record.
+
+#### The webhook
+
+Forwarding is done by a route on the shop, `/api/email/inbound`, which Resend
+calls when mail arrives. It is signed, so nothing else can post to it, and a
+failure to forward is recorded rather than thrown away — if a message is ever
+accepted and not delivered, it is in the `inbound_emails` table with the reason.
+Your developer registers the endpoint and its signing secret once; there is
+nothing for you to do here day to day.
+
 ### 8.4 · Let search engines in — ask your developer, when you are ready
 
 The whole site currently tells Google to stay away. That is on purpose: a shop

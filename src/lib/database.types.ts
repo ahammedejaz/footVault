@@ -443,6 +443,39 @@ export type Database = {
         }
         Relationships: []
       }
+      inbound_emails: {
+        Row: {
+          email_id: string
+          forward_error: string | null
+          forwarded_at: string | null
+          from_address: string | null
+          received_at: string
+          subject: string | null
+          svix_id: string | null
+          to_addresses: string[] | null
+        }
+        Insert: {
+          email_id: string
+          forward_error?: string | null
+          forwarded_at?: string | null
+          from_address?: string | null
+          received_at?: string
+          subject?: string | null
+          svix_id?: string | null
+          to_addresses?: string[] | null
+        }
+        Update: {
+          email_id?: string
+          forward_error?: string | null
+          forwarded_at?: string | null
+          from_address?: string | null
+          received_at?: string
+          subject?: string | null
+          svix_id?: string | null
+          to_addresses?: string[] | null
+        }
+        Relationships: []
+      }
       integration_tokens: {
         Row: {
           expires_at: string
