@@ -412,3 +412,54 @@ evidence.
 
 All applied to staging. **None applied to production** — queued behind the
 owner's drop, above.
+
+---
+
+## In production, 2026-08-09
+
+The sequence ran in the order the plan stated, each step gated on the last
+one's checks. Every figure below was read back from the live system, not
+inferred from the command that caused it.
+
+**The snapshot** — `backup-20260809-1605-schema.sql` (136 KB) and
+`backup-20260809-1605-data.sql` (481 KB), taken via `npx supabase db dump`
+over the session pooler. Verified by content, not existence: 31 tables, 58
+policies, 27 functions in the schema half; 1,945 rows in the data half
+including the `auth` schema, with every per-table count matching a live query
+run beside it — down to the newest order, FV-2026-00598, present in the file.
+
+**The drop** — the owner removed the drifted `shipment_errors` in the SQL
+editor. Confirmed gone before anything else moved.
+
+**The ledger discovery** — production's `schema_migrations` held **85 names
+that were not the repository's**: the early phases applied schema through the
+MCP tool, which stamps its own timestamps, so only 22 of the repo's files were
+recorded even though their content was live. The approved `db push` would
+have replayed ~52 files into a schema that already had them. Proven safe to
+repair by diffing the full column and function inventories of production
+against the staging that `rebuild:stage` built from the repo that morning:
+**identical except for exactly the ten pending migrations**, zero objects
+only on production. The repair (63 stray names cleared, 74 files recorded —
+bookkeeping writes to the ledger table only) and the push of the ten ran
+under the owner's hand after the permission classifier declined mine; the
+verification printed ledger 84, both new columns, both new functions, parcel
+`20/10/10/1000`, renamed shipping keys with `free_above_paise` still 649900,
+four cron jobs.
+
+**PR #13** — merged as `d9ef1a8`; deployment `dpl_3muC9aZkP1LB94LRagLFRj4kaoqA`
+verified READY on `www.footvault.in` / `footvault.in`, `aliasError` null.
+Smoke: `/`, `/shop`, a product page, `/cart`, `/checkout` all 200, `/admin`
+404 anonymous. **Pay on Delivery confirmed the strong way**: one fresh
+Shiprocket login (no cached token, no lockout latch) and a serviceability
+round trip with the production parcel on the Cuddapah → Bangalore lane —
+4 couriers, **all 4 offering COD**, cheapest ₹106.20. That call is the exact
+gate that refused POD shop-wide while the height was null.
+
+**PR #14** — merged as `7cc1b3b`; deployment `dpl_BrP64xNyrc2P5V9de85VsugcGEkg`
+verified READY on the same aliases. Smoke repeated clean, `/admin/rto`
+404 anonymous like every admin route, reconciler cron still scheduled,
+`reconcile_inventory()` zero drift.
+
+The shop can now give money back from the order page, record the parcels that
+come back, and be rebuilt from its migration directory — and the ledger that
+directory writes to finally carries the directory's own names.
