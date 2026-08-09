@@ -47,7 +47,9 @@ export default async function AccountAddressesPage() {
           <p className="text-muted-foreground mt-3 text-base text-pretty">
             The default is the one checkout preselects. Editing anything here
             never changes an order already placed — what ships is a copy taken
-            at the time.
+            at the time. Changing a PIN code can change the delivery charge and
+            whether Pay on Delivery is offered; checkout works that out again
+            when you next order.
           </p>
           <AddressBook addresses={addresses} />
         </>

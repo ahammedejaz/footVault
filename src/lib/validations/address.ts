@@ -46,4 +46,24 @@ export const addressBookSchema = shippingAddressSchema.extend({
   isDefault: z.boolean().optional().default(false),
 });
 
+/**
+ * The same entry, plus which row it is.
+ *
+ * A separate schema rather than an optional `id` on `addressBookSchema`,
+ * because the two write paths must not be able to become each other by
+ * accident. `saveAddress` is called by `placeOrder` with whatever the checkout
+ * held ("save this address for next time"); if an `id` were merely optional,
+ * a payload that carried one — forged, or copied from a stale form — would
+ * turn an insert into an overwrite of an existing entry. RLS would keep it to
+ * the customer's *own* rows, so the damage would be quiet: one address
+ * silently replaced by another rather than added.
+ *
+ * Two schemas make that a parse failure instead of a behaviour change.
+ */
+export const addressEditSchema = addressBookSchema.extend({
+  id: z.uuid(),
+});
+
+export type AddressEditInput = z.input<typeof addressEditSchema>;
+
 export type AddressBookInput = z.input<typeof addressBookSchema>;

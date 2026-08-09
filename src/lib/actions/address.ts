@@ -6,7 +6,10 @@ import { z } from "zod";
 import { getCurrentUser } from "@/lib/auth";
 import { maybeRow } from "@/lib/queries/run";
 import { createClient } from "@/lib/supabase/server";
-import { addressBookSchema } from "@/lib/validations/address";
+import {
+  addressBookSchema,
+  addressEditSchema,
+} from "@/lib/validations/address";
 import type { ActionResult } from "@/lib/actions/cart";
 
 /**
@@ -100,6 +103,146 @@ export async function saveAddress(
     return { ok: true, data: { id: data.id } };
   } catch (error) {
     console.error("[address] saveAddress threw:", error);
+    return { ok: false, message: GENERIC };
+  }
+}
+
+/* ------------------------------------------------------------------- edit -- */
+
+/**
+ * Change an entry that already exists.
+ *
+ * The verb the book was missing. Until now `saveAddress` inserted
+ * unconditionally, so "editing" an address meant removing it and typing it
+ * again — and the account page told customers they could edit, which was a
+ * promise nothing in the code kept.
+ *
+ * **The PIN code is the interesting field.** It decides the delivery rate and
+ * whether Pay on Delivery is offered at all, so an edit that changes it changes
+ * money. Nothing here re-prices anything, and that is correct rather than an
+ * omission: a shipping quote is keyed `(cart_id, postal_code, payment_method)`
+ * in `shipping_quotes`, so a changed PIN cannot match a stored quote and the
+ * next read is a miss that fetches a fresh one. The checkout's own quote is
+ * keyed `(pin, method)` in the same way and re-runs when the pin it renders
+ * changes. `refresh()` below revalidates `/checkout`, which is what makes the
+ * page see the new PIN in the first place. Re-quoting here as well would be a
+ * second mechanism competing with the one that already works, and the failure
+ * mode of two caches disagreeing about a price is worse than the round trip it
+ * would save.
+ *
+ * The default flag is the other half. Unticking it on the entry that *is* the
+ * default would otherwise leave the book with none, and checkout would
+ * preselect nothing — so an heir is promoted, exactly as `deleteAddress` does.
+ * With no heir to promote the flag stays on: a book of one with nothing
+ * preselected asks a question that has only one answer.
+ */
+export async function updateAddress(
+  input: unknown,
+): Promise<ActionResult<{ id: string }>> {
+  const parsed = addressEditSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0]?.message ?? GENERIC };
+  }
+
+  const user = await getCurrentUser();
+  if (!user) return { ok: false, message: SIGNED_OUT };
+
+  try {
+    const supabase = await createClient();
+    const { id, ...address } = parsed.data;
+
+    /*
+      Scoped by user_id as well as id. RLS already scopes the row to
+      `auth.uid()`, so this is the second of two locks rather than the only
+      one — but it is what turns "somebody else's id" into a clean "no longer
+      saved" instead of an update that silently matches nothing.
+    */
+    const target = await maybeRow<{ id: string; is_default: boolean }>(
+      "updateAddress.target",
+      supabase
+        .from("addresses")
+        .select("id, is_default")
+        .eq("id", id)
+        .eq("user_id", user.id)
+        .maybeSingle(),
+    );
+    if (!target)
+      return { ok: false, message: "That address is no longer saved." };
+
+    /*
+      Promote first, demote after — the opposite order to `saveAddress`, and
+      for the same reason it cares about order at all. The partial unique index
+      permits one default per customer, so clearing the flag on this row before
+      setting it elsewhere is the only sequence that never has two.
+    */
+    if (address.isDefault && !target.is_default) {
+      const cleared = await clearDefault(user.id);
+      if (!cleared) return { ok: false, message: GENERIC };
+    }
+
+    let keepDefault = address.isDefault;
+
+    if (target.is_default && !address.isDefault) {
+      const heir = await maybeRow<{ id: string }>(
+        "updateAddress.heir",
+        supabase
+          .from("addresses")
+          .select("id")
+          .eq("user_id", user.id)
+          .neq("id", target.id)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+      );
+      if (heir) {
+        // Demote this one first: the index allows only one default at a time.
+        const { error: demoteError } = await supabase
+          .from("addresses")
+          .update({ is_default: false })
+          .eq("id", target.id);
+        if (demoteError) {
+          console.error("[address] demoting failed:", demoteError.message);
+          return { ok: false, message: GENERIC };
+        }
+        const { error: promoteError } = await supabase
+          .from("addresses")
+          .update({ is_default: true })
+          .eq("id", heir.id);
+        if (promoteError) {
+          console.error("[address] promoting an heir failed:", promoteError.message);
+        }
+        keepDefault = false;
+      } else {
+        // Nothing to hand it to. Keeping the flag beats a book with no default.
+        keepDefault = true;
+      }
+    }
+
+    const { error } = await supabase
+      .from("addresses")
+      .update({
+        label: address.label,
+        recipient_name: address.recipientName,
+        phone: address.phone,
+        line1: address.line1,
+        line2: address.line2,
+        city: address.city,
+        state: address.state,
+        postal_code: address.postalCode,
+        country: address.country,
+        is_default: keepDefault,
+      })
+      .eq("id", target.id);
+
+    if (error) {
+      console.error("[address] update failed:", error.message, error.code);
+      return { ok: false, message: GENERIC };
+    }
+
+    refresh();
+    return { ok: true, data: { id: target.id } };
+  } catch (error) {
+    console.error("[address] updateAddress threw:", error);
     return { ok: false, message: GENERIC };
   }
 }
