@@ -346,10 +346,35 @@ first failure restocks units out from under the second attempt — so nothing
 released an order that simply stopped.
 
 `public.release_abandoned_orders()` is the reclaim. It cancels and restocks
-orders left `pending` and `unpaid` past a cutoff, skips any order with a
-`payments` row in `pending`, `captured` or `refunded` (authorised-but-unsettled
-is real money, committed, just not moved), and is bounded at 500 rows a run so a
-tick cannot become a long transaction holding locks across the catalog.
+orders left `pending` and `unpaid` past a cutoff, and is bounded at 500 rows a
+run so a tick cannot become a long transaction holding locks across the catalog.
+
+**It used to skip orders whose `payments` row was `pending`, `captured` or
+`refunded`, and that list was the bug.** `src/lib/actions/checkout.ts` writes
+the payments row at **`created`**, which is not in it. So between "customer is
+typing their card number" and "webhook confirms the capture", the order looked
+exactly like abandonment — and for the entire period in which no live-mode
+webhook existed, nothing would ever move that row off `created`, making every
+paid Razorpay order certain to be cancelled and restocked.
+
+The fix is not a longer list. A list of "statuses meaning paid" must be complete
+to be safe and this one was not, so the function is narrowed instead to the set
+it can decide **without asking anybody**: orders with *no `payments` row at
+all*. That is pure Pay-on-Delivery abandonment, where there is genuinely nothing
+to reconcile.
+
+Every order with a payment attempt now belongs to
+`/api/cron/release-abandoned-orders`, which asks Razorpay
+`GET /v1/orders/{id}/payments` before deciding. Its rule is that **only a
+positive "nothing was ever authorised" can cancel**: a timeout, a 5xx, a rate
+limit or an unparseable response all leave the order untouched for the next
+tick. Cancelling late costs stock held ten more minutes; cancelling wrongly
+charges a customer and restocks goods they own, so the two are not traded off
+against each other. A capture found this way is fed through `recordAndApply` —
+the same seam the webhook uses, with the same derived event id — so the
+reconciliation and a later webhook delivery collapse to one application.
+`src/lib/payments/reconcile.ts` holds that decision as a pure function, which is
+what makes it assertable without a database or a Razorpay account.
 
 **Thirty minutes**, and the number lives in exactly one place: the
 `p_older_than_minutes` default. The scheduler passes no argument on purpose, so
@@ -358,15 +383,27 @@ the two cannot disagree. The longest legitimate gap between "order written" and
 PSPs expire in five minutes; thirty is about six times the slowest honest path.
 Worst-case reclaim latency is cutoff plus one tick, so forty minutes.
 
-It is scheduled by **`pg_cron` inside the database**, not by a Vercel cron route.
-A cron route is a public URL that has to authenticate a shared secret on every
-request; pg_cron needs no caller and no credential. It also keeps running when
-the app does not, which matters because the leak is database state and a
-route-based sweep stops exactly when the shop is already having a bad day. And
-Vercel's Hobby plan runs a cron at most once a day, which is not a reclaim for a
-thirty-minute window. **The cost, stated plainly:** the schedule is invisible
-from the repo. `select * from cron.job` is the only place it exists — see
-`docs/database.md`.
+Both halves are scheduled by **`pg_cron` inside the database**, not by Vercel
+Cron. pg_cron needs no caller and no credential for the SQL half, and it keeps
+running when the app does not — which matters because the leak is database state
+and a route-based sweep stops exactly when the shop is already having a bad day.
+The decisive reason is cheaper than either: **Vercel's Hobby plan, which this
+project is on, rejects any cron expression running more than once a day at
+deployment time.** Not degrades — fails the build. A ten-minute reclaim is not
+available there at any price short of an upgrade.
+
+The reconciler route therefore gets its tick from pg_cron too, via **pg_net**
+posting to `https://www.footvault.in/api/cron/release-abandoned-orders` with a
+bearer token read from Supabase Vault. That keeps one implementation of
+`recordAndApply` in TypeScript rather than a second one in Deno inside an Edge
+Function, which was the alternative and which would have put two copies of "apply
+a payment to an order" in two languages.
+
+**Two costs, stated plainly.** The schedule is invisible from the repo —
+`select * from cron.job` is the only place it exists, see `docs/database.md`.
+And pg_net is fire-and-forget: `trigger_order_reconciler()` returning cleanly
+proves the request was *queued*, not that the route ran. Whether it ran is
+answered by the webhook-liveness tile on the admin dashboard.
 
 ---
 

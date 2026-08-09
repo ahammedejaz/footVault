@@ -59,3 +59,11 @@ CLAUDE.md
 
 # Subagent worktrees.
 .claude/worktrees/
+
+# database dumps — real customer names, addresses and phone numbers.
+# Never in the repository. See docs/admin-guide.md section 12.
+backup-*.sql
+*.dump
+
+# staging credentials (.env.*.local above does not cover this shape)
+.env.staging

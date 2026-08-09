@@ -29,48 +29,40 @@
  * Everything created is named `fv-qa.*@example.com` or reported in the ledger
  * this returns, so `scripts/audit/teardown.ts` can find it afterwards.
  */
-import { readFileSync } from "node:fs";
-
 import { createServerClient } from "@supabase/ssr";
-import {
-  createClient,
-  type Session,
-  type SupabaseClient,
-} from "@supabase/supabase-js";
+import type { Session, SupabaseClient } from "@supabase/supabase-js";
 import type { Browser, Cookie, Page } from "playwright";
 
 import type { Database } from "../../src/lib/database.types";
+import {
+  adminClient,
+  anonClient,
+  anonKey,
+  assertNotProduction,
+  QA_EMAIL_PREFIX,
+  supabaseUrl,
+} from "./clients";
 import { BASE_URL } from "./routes";
 
-/** The one prefix teardown sweeps on. Changing it orphans every account. */
-export const QA_EMAIL_PREFIX = "fv-qa.";
+/**
+ * Nothing below this line may run against the live shop.
+ *
+ * At module scope, so it fires on import and there is no entry point — present
+ * or future — that can reach a fixture builder without passing it first.
+ * Guarding each `create…` function instead would leave the next one anybody
+ * adds unguarded, and the cost of missing one is test orders sitting beside
+ * real customers in a shop taking real money.
+ */
+assertNotProduction("build QA fixtures");
+
 const PASSWORD = "correct-horse-battery-staple-42";
 
-/** Read once, on import — every harness in this directory needs the same three keys. */
-for (const line of readFileSync(".env.local", "utf8").split("\n")) {
-  const match = /^([A-Z0-9_]+)=(.*)$/.exec(line.trim());
-  if (match && !process.env[match[1]]) process.env[match[1]] = match[2];
-}
-
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
-const ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
-const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
-
-export function anonClient(): SupabaseClient<Database> {
-  return createClient<Database>(SUPABASE_URL, ANON_KEY, {
-    auth: { persistSession: false },
-  });
-}
-
-export function adminClient(): SupabaseClient<Database> {
-  if (!SERVICE_KEY)
-    throw new Error(
-      "SUPABASE_SERVICE_ROLE_KEY is empty — cannot build fixtures",
-    );
-  return createClient<Database>(SUPABASE_URL, SERVICE_KEY, {
-    auth: { persistSession: false },
-  });
-}
+export {
+  QA_EMAIL_PREFIX,
+  anonClient,
+  adminClient,
+  assertNotProduction,
+} from "./clients";
 
 /** The address every fixture ships to. Real enough to pass `checkoutSchema`. */
 export const QA_ADDRESS = {
@@ -116,7 +108,7 @@ export async function createAccount(label: string): Promise<Account> {
  */
 export async function sessionCookies(session: Session): Promise<Cookie[]> {
   const jar = new Map<string, string>();
-  const client = createServerClient(SUPABASE_URL, ANON_KEY, {
+  const client = createServerClient(supabaseUrl(), anonKey(), {
     cookies: {
       getAll: () => [...jar].map(([name, value]) => ({ name, value })),
       setAll: (list) =>
@@ -244,7 +236,8 @@ export async function placeCodOrder(
       : undefined,
     p_contact_phone: QA_ADDRESS.phone,
   });
-  if (error) throw new Error(`could not place the fixture order: ${error.message}`);
+  if (error)
+    throw new Error(`could not place the fixture order: ${error.message}`);
 
   const number = data?.[0]?.order_number;
   if (!number) throw new Error("create_order_with_stock returned no order");
@@ -272,7 +265,9 @@ export async function placeCodOrder(
       is_default: true,
     });
     if (addressError) {
-      throw new Error(`could not save the fixture address: ${addressError.message}`);
+      throw new Error(
+        `could not save the fixture address: ${addressError.message}`,
+      );
     }
   }
 

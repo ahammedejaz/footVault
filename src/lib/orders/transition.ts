@@ -1,5 +1,6 @@
 import "server-only";
 
+import { formatPaise } from "@/lib/format";
 import { stockChanged } from "@/lib/stock-freshness";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -61,11 +62,27 @@ export async function transitionOrder(args: {
   const { supabase, elevated, orderId, to, note, actorId } = args;
 
   for (let attempt = 0; attempt < CAS_ATTEMPTS; attempt++) {
-    const order = await maybeRow<{ id: string; status: OrderStatus }>(
+    /**
+     * Four columns beyond the two the swap needs, and they are here for one
+     * branch: the refusal to cancel a paid order has to name the amount and the
+     * payment it belongs to. Read on every pass rather than fetched inside that
+     * branch because the row is already being read and a second round trip to
+     * build an error message is a round trip spent on the unhappy path.
+     */
+    const order = await maybeRow<{
+      id: string;
+      status: OrderStatus;
+      payment_method: string | null;
+      advance_amount: number | null;
+      grand_total: number | null;
+      payment_reference: string | null;
+    }>(
       "transitionOrder.read",
       supabase
         .from("orders")
-        .select("id, status")
+        .select(
+          "id, status, payment_method, advance_amount, grand_total, payment_reference",
+        )
         .eq("id", orderId)
         .maybeSingle(),
     );
@@ -119,9 +136,7 @@ export async function transitionOrder(args: {
         return {
           ok: false,
           reason: "paid",
-          message:
-            "This order has been paid, so cancelling it would mean refunding it. " +
-            "Refunds are not built yet — refund in Razorpay first, then cancel.",
+          message: refundInstruction(order),
         };
       }
       // Whatever the verdict below, the units may have gone back on the shelf.
@@ -192,4 +207,66 @@ export async function transitionOrder(args: {
     message:
       "This order changed while you were looking at it. Reload the page and try again.",
   };
+}
+
+/**
+ * What to refund, and against which payment, in a sentence the owner can act on.
+ *
+ * Until refunds are built the shop's answer to "cancel this paid order" is a
+ * manual transfer in the Razorpay dashboard, and the old wording — "refund in
+ * Razorpay first" — named neither a figure nor a payment. The owner had to open
+ * the order, work out which of three amounts on it was actually taken, and find
+ * the payment by hand.
+ *
+ * **The amount is `advance_amount`, never `grand_total`, and that distinction is
+ * the entire reason this function exists.** On a Pay-on-Delivery order those two
+ * are wildly different: the advance is what Razorpay captured, the total
+ * includes a balance the courier never collected because the parcel is being
+ * cancelled. Refunding the total would send money the shop never received. On a
+ * prepaid order they are equal — `orders_advance_balance_sums` guarantees
+ * `advance_amount + balance_due_on_delivery = grand_total` — so reading the
+ * advance is correct for both and there is no branch on payment method.
+ *
+ * Exported for the test. It is pure, and it is the only part of `transitionOrder`
+ * worth asserting on without a database behind it.
+ */
+export function refundInstruction(order: {
+  payment_method: string | null;
+  advance_amount: number | null;
+  grand_total: number | null;
+  payment_reference: string | null;
+}): string {
+  const captured = order.advance_amount;
+  const isCod = order.payment_method === "cod";
+
+  // Null rather than zero: `advance_amount` is non-null on every order this
+  // codebase writes, so a null here means something read a shape we do not
+  // know. Saying "look it up" is honest; printing "₹0" would be a lie the owner
+  // would act on.
+  const amount =
+    typeof captured === "number"
+      ? formatPaise(captured)
+      : "the amount captured at checkout";
+
+  // A paid order should always carry its `pay_…` id. When it does not, do not
+  // invent one — send them to the order number, which Razorpay's dashboard can
+  // search on via the notes we attach at creation.
+  const against = order.payment_reference
+    ? `payment ${order.payment_reference}`
+    : "the payment on this order (no payment reference was recorded — search Razorpay by order number)";
+
+  // Only said for Pay on Delivery, because only there can the two numbers be
+  // confused, and an unnecessary "not the total" on a prepaid order invites the
+  // owner to wonder which figure is right.
+  const notTheTotal =
+    isCod &&
+    typeof captured === "number" &&
+    typeof order.grand_total === "number"
+      ? ` That is the advance taken at checkout, not the ${formatPaise(order.grand_total)} order total — the balance was never collected.`
+      : "";
+
+  return (
+    "This order has been paid, so cancelling it would mean refunding it. " +
+    `Refund ${amount} against ${against} in Razorpay, then cancel.${notTheTotal}`
+  );
 }

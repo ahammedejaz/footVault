@@ -217,12 +217,29 @@ export async function POST(request: Request): Promise<NextResponse> {
   /**
    * The seam declined, and every reason it can give is a 200.
    *
-   * `illegal_transition` is the normal outcome when the browser callback got
-   * here first — the order is already confirmed and confirming it again is not
-   * a legal move. `duplicate` is the seam's own idempotency agreeing with ours.
-   * `not_found` is an event for an order this deployment does not have, which
-   * happens because dev, preview and production share one Razorpay test
-   * account; retrying cannot conjure the order, so we stop and log it loudly.
+   * **`illegal_transition` was logged at info here, and that was wrong.** The
+   * comment this replaces justified the low severity by saying it is "the
+   * normal outcome when the browser callback got here first". It is not, and
+   * it cannot be: when the callback has already confirmed the order,
+   * `applyPaymentOutcome` finds a `confirmed` order, which is not terminal and
+   * not `pending`, so neither branch that sets `illegal` fires and the result
+   * is `applied: true` with the status left alone. Traced through
+   * `payment-state.ts` rather than assumed.
+   *
+   * There are exactly two ways to reach `illegal_transition`, and both are
+   * somebody's money:
+   *
+   *   - a capture short of what was owed, which leaves the order `pending` and
+   *     `unpaid` for a human — a customer charged for an order that will not
+   *     ship;
+   *   - a capture against an order that is already `cancelled` or `returned` —
+   *     the shop has taken money for goods it has put back on the shelf, and
+   *     owes a refund.
+   *
+   * Neither should ever be filtered out of a log at info level, and the
+   * cancelled case now also appears on the admin dashboard as a refund queue.
+   * `duplicate` genuinely is routine — the seam's idempotency agreeing with
+   * ours. `not_found` is an event for an order this deployment does not have.
    */
   const line = "[razorpay-webhook] not applied";
   const fields = {
@@ -232,7 +249,8 @@ export async function POST(request: Request): Promise<NextResponse> {
     reason: result.reason,
     detail: result.message,
   };
-  if (result.reason === "not_found") console.error(line, fields);
+  if (result.reason === "not_found" || result.reason === "illegal_transition")
+    console.error(line, fields);
   else console.info(line, fields);
 
   return NextResponse.json({ ok: true, applied: false }, noStore(200));
