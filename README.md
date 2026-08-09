@@ -47,7 +47,8 @@ Open http://localhost:3000. The design system renders at `/style-guide`.
 | `npm run shapes` | Fails if a cached return type changed without a `SHAPE_VERSION` bump. **Runs in CI** |
 | `npm run shapes:write` | Re-record the shape snapshot after a deliberate change |
 | `npm run seed` | Upsert the seed catalog into Supabase (needs `SUPABASE_SERVICE_ROLE_KEY`) |
-| `npm run seed:sql` | Write `supabase/seed.sql` instead, for `supabase db reset` |
+| `npm run seed:sql` | Write `supabase/seed.sql` instead, for the rebuild below |
+| `npm run rebuild:stage` | **The disaster-recovery drill**: staging from empty — clean, replay every migration, seed, verify. Refuses to aim anywhere but staging |
 | `npm run seed:images` | Regenerate the drawn product assets in `public/seed/` |
 | `npm run audit` | The browser and database gate — every `audit:*` below except `security`, `lighthouse`, `shots` and `teardown` |
 | `npm run audit:literals` | No policy number typed anywhere — in a component **or** in owner-edited CMS content |
@@ -67,6 +68,8 @@ Open http://localhost:3000. The design system renders at `/style-guide`.
 | `npm run audit:checkout` | Checkout, orders and webhook idempotency against the live database |
 | `npm run audit:shipping` | Shiprocket end to end, mocked: token cache, serviceability, the fee split, and that the COD collectable is the balance |
 | `npm run audit:totals` | The advance arithmetic in isolation — 15 assertions, no database and no browser |
+| `npm run audit:refunds` | The refund promises against staging: the captured-amount ceiling, the double-click index, replay-equals-one-refund, the dashboard import |
+| `npm run audit:rto` | The RTO lifecycle against staging: detection idempotency, receive guards, restock-exactly-once with the ledger asserted, the repeat-phone flag |
 | `npm run audit:admin` | The admin surface: role gate, inventory ledger, reconciliation |
 | `npm run audit:security` | The adversarial regression suite, through the real webhook route over HTTP |
 | `npm run audit:lighthouse` | Performance on a local production build, `--throttling-method=devtools` |
