@@ -39,6 +39,43 @@ import { consumeRateLimit } from "@/lib/rate-limit";
  * which is worse than having none.
  */
 
+/**
+ * A second cap that does not depend on the database.
+ *
+ * The database-backed limits are the real ones and they are the right shape —
+ * but `consumeRateLimit` **fails open**: when the counter cannot be read it
+ * allows the call and logs. That is correct for a cart write, where the cost of
+ * failing closed is a customer who cannot add to their bag. It is exactly wrong
+ * here, because the most likely cause of every request failing at once *is* the
+ * database being unreachable — so the one scenario that would produce hundreds
+ * of error emails is the one scenario in which the cap counting them does not
+ * bind. The limiter would wave through every send.
+ *
+ * So: an in-process counter as well. It is per instance rather than global, and
+ * that is acknowledged rather than hidden — a platform running eight instances
+ * can emit eight times this number. The point is not an exact ceiling, it is
+ * the difference between "a handful per instance" and "one per request", which
+ * is the difference between an inbox you can still read and one you cannot.
+ *
+ * Deliberately not reset by a timer: a module-scope value in a serverless
+ * instance already dies with the instance, which is a coarse expiry that costs
+ * nothing to maintain.
+ */
+const IN_PROCESS_LIMIT = 5;
+const IN_PROCESS_WINDOW_MS = 3_600_000;
+let sentInThisProcess = 0;
+let windowStartedAt = 0;
+
+function withinProcessBudget(now: number): boolean {
+  if (now - windowStartedAt > IN_PROCESS_WINDOW_MS) {
+    windowStartedAt = now;
+    sentInThisProcess = 0;
+  }
+  if (sentInThisProcess >= IN_PROCESS_LIMIT) return false;
+  sentInThisProcess += 1;
+  return true;
+}
+
 export type ServerErrorReport = {
   error: unknown;
   path: string;
@@ -87,6 +124,19 @@ export async function reportServerError(
 
     const overall = await consumeRateLimit("errorReportTotal", "all");
     if (!overall.allowed) return;
+
+    /*
+      Last, and the only one that still holds when the database is the thing
+      that is broken. Both limits above fail open by design; this one cannot,
+      because it counts in memory.
+    */
+    if (!withinProcessBudget(Date.now())) {
+      console.error(
+        "[server-error] in-process email budget spent — logging only. " +
+          "If this line is frequent the shop is failing in bulk.",
+      );
+      return;
+    }
 
     const adapter = getEmailAdapter();
     const result = await adapter.send(

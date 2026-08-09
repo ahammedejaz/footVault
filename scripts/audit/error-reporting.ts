@@ -19,6 +19,8 @@
  *
  *   npx tsx scripts/audit/error-reporting.ts
  */
+import { readFileSync } from "node:fs";
+
 import { buildIncidentEmail } from "../../src/lib/email/incident";
 import { fingerprint, isControlFlow } from "../../src/lib/errors/classify";
 
@@ -164,6 +166,51 @@ check(
   }).subject === "Error on /page/returns — Foot Vault",
 );
 check("the incident email can be replied to", Boolean(message.replyTo));
+
+/* ------------------------------------------------- 5 · the hard cap -- */
+
+console.log(
+  "\n\u001b[1m5 \u00b7 a shop failing on every request cannot bury the one that matters\u001b[0m",
+);
+
+/*
+ * Three caps, and the third exists because the first two fail open.
+ *
+ * `consumeRateLimit` allows the call when its counter cannot be read — right
+ * for a cart write, wrong here, because the most likely cause of every request
+ * failing at once is the database being unreachable. That is precisely the
+ * scenario in which a database-backed cap on error emails does not bind.
+ */
+const reporterSource = readFileSync(
+  "src/lib/errors/report-server-error.ts",
+  "utf8",
+);
+const limits = readFileSync("src/lib/rate-limit.ts", "utf8");
+
+const perError = /errorReport:\s*\[(\d+),\s*(\d+)\]/.exec(limits);
+const total = /errorReportTotal:\s*\[(\d+),\s*(\d+)\]/.exec(limits);
+
+check(
+  "a per-error cap exists",
+  perError !== null,
+  perError ? `${perError[1]} per ${perError[2]}s` : "missing",
+);
+check(
+  "a global cap exists, in one bucket for the whole shop",
+  total !== null && /consumeRateLimit\("errorReportTotal",\s*"all"\)/.test(reporterSource),
+  total ? `${total[1]} per ${total[2]}s` : "missing",
+);
+check(
+  "both are checked before the send, not after",
+  reporterSource.indexOf("errorReportTotal") <
+    reporterSource.indexOf("adapter.send("),
+);
+check(
+  "and a cap that survives the database being the broken thing",
+  /withinProcessBudget\(/.test(reporterSource) &&
+    /IN_PROCESS_LIMIT/.test(reporterSource),
+  "counts in memory, so it holds when consumeRateLimit fails open",
+);
 
 /* ------------------------------------------------------------ summary -- */
 
