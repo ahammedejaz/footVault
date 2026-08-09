@@ -180,6 +180,8 @@ export type AdminOrderDetail = {
   subtotal: number;
   shippingFee: number;
   discountTotal: number;
+  /** The part of it given for paying online. The rest is coupon or manual. */
+  prepaidDiscount: number;
   grandTotal: number;
   /** The Pay-on-Delivery extra, as its own line. 0 for prepaid. */
   codHandlingFee: number;
@@ -250,6 +252,7 @@ export async function getOrderDetail(
     subtotal: number;
     shipping_fee: number;
     discount_total: number;
+    prepaid_discount: number;
     grand_total: number;
     cod_handling_fee: number;
     advance_amount: number;
@@ -270,7 +273,7 @@ export async function getOrderDetail(
       .from("orders")
       .select(
         `id, order_number, status, payment_status, payment_method, subtotal, shipping_fee,
-         discount_total, grand_total, cod_handling_fee, advance_amount,
+         discount_total, prepaid_discount, grand_total, cod_handling_fee, advance_amount,
          balance_due_on_delivery, cash_collected_at, delivered_at,
          placed_at, customer_note, contact_email, contact_phone,
          user_id, guest_token, stock_restored_at, shipping_address`,
@@ -350,6 +353,7 @@ export async function getOrderDetail(
     subtotal: order.subtotal,
     shippingFee: order.shipping_fee,
     discountTotal: order.discount_total,
+    prepaidDiscount: order.prepaid_discount,
     grandTotal: order.grand_total,
     codHandlingFee: order.cod_handling_fee,
     advanceAmount: order.advance_amount,

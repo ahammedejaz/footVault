@@ -114,6 +114,9 @@ type StoredQuoteView = {
   advancePaise: number;
   balanceDuePaise: number;
   grandTotalPaise: number;
+  /** Everything off the goods, and the part of it given for paying online. */
+  discountTotalPaise: number;
+  prepaidDiscountPaise: number;
   deliverable: boolean;
   codAvailable: boolean;
   estimatedDays: number | null;
@@ -272,6 +275,8 @@ export function CheckoutFlow({
           advancePaise: result.advancePaise,
           balanceDuePaise: result.balanceDuePaise,
           grandTotalPaise: result.grandTotalPaise,
+          discountTotalPaise: result.discountTotalPaise,
+          prepaidDiscountPaise: result.prepaidDiscountPaise,
           deliverable: result.deliverable,
           codAvailable: result.codAvailable,
           estimatedDays: result.estimatedDays,
@@ -318,6 +323,23 @@ export function CheckoutFlow({
         grandTotal: quote.grandTotalPaise,
         advanceAmount: quote.advancePaise,
         balanceDueOnDelivery: quote.balanceDuePaise,
+        /*
+          The two discount rows, taken from the same answer as the total they
+          explain.
+
+          These were the two fields the spread above did *not* replace, and the
+          comment four lines up — "updating one and not the other is how a
+          checkout ends up not adding up" — described the bug it was about to
+          have. `totals` is the bag before a destination exists, so both are zero
+          in it; `grandTotal` was overwritten with the discounted figure and both
+          discount rows kept the zeros. The customer was shown ₹3,249.20 for a
+          ₹3,999 pair with ₹50 delivery, a Discount line reading "—", and no
+          "Paying online" row at all, because that row only draws when
+          `prepaidDiscount > 0`. Money was coming off and nothing on the page
+          said so.
+        */
+        discountTotal: quote.discountTotalPaise,
+        prepaidDiscount: quote.prepaidDiscountPaise,
       }
     : totals;
 

@@ -142,6 +142,10 @@ export async function detectRtoFromTracking(
         "returning",
         `Courier reported RTO: ${trackingStatus}`,
         null,
+        // "RTO" is a logistics acronym and the tracking string is the courier's
+        // vocabulary. What happened, from the customer's side, is that the
+        // parcel turned round.
+        "Your parcel is on its way back to us. We will be in touch once it arrives.",
       );
       await stampShipmentRto(admin, orderId, rtoAt);
       return "detected";
@@ -168,6 +172,7 @@ export async function detectRtoFromTracking(
         order.status,
         `Courier reported RTO: ${trackingStatus}`,
         null,
+        "Your parcel is on its way back to us. We will be in touch once it arrives.",
       );
       await stampShipmentRto(admin, orderId, rtoAt);
       return "recorded";
@@ -217,11 +222,14 @@ async function writeHistory(
   status: OrderStatus,
   note: string,
   changedBy: string | null,
+  /** What the customer reads, or null when the event has nothing to say. */
+  customerNote: string | null = null,
 ): Promise<void> {
   const { error } = await admin.from("order_status_history").insert({
     order_id: orderId,
     status,
     note,
+    customer_note: customerNote,
     changed_by: changedBy,
   });
   if (error) {

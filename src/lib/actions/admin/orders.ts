@@ -406,6 +406,7 @@ export async function markCashCollected(
           order_id: parsed.data.orderId,
           status: order.status,
           note: "Cash collected on delivery",
+          customer_note: "The balance was paid in cash on delivery. Paid in full.",
           changed_by: actor.id,
         });
       // The money is recorded; a missing timeline line is worth a log, not a

@@ -60,7 +60,11 @@ export default async function CheckoutPage() {
    */
   const totals: OrderTotals = {
     subtotal: cart.subtotal,
+    // Both zero before a destination is known, and both are replaced wholesale
+    // by `CheckoutFlow` the moment a quote lands. The prepaid discount depends
+    // on the payment method, which is chosen two steps after this render.
     discountTotal: 0,
+    prepaidDiscount: 0,
     shippingFee: 0,
     codHandlingFee: 0,
     taxTotal: 0,

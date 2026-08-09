@@ -244,9 +244,23 @@ async function main() {
       settingsBody.includes("Pay on Delivery"),
       settingsBody.slice(0, 120),
     );
+    /*
+      This check used to assert `/Delivery rates are not set here/` — it pinned
+      the single sentence that stopped the owner reading the panel. A gate that
+      holds a page to the wording that caused the reported failure is worse than
+      no gate, so it asserts the opposite property now: the two controls the
+      owner could not find are readable **in the closed state**, with no dropdown
+      opened and nothing clicked.
+
+      The full operate-and-assert pass over all 31 controls lives in
+      `audit:settings-controls`. This stays here because it is the cheap version
+      of the same question, running in a suite that already has the page open.
+    */
     check(
-      "it says plainly that rates are not set here",
-      /Delivery rates are not set here/i.test(settingsBody),
+      "the words a shopkeeper scans for are on screen without opening anything",
+      /Charge one flat amount/i.test(settingsBody) &&
+        /Offer Pay on Delivery/i.test(settingsBody),
+      settingsBody.slice(0, 200).replace(/\n/g, " · "),
     );
 
     const freeAbove = page.locator("#free-above");
@@ -330,7 +344,8 @@ async function main() {
     const plainBody = await plainPage.locator("body").innerText();
     check(
       "a customer opening /admin/settings sees nothing of it",
-      !plainBody.includes("Delivery rates are not set here"),
+      !plainBody.includes("Charge one flat amount") &&
+        !plainBody.includes("Offer Pay on Delivery"),
       `status ${settingsResponse?.status()}`,
     );
     if (order) {

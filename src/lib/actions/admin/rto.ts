@@ -385,6 +385,10 @@ export async function recordRtoCharge(
           order_id: parsed.data.orderId,
           status: order.status,
           note: `Actual return charge recorded from Shiprocket: ${formatPaise(parsed.data.actualRupees)}. Refund deductions now use this figure instead of the quote.`,
+          // No customer_note: this is the shop reconciling what the courier
+          // billed it. The customer learns the outcome from the refund line,
+          // which names the figure that actually came back to them.
+          customer_note: null,
           changed_by: actor.id,
         });
       // The figure is recorded; a missing timeline line is worth a log, not a

@@ -1,3 +1,4 @@
+import { roundedDiscountPaise } from "@/lib/payments/discount";
 import { MIN_CHARGEABLE_PAISE } from "@/lib/payments/types";
 
 /**
@@ -258,9 +259,14 @@ export function codOfferedForOrder(input: {
  *
  * A line item rather than a lower price, because the owner's rule everywhere in
  * this codebase is that a difference between two payment methods must be
- * something a customer can see and point at. Rounded down, so the discount is
- * never a fraction of a paisa the total cannot express, and never more than the
- * goods it is discounting.
+ * something a customer can see and point at.
+ *
+ * **Rounded up to a whole rupee, and never more than the goods it discounts.**
+ * The rounding is `roundedDiscountPaise` rather than a `Math.floor` here, and
+ * that is deliberate: a percent coupon asks the identical question and must
+ * answer it identically, so there is one rule in one file. See
+ * `src/lib/payments/discount.ts` for why up rather than down, and why the cap
+ * comes after the rounding.
  */
 export function prepaidDiscountFor(input: {
   discount: { mode: "flat" | "percent"; value: number };
@@ -270,7 +276,7 @@ export function prepaidDiscountFor(input: {
   if (discount.value <= 0 || goodsTotalPaise <= 0) return 0;
   const raw =
     discount.mode === "percent"
-      ? Math.floor((goodsTotalPaise * discount.value) / 100)
-      : Math.floor(discount.value);
-  return Math.max(0, Math.min(raw, goodsTotalPaise));
+      ? (goodsTotalPaise * discount.value) / 100
+      : discount.value;
+  return roundedDiscountPaise(raw, goodsTotalPaise);
 }

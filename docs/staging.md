@@ -208,6 +208,34 @@ which sweeps staging, because staging is now the default target.
 
 ---
 
+## 4.5 · The guard only covers the files that ask it
+
+`clients.ts` refuses production and repoints the process at staging — **for the
+harnesses that import it.** Three did not, and were building carts, orders,
+payments and stock movements in the live shop on every `npm run audit`:
+`checkout-orders.ts`, `cart-merge.ts` and `zero-stock.ts`. Each read `.env.local`
+itself and built a service-role client from `NEXT_PUBLIC_SUPABASE_URL`. Found in
+Phase 9, when a freshly-written migration was missing from the database a run
+was really talking to.
+
+The rule now has a mechanism rather than a convention. `audit:fixtures-guard`
+reads the directory and fails if any file in `scripts/audit/` names a raw
+Supabase credential *and* can write (`.insert`, `.update`, `.upsert`, `.delete`,
+`.rpc`) without importing `./clients`.
+
+Two harnesses are exempt, and they are **named on every run** rather than
+silently skipped:
+
+| File | Why |
+|---|---|
+| `literals.ts` | it checks the **shop's own** owner-edited copy for currency literals; against a seeded staging database that is an assertion about fixtures |
+| `payment-health.ts` | it runs the dashboard's query against real rows |
+
+Both are read-only and neither can write. If either ever gains a write, the
+check fails and the exemption has to be argued again — which is the point.
+
+---
+
 ## 5 · When the guard fires
 
 `assertNotProduction()` in `scripts/audit/clients.ts` throws at module scope in

@@ -51,13 +51,19 @@ export default async function AdminSettingsPage() {
     <AdminPage>
       <PageHeader
         title="Settings"
-        description="What the shop decides. Delivery rates are not among them — those come from the courier."
+        description="What the shop decides: how delivery is charged, the rules for cash on delivery, what a returned parcel costs, and how customers reach you."
       />
 
       <div className="mt-6 grid gap-6 lg:grid-cols-2">
+        {/*
+          "Delivery and Pay on Delivery · Thresholds, not rates" — a title that
+          told the owner what the panel does *not* contain, above a line that
+          told them again. The panel holds both a delivery charge and the
+          Pay-on-Delivery switch, so it now says so.
+        */}
         <Panel
           title="Delivery and Pay on Delivery"
-          description="Thresholds, not rates."
+          description="How delivery is charged, and the rules for cash at the door."
         >
           <ShippingSettingsForm
             initial={{

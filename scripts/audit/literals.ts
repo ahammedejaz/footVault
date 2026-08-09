@@ -48,6 +48,32 @@ import { execSync } from "node:child_process";
 
 import { createClient } from "@supabase/supabase-js";
 
+/**
+ * **This gate's content half has never actually run.**
+ *
+ * It reads `NEXT_PUBLIC_SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` from
+ * `process.env` — and nothing put them there. `npm run audit:literals` is
+ * `tsx scripts/audit/literals.ts`, and npm does not read `.env.local`, so the
+ * check printed its honest "skipped: … not set. That is a gap, not a pass" on
+ * every single run and nobody read it as *the half that matters has never
+ * executed*.
+ *
+ * It matters because the ₹2,499 incident's third recurrence was **in content**:
+ * `homepage_sections.payload` still promised "Free shipping over ₹2,499" after
+ * this gate was written and passing, and it was found by curling the deployed
+ * site rather than by the gate.
+ *
+ * `.env.local` verbatim, deliberately, and this file is one of the two the
+ * `audit:fixtures-guard` import check exempts by name: the content that matters
+ * is the **shop's own** owner-edited copy, and pointing this at a seeded staging
+ * database would turn a real assertion into an assertion about fixtures. It
+ * writes nothing, anywhere.
+ */
+for (const line of readFileSync(".env.local", "utf8").split("\n")) {
+  const match = /^([A-Z0-9_]+)=(.*)$/.exec(line.trim());
+  if (match && !process.env[match[1]]) process.env[match[1]] = match[2];
+}
+
 let failed = 0;
 const problems: string[] = [];
 

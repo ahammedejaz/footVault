@@ -6,7 +6,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import type { Database } from "@/lib/database.types";
 import { canTransition, type OrderStatus } from "@/lib/orders/types";
-import { maybeRow } from "@/lib/queries/run";
+import { maybeRow, rows } from "@/lib/queries/run";
 
 /**
  * Moving an order's status because a human said so.
@@ -125,6 +125,15 @@ export async function transitionOrder(args: {
           p_require_unpaid: true,
           p_release_cart: false,
           p_movement_reason: "cancellation",
+          /*
+            Null, and that is the decision rather than an omission. `p_reason` is
+            the admin's own text and belongs in the audit column; what the
+            customer needs to know about a cancellation — whether money is coming
+            back — is *derived* from the order's payment status by
+            `whatHappensNext`, in one place, rather than frozen into a history
+            row that cannot know whether a refund settles afterwards.
+          */
+          p_customer_note: undefined,
         },
       );
       if (error) {
@@ -133,10 +142,34 @@ export async function transitionOrder(args: {
         );
       }
       if (data === "already_paid") {
+        /**
+         * Only now, and only on the unhappy path. The guard has just told us
+         * money is outstanding, so one extra round trip to say *how much* is
+         * cheap — and without it the sentence names the whole advance on an
+         * order that has already been partly refunded, which is the shop
+         * sending the same money twice.
+         *
+         * Read with the elevated client because `refunds` is admin-only by
+         * policy and this runs behind the admin guard already.
+         */
+        const settled = await rows<{ amount_paise: number }>(
+          "transitionOrder.refunded",
+          elevated()
+            .from("refunds")
+            .select("amount_paise")
+            .eq("order_id", orderId)
+            .eq("status", "processed"),
+        );
         return {
           ok: false,
           reason: "paid",
-          message: refundInstruction(order),
+          message: refundInstruction({
+            ...order,
+            refunded_paise: settled.reduce(
+              (total, refund) => total + refund.amount_paise,
+              0,
+            ),
+          }),
         };
       }
       // Whatever the verdict below, the units may have gone back on the shelf.
@@ -186,6 +219,14 @@ export async function transitionOrder(args: {
         order_id: orderId,
         status: to,
         note: note?.trim() || null,
+        /*
+          The admin's own words stay internal. `note` here is whatever the owner
+          typed into "Add a note" — "rang the customer, no answer" is the
+          placeholder — and it was going straight onto the customer's order page.
+          What the customer sees for a status change is the status label, which
+          `ORDER_STATUS_COPY` already writes properly for all eight of them.
+        */
+        customer_note: null,
         changed_by: actorId,
       });
     if (historyError) {
@@ -235,9 +276,44 @@ export function refundInstruction(order: {
   advance_amount: number | null;
   grand_total: number | null;
   payment_reference: string | null;
+  /**
+   * What has **already** come back, in paise.
+   *
+   * Added because this sentence had the cancel guard's blind spot from the other
+   * side: it told the owner to refund `advance_amount` without ever asking
+   * whether that had already happened. On FV-2026-00623 — ₹135 captured, ₹135
+   * refunded, webhook-confirmed — it instructed a second refund of money that
+   * was already back with the customer. Obeyed, that is the shop paying twice.
+   *
+   * Optional so that callers with no refund data behave exactly as before.
+   */
+  refunded_paise?: number | null;
 }): string {
-  const captured = order.advance_amount;
   const isCod = order.payment_method === "cod";
+
+  /**
+   * What is still outstanding — the same arithmetic the SQL guard now uses, and
+   * it has to be the same or the owner is shown a figure the database would not
+   * refuse on. Never below zero: an over-refund is somebody else's problem and
+   * printing a negative amount to refund would be nonsense.
+   */
+  const alreadyBack = Math.max(0, order.refunded_paise ?? 0);
+  const captured =
+    typeof order.advance_amount === "number"
+      ? Math.max(0, order.advance_amount - alreadyBack)
+      : order.advance_amount;
+
+  /**
+   * Nothing left to send back. Reached when a refund settled but the order was
+   * never closed — exactly FV-2026-00623's state before this phase — and the
+   * honest instruction is "press cancel again", not "refund ₹0".
+   */
+  if (alreadyBack > 0 && captured === 0) {
+    return (
+      "This order has already been refunded in full, so there is nothing left " +
+      "to send back. Cancelling it now will put the pairs back on the shelf."
+    );
+  }
 
   // Null rather than zero: `advance_amount` is non-null on every order this
   // codebase writes, so a null here means something read a shape we do not
@@ -266,6 +342,16 @@ export function refundInstruction(order: {
       : "";
 
   /**
+   * A partial refund already sent. Said out loud, because the figure above is
+   * now smaller than the advance on the order and an owner cross-checking the
+   * two would otherwise conclude the message was wrong.
+   */
+  const partly =
+    alreadyBack > 0
+      ? ` ${formatPaise(alreadyBack)} has already gone back, so this is what is left.`
+      : "";
+
+  /**
    * Since Batch 3 the panel on the order page moves the money itself, so the
    * sentence sends the owner there rather than to the Razorpay dashboard. The
    * amount and payment id stay in it on purpose — they are what the owner
@@ -275,6 +361,6 @@ export function refundInstruction(order: {
   return (
     "This order has been paid, so cancelling it would mean refunding it. " +
     `Use "The money back" panel on this page to send ${amount} back against ` +
-    `${against}, then cancel.${notTheTotal}`
+    `${against}, then cancel.${notTheTotal}${partly}`
   );
 }
