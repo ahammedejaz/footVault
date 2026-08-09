@@ -34,6 +34,7 @@ export function WishlistRow({ product }: { product: ProductSummary }) {
   const [gone, setGone] = useState(false);
   const [pending, startTransition] = useTransition();
   const refreshBag = useBagUi((state) => state.refresh);
+  const bump = useBagUi((state) => state.bump);
 
   if (gone) return null;
 
@@ -55,12 +56,15 @@ export function WishlistRow({ product }: { product: ProductSummary }) {
       return;
     }
 
+    // The badge moves with the tap; the round trip is what this hides.
+    bump(1);
     startTransition(async () => {
       const added = await addToBag({
         variantId: entry.variantId!,
         quantity: 1,
       });
       if (!added.ok) {
+        bump(-1);
         toast.failed(added.message);
         return;
       }

@@ -50,6 +50,7 @@ export function AddToBag({
 }) {
   const [pending, startTransition] = useTransition();
   const refreshBag = useBagUi((state) => state.refresh);
+  const bump = useBagUi((state) => state.bump);
 
   return (
     <Button
@@ -66,10 +67,14 @@ export function AddToBag({
           return;
         }
 
+        // The badge moves now; the ~700 ms round trip is what this hides.
+        bump(1);
+
         startTransition(async () => {
           const result = await addToBag({ variantId, quantity: 1 });
 
           if (!result.ok) {
+            bump(-1);
             toast.failed(result.message);
             return;
           }
@@ -77,13 +82,16 @@ export function AddToBag({
           void refreshBag();
           const { itemId, name, size: chosen, previousQuantity } = result.data;
 
+          const added = result.data.added;
           toast.undoable("Added to bag", `${name} · UK ${chosen}`, () => {
+            bump(-added);
             startTransition(async () => {
               const undone = await setQuantity({
                 itemId,
                 quantity: previousQuantity,
               });
               if (!undone.ok) {
+                bump(added);
                 toast.failed(undone.message);
                 return;
               }

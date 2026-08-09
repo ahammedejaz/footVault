@@ -4,7 +4,7 @@ import Link from "next/link";
 
 import { CountBadge, countLabel } from "@/components/storefront/count-badge";
 import { Button } from "@/components/ui/button";
-import { useBagUi } from "@/lib/stores/bag";
+import { useBagUi, useDisplayedBagCount } from "@/lib/stores/bag";
 
 /**
  * The two utility icons.
@@ -26,12 +26,14 @@ export function BagLink({
   children: React.ReactNode;
 }) {
   const openDrawer = useBagUi((state) => state.openDrawer);
+  // Server fact plus the optimistic delta — see useDisplayedBagCount.
+  const shown = useDisplayedBagCount(count);
 
   return (
     <Button variant="ghost" size="icon" className="relative" asChild>
       <Link
         href="/cart"
-        aria-label={countLabel("Bag", count)}
+        aria-label={countLabel("Bag", shown)}
         onClick={(event) => {
           // Let the browser do its thing for anything that is not a plain
           // left-click: a modified click means "open this somewhere else".
@@ -43,7 +45,7 @@ export function BagLink({
         }}
       >
         {children}
-        <CountBadge count={count} />
+        <CountBadge count={shown} />
       </Link>
     </Button>
   );
