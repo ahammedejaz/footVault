@@ -212,10 +212,33 @@ async function main() {
     /* ═══ 5 · the settings the advance rule comes from ═════════════════════ */
     section("5 · The rule itself");
 
+    /*
+      **The row is unchanged**, asserted against what it actually holds rather
+      than against a key that used to be in it.
+
+      This check read back `cod_advance_minimum_paise === 9_900`. Phase 7
+      replaced the advance rule entirely and deleted that key from
+      `site_settings` on purpose — so against production's older row the check
+      passed by reading a fossil, and against a rebuilt database it failed while
+      the security property it names was perfectly intact.
+
+      `admin-pages.ts` already learned this lesson and wrote it down: "A sentinel
+      tests the property itself and cannot go stale with the schema." Same fix
+      here. The property is that an attacker's write does not land, so the
+      before-and-after of the whole row is the only thing worth comparing.
+    */
+    const { data: settingsBefore, error: beforeError } = await admin
+      .from("site_settings")
+      .select("value")
+      .eq("key", "shipping")
+      .single();
+    if (beforeError) throw new Error(`could not read shipping: ${beforeError.message}`);
+
     const { error: settingsError } = await attackerClient
       .from("site_settings")
       .update({ value: { cod_advance_minimum_paise: 100 } })
       .eq("key", "shipping");
+
     const { data: settingsAfter, error: settingsAfterError } = await admin
       .from("site_settings")
       .select("value")
@@ -223,12 +246,11 @@ async function main() {
       .single();
     const stillRight =
       settingsAfterError === null &&
-      (settingsAfter?.value as Record<string, unknown> | null)
-        ?.cod_advance_minimum_paise === 9_900;
+      JSON.stringify(settingsAfter?.value) === JSON.stringify(settingsBefore?.value);
     check(
-      "a customer cannot lower the minimum advance",
+      "a customer cannot rewrite the settings the advance rule comes from",
       stillRight,
-      `error=${settingsError?.code ?? "none"}`,
+      `error=${settingsError?.code ?? "none"}, changed=${!stillRight}`,
     );
 
     /* ═══ 6 · the shipment, and what the courier is told to collect ════════ */

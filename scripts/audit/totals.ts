@@ -31,6 +31,7 @@ import {
   prepaidDiscountFor,
   type AdvanceRule,
 } from "../../src/lib/payments/advance";
+import { roundedDiscountPaise } from "../../src/lib/payments/discount";
 import { refundFor } from "../../src/lib/orders/refund-policy";
 import { MIN_CHARGEABLE_PAISE } from "../../src/lib/payments/types";
 
@@ -336,12 +337,35 @@ section("6 · the prepaid discount");
       goodsTotalPaise: 100_000,
     }) === 5_000,
   );
+  /**
+   * The rounding rule, and the reason it is up rather than down.
+   *
+   * The owner's decision, 2026-08-09: the sub-rupee goes to the customer. It is
+   * worth at most 99 paise on a discounted order, and it buys a discount that is
+   * a whole number of rupees — which, with delivery already rounded to the
+   * nearest ₹10, is what keeps a Pay-on-Delivery balance collectable in cash at
+   * the door.
+   */
   check(
-    "a percentage is floored to whole paise",
+    "a percentage is rounded up to a whole rupee, in the customer's favour",
     prepaidDiscountFor({
       discount: { mode: "percent", value: 2.5 },
       goodsTotalPaise: 99_999,
-    }) === 2_499,
+    }) === 2_500,
+  );
+  check(
+    "the owner's worked example: 20% of ₹3,999 is ₹800, not ₹799.80",
+    prepaidDiscountFor({
+      discount: { mode: "percent", value: 20 },
+      goodsTotalPaise: 399_900,
+    }) === 80_000,
+  );
+  check(
+    "a discount already on a whole rupee is not pushed to the next one",
+    prepaidDiscountFor({
+      discount: { mode: "percent", value: 10 },
+      goodsTotalPaise: 100_000,
+    }) === 10_000,
   );
   check(
     "a discount can never exceed the goods",
@@ -349,6 +373,25 @@ section("6 · the prepaid discount");
       discount: { mode: "flat", value: 500_000 },
       goodsTotalPaise: 100_000,
     }) === 100_000,
+  );
+  /**
+   * The cap is applied *after* the rounding, which is the whole reason
+   * `roundedDiscountPaise` takes the caps rather than leaving them to callers.
+   * Rounding a figure that already sits on its ceiling would push it through:
+   * here the goods are ₹999.50, so an unbounded round-up would give ₹1,000 and
+   * hand back more than the order is worth.
+   */
+  check(
+    "rounding up cannot breach a cap",
+    roundedDiscountPaise(99_950, 99_950) === 99_950,
+  );
+  check(
+    "the tightest cap wins, whichever it is",
+    roundedDiscountPaise(50_050, 80_000, 50_100) === 50_100,
+  );
+  check(
+    "with no cap at all, the rounded figure stands",
+    roundedDiscountPaise(79_980) === 80_000,
   );
   check(
     "zero is zero, not a rounding artefact",

@@ -345,6 +345,13 @@ export async function placeOrder(
         // only in TypeScript would write a grand total higher than the one the
         // customer was shown and charge them the difference.
         p_discount_total: totals.discountTotal,
+        // And which part of it was given for paying online. Stored rather than
+        // inferred: `discount_total` alone cannot tell a prepaid incentive from
+        // a coupon, and every surface that reads an order back — the customer's
+        // own page, the account list, the admin order page, the confirmation
+        // email — has to name what came off. The function clamps it inside
+        // `discount_total` under the row lock.
+        p_prepaid_discount: totals.prepaidDiscount,
         /*
           The quote, frozen with the order.
 
@@ -506,6 +513,8 @@ export async function placeOrder(
         lineTotal: line.lineTotal,
       })),
       subtotal: order.subtotal,
+      discountTotal: totals.discountTotal,
+      prepaidDiscount: totals.prepaidDiscount,
       shippingFee: order.shipping_fee,
       codHandlingFee: totals.codHandlingFee,
       grandTotal,
@@ -767,6 +776,16 @@ async function cancelWithRestock(
     p_require_unpaid: true,
     p_release_cart: releaseCart,
     p_changed_by: actor ?? undefined,
+    /*
+      The customer's version. `p_reason` is engine-room text — "payment
+      initiation failed", "released automatically: unpaid and abandoned" — and
+      the customer's question is only ever "was I charged?". Answering it in the
+      row means the timeline can say so without any read site having to know
+      which internal reason produced the cancellation.
+    */
+    p_customer_note:
+      "This order was cancelled because the payment was not completed. " +
+      "Nothing has been charged.",
   });
   if (error) {
     console.error(
@@ -813,6 +832,8 @@ async function confirmByEmail(args: {
     lineTotal: number;
   }[];
   subtotal: number;
+  discountTotal: number;
+  prepaidDiscount: number;
   shippingFee: number;
   codHandlingFee: number;
   grandTotal: number;
@@ -838,7 +859,16 @@ async function confirmByEmail(args: {
     lines: args.lines,
     totals: {
       subtotal: args.subtotal,
-      discountTotal: 0,
+      /*
+        Passed, not zeroed. This was `discountTotal: 0` with no comment, which
+        is latent today only because nothing is sent yet — `src/lib/email` is
+        console-only until Batch B. The moment a provider is wired in, a
+        discounted order would produce a confirmation whose own lines do not sum
+        to the total printed underneath them, and the customer would be reading
+        it rather than a developer.
+      */
+      discountTotal: args.discountTotal,
+      prepaidDiscount: args.prepaidDiscount,
       shippingFee: args.shippingFee,
       codHandlingFee: args.codHandlingFee,
       taxTotal: 0,

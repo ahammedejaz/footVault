@@ -5,13 +5,19 @@ import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
   saveParcelDefaults,
   saveShippingSettings,
   saveStoreSettings,
 } from "@/lib/actions/admin/settings";
 import { toast } from "@/lib/toast";
+import {
+  Amount,
+  Money,
+  RadioChoice,
+  Text,
+  Toggle,
+} from "@/components/admin/settings/controls";
 
 /**
  * The two settings forms.
@@ -95,406 +101,321 @@ export function ShippingSettingsForm({
         event.preventDefault();
         void save(() => saveShippingSettings(v), "Delivery settings saved.");
       }}
-      className="space-y-5"
+      className="space-y-8"
     >
-      <p className="border-border rounded-md border p-3 text-sm text-pretty">
-        <strong>Delivery rates are not set here.</strong> What a customer pays to
-        receive a parcel comes from Shiprocket, for their pin code, every time.
-        These are the shop&rsquo;s own thresholds.
+      {/*
+        The panel used to open with this, in bold, as the largest thing on it:
+
+          **Delivery rates are not set here.** What a customer pays to receive a
+          parcel comes from Shiprocket, for their pin code, every time.
+
+        It is true in the sense its author meant — per-pin-code rates come from
+        the courier — and false in the sense the reader takes it. An owner who
+        came here to set a flat delivery charge read the most prominent sentence
+        on the page, was told authoritatively that this page does not do that,
+        and stopped scanning. The control that does exactly that sat 180 pixels
+        below it.
+
+        So it now says what *is* here, and it is a caption rather than a headline.
+      */}
+      <p className="text-muted-foreground text-sm text-pretty">
+        Per-pin-code rates come from Shiprocket. What you set here is how the
+        customer is charged, and the thresholds the shop decides for itself.
       </p>
 
-      <Money
-        id="free-above"
-        label="Free delivery at or above"
-        hint="Applies to Pay on Delivery as well as paying online. Set it too low and you pay the courier out of your own margin on small orders; set it too high and nobody ever reaches it, so it stops persuading anyone to add one more pair."
-        value={v.freeAboveRupees}
-        onChange={(n) => set("freeAboveRupees", n)}
-      />
-
-      <fieldset className="border-border rounded-md border p-3">
-        <legend className="px-1 text-sm font-medium">Delivery charge</legend>
-        <p className="text-muted-foreground text-sm text-pretty">
-          What the customer pays. The shop&rsquo;s own cost always comes from the
-          live quote whichever of these you pick, so the books stay honest.
-        </p>
-
-        <Choice
-          id="delivery-mode"
-          label="How the delivery charge is decided"
+      <Section title="How delivery is charged">
+        <RadioChoice
+          name="delivery-mode"
+          legend="How the delivery charge is decided"
           value={v.shippingRateMode}
-          onChange={(next) =>
-            set("shippingRateMode", next as ShippingFormValues["shippingRateMode"])
-          }
+          onChange={(next) => set("shippingRateMode", next)}
           options={[
             {
               value: "live",
-              label: "Pass the courier's rate through (recommended)",
+              label: "Charge the courier's rate",
+              note: "Recommended. Every customer pays what it costs to reach them.",
             },
-            { value: "flat", label: "Charge one flat amount everywhere" },
+            {
+              value: "flat",
+              label: "Charge one flat amount",
+              note: "One number for everybody, whatever the courier quotes.",
+            },
           ]}
           hint={
             v.shippingRateMode === "live"
-              ? "Every customer pays exactly what it costs to reach them, so you never lose money on a far pin code. Some customers see a higher figure than others."
-              : "One number for everybody, which is simpler to explain. Shiprocket is not called at all, so the shop keeps selling through a courier outage — but it also cannot tell you whether a pin code is serviceable, and you absorb the difference on remote addresses."
+              ? "You never lose money on a far pin code, and some customers see a higher figure than others."
+              : "Simpler to explain, and Shiprocket is not called at all — so the shop keeps selling through a courier outage, cannot tell you whether a pin code is serviceable, and absorbs the difference on remote addresses."
           }
         />
 
-        {v.shippingRateMode === "flat" ? (
-          <div className="mt-4 space-y-4">
-            <Money
-              id="delivery-flat"
-              label="Flat delivery charge"
-              hint="Set it below what couriers really charge and you pay the difference on every parcel. Zero here would be free delivery on everything."
-              value={v.flatShippingFeeRupees}
-              onChange={(n) => set("flatShippingFeeRupees", n)}
-            />
+        {/*
+          Rendered whatever the mode, disabled when it does not apply.
 
-            {/*
-              The deposit is not optional in flat mode and the form says so
-              before it refuses to save. With no courier quote there is no round
-              trip to charge, so without this a refused parcel costs the shop
-              both journeys and nothing was collected against it.
-            */}
-            <div className="border-border bg-fog/40 rounded-md border p-3">
-              <p className="text-sm text-pretty">
-                <strong>
-                  A flat charge needs a Pay-on-Delivery deposit to go with it.
-                </strong>{" "}
-                There is no courier quote in this mode, so there is no round-trip
-                figure to take upfront. Pick one, or Pay on Delivery cannot be
-                offered while the flat charge is on.
-              </p>
+          It used to be absent from the DOM entirely until flat mode was chosen,
+          so an owner scanning for the words "flat amount" found nothing twice
+          over: once in the closed dropdown, once here. A feature has to be
+          visible before it can be chosen.
+        */}
+        <Money
+          id="delivery-flat"
+          label="Flat delivery charge"
+          value={v.flatShippingFeeRupees}
+          onChange={(n) => set("flatShippingFeeRupees", n)}
+          disabled={v.shippingRateMode !== "flat"}
+          hint={
+            v.shippingRateMode === "flat"
+              ? "Set it below what couriers really charge and you pay the difference on every parcel. Zero here would be free delivery on everything, so it is refused."
+              : "Applies when \u201cCharge one flat amount\u201d is chosen above."
+          }
+        />
 
-              <Choice
-                id="flat-deposit-mode"
-                label="Deposit taken on a Pay-on-Delivery order"
-                value={v.flatCodDepositMode}
-                onChange={(next) =>
-                  set(
-                    "flatCodDepositMode",
-                    next as ShippingFormValues["flatCodDepositMode"],
-                  )
-                }
-                options={[
-                  { value: "unset", label: "Not chosen yet" },
-                  {
-                    value: "multiplier",
-                    label: "A multiple of the flat delivery charge",
-                  },
-                  { value: "fixed", label: "A fixed amount" },
-                ]}
-                hint={
-                  v.flatCodDepositMode === "multiplier"
-                    ? "Two is the sensible starting point: one journey out, one journey back. It moves with the flat charge, so raising one raises the other."
-                    : v.flatCodDepositMode === "fixed"
-                      ? "One number regardless of the flat charge. Simple, and it needs revisiting whenever courier rates move."
-                      : "Nothing is chosen, so Pay on Delivery stays off while the flat charge is on. Saving in this state is refused rather than allowed quietly."
-                }
-              />
+        <Money
+          id="free-above"
+          label="Free delivery at or above"
+          value={v.freeAboveRupees}
+          onChange={(n) => set("freeAboveRupees", n)}
+          hint="Applies to Pay on Delivery as well as paying online. Set it too low and you pay the courier out of your own margin on small orders; set it too high and nobody reaches it, so it stops persuading anyone to add one more pair."
+        />
+      </Section>
 
-              {v.flatCodDepositMode === "multiplier" ? (
-                <div className="mt-4">
-                  <label
-                    htmlFor="flat-deposit-multiplier"
-                    className="block text-xs font-medium"
-                  >
-                    Times the flat delivery charge
-                  </label>
-                  <input
-                    id="flat-deposit-multiplier"
-                    type="number"
-                    inputMode="decimal"
-                    min={0}
-                    step={0.1}
-                    value={v.flatCodDepositMultiplier}
-                    onChange={(event) =>
-                      set(
-                        "flatCodDepositMultiplier",
-                        Number(event.target.value),
-                      )
-                    }
-                    className="border-input bg-background mt-1 min-h-11 w-full rounded-md border px-3 text-sm tabular-nums"
-                  />
-                  <p className="text-muted-foreground mt-1 text-sm text-pretty">
-                    The customer pays this upfront and it comes off what the
-                    courier collects, so their total is unchanged.
-                  </p>
-                </div>
-              ) : null}
+      <Section title="Pay on Delivery">
+        <Toggle
+          id="cod-enabled"
+          label="Offer Pay on Delivery"
+          checked={v.codEnabled}
+          onChange={(next) => set("codEnabled", next)}
+          hint="Off hides it at checkout and refuses it if anything tries to place a cash order anyway. Even on, it is only offered where a courier will actually collect cash."
+        />
 
-              {v.flatCodDepositMode === "fixed" ? (
-                <div className="mt-4">
-                  <Money
-                    id="flat-deposit-fixed"
-                    label="Deposit taken upfront"
-                    hint="Set it below what a round trip really costs and a refused parcel leaves you short by the difference."
-                    value={v.flatCodDepositRupees}
-                    onChange={(n) => set("flatCodDepositRupees", n)}
-                  />
-                </div>
-              ) : null}
-            </div>
-          </div>
-        ) : null}
-      </fieldset>
+        <Toggle
+          id="waive-cod-fee"
+          label="Waive the cash-handling fee when delivery is free"
+          checked={v.waiveCodFeeAboveThreshold}
+          onChange={(next) => set("waiveCodFeeAboveThreshold", next)}
+          hint="The courier still charges you for handling cash, so this stays off by default and the fee shows as its own line. On, a large cash order costs the same as a card one — and there is no longer a reason to prepay."
+        />
 
-      <fieldset className="border-border rounded-md border p-3">
-        <legend className="px-1 text-sm font-medium">Pay on Delivery</legend>
+        <Toggle
+          id="include-gst"
+          label="Recover the 18% GST on delivery in the upfront amount"
+          checked={v.includeGstInAdvance}
+          onChange={(next) => set("includeGstInAdvance", next)}
+          hint="Shiprocket bills you freight plus 18%. On, the customer covers it and the upfront figure is about a fifth higher. Off, you absorb it — which costs less than it looks if you reclaim input GST."
+        />
 
-        <label className="mt-1 flex min-h-11 items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            checked={v.codEnabled}
-            onChange={(event) => set("codEnabled", event.target.checked)}
-            className="size-4"
-          />
-          Offer Pay on Delivery
-        </label>
-        <p className="text-muted-foreground mt-1 text-sm text-pretty">
-          Turning this off hides it at checkout <em>and</em> refuses it if
-          anything tries to place a cash order anyway. Even when it is on, it is
-          only offered where a courier will actually collect cash.
-        </p>
-
-        <label className="mt-4 flex min-h-11 items-start gap-2 text-sm">
-          <input
-            type="checkbox"
-            checked={v.waiveCodFeeAboveThreshold}
-            onChange={(event) =>
-              set("waiveCodFeeAboveThreshold", event.target.checked)
-            }
-            className="mt-1 size-4"
-          />
-          <span>
-            Waive the cash-handling fee when delivery is free
-            <span className="text-muted-foreground block text-sm text-pretty">
-              Free delivery applies to Pay on Delivery as well as paying online.
-              The courier still charges you for handling the cash, so this stays
-              off by default and the fee shows as its own line. Turning it on
-              makes a large cash order cost the same as a card one — and removes
-              the reason to prepay.
-            </span>
-          </span>
-        </label>
-
-        <p className="border-border bg-fog/40 mt-4 rounded-md border p-3 text-sm text-pretty">
-          <strong>How much is taken upfront is no longer a setting.</strong> The
-          customer pays the full round trip online — the cost of sending the
-          parcel plus the cost of getting it back — and that amount is taken off
-          what the courier collects, so they pay the same either way. If the
-          parcel is refused you are already covered. The two numbers below put
-          bounds on it.
-        </p>
-
-        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+        <div className="grid gap-5 sm:grid-cols-2">
           <Money
             id="cod-minimum"
             label="Smallest order that may pay on delivery"
-            hint="Below this, only paying online is offered. Set it too low and the upfront amount can be most of a cheap order, which reads as a scam and gets abandoned. Set it too high and you turn away cash customers you could have served."
             value={v.codMinimumOrderRupees}
             onChange={(n) => set("codMinimumOrderRupees", n)}
+            hint="Below this, only paying online is offered. Too low and the upfront amount can be most of a cheap order, which reads as a scam; too high and you turn away cash customers you could have served."
           />
           <Money
             id="cod-cap"
             label="Most that may be taken upfront"
-            hint="A ceiling on the deposit, whatever the courier quotes. Set it too low and a heavy parcel to a far pin code is not fully covered if it comes back — you carry the difference. Zero means no cap."
             value={v.codAdvanceMaximumRupees}
             onChange={(n) => set("codAdvanceMaximumRupees", n)}
+            hint="A ceiling on the deposit, whatever the courier quotes. Too low and a heavy parcel to a far pin code is not fully covered if it comes back. Zero means no cap."
           />
         </div>
 
-        <label className="mt-4 flex min-h-11 items-start gap-2 text-sm">
-          <input
-            type="checkbox"
-            checked={v.includeGstInAdvance}
-            onChange={(event) =>
-              set("includeGstInAdvance", event.target.checked)
-            }
-            className="mt-1 size-4"
-          />
-          <span>
-            Recover the 18% GST on delivery in the upfront amount
-            <span className="text-muted-foreground block text-sm text-pretty">
-              Shiprocket bills you freight plus 18%. On, the customer covers it
-              and the upfront figure is about a fifth higher. Off, you absorb it
-              — which costs less than it looks if you reclaim input GST.
-            </span>
-          </span>
-        </label>
-      </fieldset>
-
-      <fieldset className="border-border rounded-md border p-3">
-        <legend className="px-1 text-sm font-medium">
-          Discount for paying online
-        </legend>
-        <p className="text-muted-foreground text-sm text-pretty">
-          Orders paid online are refused far less often than cash ones, and that
-          is worth money to you — so some of it can go back. It appears as its
-          own line beside the payment choice, where a customer can see it and act
-          on it. Set it too high and you give away more than the refusals cost
-          you; leave it at zero and nothing is shown.
+        <p className="text-muted-foreground border-border rounded-md border p-3 text-xs text-pretty">
+          <strong className="font-medium">
+            How much is taken upfront is not a setting.
+          </strong>{" "}
+          The customer pays the full round trip online — sending the parcel plus
+          getting it back — and that comes off what the courier collects, so they
+          pay the same either way. If a parcel is refused you are already
+          covered. The two figures above put bounds on it.
         </p>
-        <div className="mt-3 grid gap-4 sm:grid-cols-2">
-          <Choice
-            id="prepaid-discount-mode"
-            label="Kind of discount"
-            value={v.prepaidDiscountMode}
-            onChange={(next) =>
-              set(
-                "prepaidDiscountMode",
-                next as ShippingFormValues["prepaidDiscountMode"],
-              )
+
+        {/*
+          The deposit rule, always on screen and disabled until it applies.
+
+          It is the thing that *blocks* saving a flat charge with Pay on Delivery
+          on, so hiding it until flat mode is chosen means the owner meets the
+          requirement as a refusal rather than as a field.
+        */}
+        <RadioChoice
+          name="flat-deposit-mode"
+          legend="Deposit taken on a Pay-on-Delivery order"
+          value={v.flatCodDepositMode}
+          onChange={(next) => set("flatCodDepositMode", next)}
+          disabled={v.shippingRateMode !== "flat"}
+          options={[
+            { value: "unset", label: "Not chosen yet", note: "Pay on Delivery stays off." },
+            {
+              value: "multiplier",
+              label: "A multiple of the flat delivery charge",
+              note: "Two is the sensible start: one journey out, one back.",
+            },
+            { value: "fixed", label: "A fixed amount", note: "One number, whatever the charge." },
+          ]}
+          hint={
+            v.shippingRateMode !== "flat"
+              ? "Only needed with a flat delivery charge. A live courier quote already carries a round-trip figure to take upfront."
+              : v.flatCodDepositMode === "unset"
+                ? "Nothing is chosen, so this cannot be saved while Pay on Delivery is on: with no courier quote there is no round trip to charge, and a refused parcel would cost you both journeys."
+                : "The customer pays this upfront and it comes off what the courier collects, so their total is unchanged."
+          }
+        />
+
+        <div className="grid gap-5 sm:grid-cols-2">
+          <Amount
+            id="flat-deposit-multiplier"
+            label="Times the flat delivery charge"
+            value={v.flatCodDepositMultiplier}
+            onChange={(n) => set("flatCodDepositMultiplier", n)}
+            disabled={
+              v.shippingRateMode !== "flat" || v.flatCodDepositMode !== "multiplier"
             }
+          />
+          <Money
+            id="flat-deposit-fixed"
+            label="Deposit taken upfront"
+            value={v.flatCodDepositRupees}
+            onChange={(n) => set("flatCodDepositRupees", n)}
+            disabled={
+              v.shippingRateMode !== "flat" || v.flatCodDepositMode !== "fixed"
+            }
+          />
+        </div>
+      </Section>
+
+      <Section title="Discount for paying online">
+        <p className="text-muted-foreground text-xs text-pretty">
+          Orders paid online are refused far less often than cash ones, so some of
+          that is worth passing back. It appears as its own line beside the
+          payment choice, where a customer can see it and act on it.
+        </p>
+
+        <div className="grid gap-5 sm:grid-cols-2">
+          <RadioChoice
+            name="prepaid-discount-mode"
+            legend="Kind of discount"
+            value={v.prepaidDiscountMode}
+            onChange={(next) => set("prepaidDiscountMode", next)}
             options={[
               { value: "flat", label: "A fixed amount off" },
               { value: "percent", label: "A percentage off" },
             ]}
           />
-          <div>
-            <label
-              htmlFor="prepaid-discount-value"
-              className="block text-xs font-medium"
-            >
-              {v.prepaidDiscountMode === "percent"
-                ? "Percentage off"
-                : "Amount off"}
-            </label>
-            <input
-              id="prepaid-discount-value"
-              type="number"
-              inputMode="decimal"
-              min={0}
-              step={v.prepaidDiscountMode === "percent" ? 0.5 : 1}
-              value={v.prepaidDiscountValue}
-              onChange={(event) =>
-                set("prepaidDiscountValue", Number(event.target.value))
-              }
-              className="border-input bg-background mt-1 min-h-11 w-full rounded-md border px-3 text-sm tabular-nums"
-            />
-            <p className="text-muted-foreground mt-1 text-sm text-pretty">
-              Zero switches the discount off entirely.
-            </p>
-          </div>
-        </div>
-      </fieldset>
+          {/*
+            "Discount amount", not "Percentage off".
 
-      <fieldset className="border-border rounded-md border p-3">
-        <legend className="px-1 text-sm font-medium">
-          When a parcel comes back
-        </legend>
-        <Choice
-          id="rto-policy"
-          label="What a customer who paid online gets back"
+            The radio beside this one says "A percentage off", and with both on
+            screen the two labels were a substring of each other — an owner had
+            to work out which of two nearly identical phrases was the box to type
+            in, and `audit:settings-controls` could not tell them apart either.
+            The unit goes in brackets, where it answers "what do I type" rather
+            than repeating the choice already made next to it.
+          */}
+          <Amount
+            id="prepaid-discount-value"
+            label="Discount amount"
+            unit={v.prepaidDiscountMode === "percent" ? "%" : "₹"}
+            value={v.prepaidDiscountValue}
+            onChange={(n) => set("prepaidDiscountValue", n)}
+            hint="Zero switches the discount off entirely. A part-rupee discount is rounded up to the next whole rupee, in the customer's favour."
+          />
+        </div>
+      </Section>
+
+      <Section title="When a parcel comes back">
+        <RadioChoice
+          name="rto-policy"
+          legend="What a customer who paid online gets back"
           value={v.rtoDeductionPolicy}
-          onChange={(next) =>
-            set(
-              "rtoDeductionPolicy",
-              next as ShippingFormValues["rtoDeductionPolicy"],
-            )
-          }
+          onChange={(next) => set("rtoDeductionPolicy", next)}
           options={[
             {
               value: "actual_freight",
-              label: "Everything except what the journey actually cost",
+              label: "Everything except what the journey cost",
+              note: "Fairest to the shop; different on every order.",
             },
-            { value: "flat", label: "Everything except a fixed amount" },
-            { value: "none", label: "Everything, with nothing deducted" },
+            { value: "flat", label: "Everything except a fixed amount", note: "One predictable number." },
+            { value: "none", label: "Everything, nothing deducted", note: "Generous, and it costs you both journeys." },
           ]}
+          hint="None of this applies when the mistake was ours. A wrong shoe, a wrong size or damage before dispatch is refunded in full, always, and that is a reason you pick on the refund itself."
+        />
+        <Money
+          id="rto-flat"
+          label="Fixed amount kept back"
+          value={v.rtoDeductionFlatRupees}
+          onChange={(n) => set("rtoDeductionFlatRupees", n)}
+          disabled={v.rtoDeductionPolicy !== "flat"}
           hint={
-            v.rtoDeductionPolicy === "actual_freight"
-              ? "You are left where you started and the customer pays for the journey they did not accept. Fairest to the shop, and the figure is different on every order."
-              : v.rtoDeductionPolicy === "none"
-                ? "Generous, and it costs you both journeys every time. Reasonable if refusals are rare; expensive if they are not."
-                : "One predictable number, easy to explain. Set it below what a round trip really costs and you carry the difference on every return."
+            v.rtoDeductionPolicy === "flat"
+              ? "Set it below what a round trip really costs and you carry the difference on every return."
+              : "Applies when \u201cEverything except a fixed amount\u201d is chosen above."
           }
         />
-        {v.rtoDeductionPolicy === "flat" ? (
-          <div className="mt-4">
-            <Money
-              id="rto-flat"
-              label="Fixed amount kept back"
-              value={v.rtoDeductionFlatRupees}
-              onChange={(n) => set("rtoDeductionFlatRupees", n)}
-            />
-          </div>
-        ) : null}
-        <p className="text-muted-foreground mt-3 text-sm text-pretty">
-          None of this applies when the mistake was ours. A wrong shoe, a wrong
-          size or damage before dispatch is refunded in full, always, and that is
-          a reason you pick on the refund itself.
-        </p>
-      </fieldset>
+      </Section>
 
-      <fieldset className="border-border rounded-md border p-3">
-        <legend className="px-1 text-sm font-medium">
-          If Shiprocket cannot be reached
-        </legend>
-        <p className="text-muted-foreground text-sm text-pretty">
-          Used only during an outage, so the shop keeps selling rather than
-          turning customers away. The customer is told the figure is an estimate
-          rather than a quoted rate — set it close to what couriers really
-          charge, because every order placed during an outage is priced from it.
-        </p>
-
-        <div className="mt-3">
-          <Money
-            id="prepaid-estimate"
-            label="Estimated delivery charge for paying online"
-            value={v.prepaidEstimateRupees}
-            onChange={(n) => set("prepaidEstimateRupees", n)}
-          />
-        </div>
-
-        <Choice
-          id="fallback-behaviour"
-          label="Pay on Delivery during an outage"
+      <Section title="If Shiprocket cannot be reached">
+        <Money
+          id="prepaid-estimate"
+          label="Estimated delivery charge for paying online"
+          value={v.prepaidEstimateRupees}
+          onChange={(n) => set("prepaidEstimateRupees", n)}
+          hint="Used only during an outage, so the shop keeps selling. The customer is told the figure is an estimate rather than a quoted rate — set it close to what couriers really charge."
+        />
+        <RadioChoice
+          name="fallback-behaviour"
+          legend="Pay on Delivery during an outage"
           value={v.fallbackBehaviour}
-          onChange={(next) =>
-            set(
-              "fallbackBehaviour",
-              next as ShippingFormValues["fallbackBehaviour"],
-            )
-          }
+          onChange={(next) => set("fallbackBehaviour", next)}
           options={[
-            {
-              value: "refuse_cod",
-              label: "Do not offer it (recommended)",
-            },
+            { value: "refuse_cod", label: "Do not offer it", note: "Recommended." },
             { value: "allow_all", label: "Offer it, secured by the deposit" },
           ]}
           hint={
             v.fallbackBehaviour === "refuse_cod"
               ? "With no quote there is no round-trip figure, so a cash order would go out with nothing collected against a refusal. Paying online is still offered, at the estimate above."
-              : "Cash orders keep going out during an outage, secured by the Pay-on-Delivery deposit set with the flat charge. That deposit must be set or this cannot be saved."
+              : "Cash orders keep going out during an outage, secured by the Pay-on-Delivery deposit above. That deposit must be set or this cannot be saved."
           }
         />
-      </fieldset>
+      </Section>
 
-      <fieldset className="border-border rounded-md border p-3">
-        <legend className="px-1 text-sm font-medium">
-          Shiprocket wallet warning
-        </legend>
-        <p className="text-muted-foreground text-sm text-pretty">
-          An empty Shiprocket wallet stops every shipment — not just the next
-          one. The dashboard warns you below this figure so you find out at the
-          desk rather than at the counter with a parcel in your hand.
-        </p>
-        <div className="mt-3">
-          <Money
-            id="wallet-low"
-            label="Warn when the wallet falls below"
-            hint="A sensible floor is a few times what one parcel costs to send and bring back. Zero switches the warning off, and the dashboard says so rather than staying silent."
-            value={v.walletLowBalanceRupees}
-            onChange={(n) => set("walletLowBalanceRupees", n)}
-          />
-        </div>
-      </fieldset>
+      <Section title="Shiprocket wallet warning">
+        <Money
+          id="wallet-low"
+          label="Warn when the wallet falls below"
+          value={v.walletLowBalanceRupees}
+          onChange={(n) => set("walletLowBalanceRupees", n)}
+          unsetMeans="the dashboard shows no wallet warning"
+          hint="An empty wallet stops every shipment, not just the next one. A sensible floor is a few times what one parcel costs to send and bring back."
+        />
+      </Section>
 
       <Button type="submit" disabled={saving} className="min-h-11">
         {saving ? <Loader2 aria-hidden className="size-4 animate-spin" /> : null}
         Save delivery settings
       </Button>
     </form>
+  );
+}
+
+/**
+ * A group of controls under a plain heading.
+ *
+ * The panel used to be one flat list of eight `<fieldset>`s, each with a legend
+ * competing with the controls for weight. A heading and a gap does the same job
+ * with less ink, and lets the controls be the darkest thing in their group.
+ */
+function Section({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="space-y-5">
+      <h3 className="font-mono text-xs tracking-[0.08em] uppercase">{title}</h3>
+      {children}
+    </section>
   );
 }
 
@@ -566,67 +487,58 @@ export function ParcelDefaultsForm({
         </div>
       ) : null}
 
-      <p className="border-border rounded-md border p-3 text-sm text-pretty">
-        One box for the whole catalogue. Individual products can override this
-        from their own page if they genuinely do not fit — boots, mostly —
-        and everything else, including anything added later, uses these.
+      {/* Demoted from a bordered box to a caption, and shortened: the panel
+          header already says "One box for the whole catalogue", so this said it
+          twice — once in a border, once in a heading, above the four fields that
+          are the actual point. */}
+      <p className="text-muted-foreground text-sm text-pretty">
+        Individual products can override this from their own page if they
+        genuinely do not fit — boots, mostly. Everything else, including anything
+        added later, uses these.
       </p>
 
       <div className="grid gap-4 sm:grid-cols-2">
-        <Measure
+        <Amount
           id="parcel-weight"
           label="Packed weight"
           unit="grams"
-          step={10}
           hint="The shoe in its box, as it leaves the shop. Under-state it and the courier reweighs and bills you the difference."
           value={v.weightGrams}
           onChange={(n) => set("weightGrams", n)}
         />
-        <Measure
+        <Amount
           id="parcel-length"
           label="Box length"
           unit="cm"
-          step={0.5}
           value={v.lengthCm}
           onChange={(n) => set("lengthCm", n)}
         />
-        <Measure
+        <Amount
           id="parcel-breadth"
           label="Box breadth"
           unit="cm"
-          step={0.5}
           value={v.breadthCm}
           onChange={(n) => set("breadthCm", n)}
         />
-        <Measure
+        <Amount
           id="parcel-height"
           label="Box height"
           unit="cm"
-          step={0.5}
           hint="Measured with the lid on. Couriers charge on size as well as weight, so a guess here quietly misprices every parcel."
           value={v.heightCm}
           onChange={(n) => set("heightCm", n)}
         />
       </div>
 
-      <div>
-        <label htmlFor="pickup-pin" className="block text-xs font-medium">
-          Pickup PIN code
-        </label>
-        <Input
-          id="pickup-pin"
-          inputMode="numeric"
-          maxLength={6}
-          value={v.pickupPostcode}
-          onChange={(event) => set("pickupPostcode", event.target.value)}
-          className="mt-1 min-h-11 tabular-nums"
-        />
-        <p className="text-muted-foreground mt-1 text-sm text-pretty">
-          Where parcels are collected from. Every delivery estimate is measured
-          from here, so a wrong PIN produces believable estimates for the wrong
-          city.
-        </p>
-      </div>
+      <Text
+        id="pickup-pin"
+        label="Pickup PIN code"
+        inputMode="numeric"
+        maxLength={6}
+        value={v.pickupPostcode}
+        onChange={(next) => set("pickupPostcode", next)}
+        hint="Where parcels are collected from. Every delivery estimate is measured from here, so a wrong PIN produces believable estimates for the wrong city."
+      />
 
       <Button type="submit" disabled={saving} className="min-h-11">
         {saving ? <Loader2 aria-hidden className="size-4 animate-spin" /> : null}
@@ -654,91 +566,7 @@ function readableField(field: string): string {
   return words[field] ?? field;
 }
 
-/**
- * A measurement, blank when it is unset.
- *
- * Zero is not shown as `0` because a zero in a box reads as a decision somebody
- * made. An empty box reads as a question, which is what it is.
- */
-function Measure({
-  id,
-  label,
-  unit,
-  step,
-  hint,
-  value,
-  onChange,
-}: {
-  id: string;
-  label: string;
-  unit: string;
-  step: number;
-  hint?: string;
-  value: number;
-  onChange: (value: number) => void;
-}) {
-  return (
-    <div>
-      <label htmlFor={id} className="block text-xs font-medium">
-        {label} <span className="text-muted-foreground">({unit})</span>
-      </label>
-      <input
-        id={id}
-        type="number"
-        inputMode="decimal"
-        min={0}
-        step={step}
-        value={value > 0 ? value : ""}
-        placeholder="not set"
-        onChange={(event) => onChange(Number(event.target.value))}
-        className="border-input bg-background mt-1 min-h-11 w-full rounded-md border px-3 text-sm tabular-nums"
-      />
-      {hint ? (
-        <p className="text-muted-foreground mt-1 text-sm text-pretty">{hint}</p>
-      ) : null}
-    </div>
-  );
-}
 
-/** A labelled select with a consequence line under it. */
-function Choice({
-  id,
-  label,
-  value,
-  onChange,
-  options,
-  hint,
-}: {
-  id: string;
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  options: { value: string; label: string }[];
-  hint?: string;
-}) {
-  return (
-    <div className="mt-4">
-      <label htmlFor={id} className="block text-xs font-medium">
-        {label}
-      </label>
-      <select
-        id={id}
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className="border-input bg-background mt-1 min-h-11 w-full rounded-md border px-3 text-sm"
-      >
-        {options.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
-      {hint ? (
-        <p className="text-muted-foreground mt-1 text-sm text-pretty">{hint}</p>
-      ) : null}
-    </div>
-  );
-}
 
 export type StoreFormValues = {
   storeName: string;
@@ -763,33 +591,31 @@ export function StoreSettingsForm({ initial }: { initial: StoreFormValues }) {
         event.preventDefault();
         void save(() => saveStoreSettings(v), "Shop details saved.");
       }}
-      className="space-y-4"
+      className="space-y-6"
     >
-      <Text id="store-name" label="Shop name" value={v.storeName} onChange={(s) => set("storeName", s)} />
-      <Text id="store-tagline" label="Tagline" value={v.storeTagline} onChange={(s) => set("storeTagline", s)} />
+      <Text id="store-name" label="Shop name" value={v.storeName} onChange={(next) => set("storeName", next)} />
+      <Text id="store-tagline" label="Tagline" value={v.storeTagline} onChange={(next) => set("storeTagline", next)} />
 
-      <fieldset className="border-border rounded-md border p-3">
-        <legend className="px-1 text-sm font-medium">How customers reach you</legend>
-        <p className="text-muted-foreground text-sm text-pretty">
-          These are not decoration. A replacement can only be claimed by
-          contacting the shop, so a wrong number here means a customer with a
-          damaged parcel cannot reach anyone.
+      <section className="space-y-5">
+        <h3 className="font-mono text-xs tracking-[0.08em] uppercase">
+          How customers reach you
+        </h3>
+        <p className="text-muted-foreground text-xs text-pretty">
+          Not decoration. A replacement can only be claimed by contacting the
+          shop, so a wrong number here means a customer with a damaged parcel
+          cannot reach anyone.
         </p>
-        <div className="mt-3 space-y-4">
-          <Text id="contact-phone" label="Phone" value={v.phone} onChange={(s) => set("phone", s)} />
-          <Text id="contact-whatsapp" label="WhatsApp" value={v.whatsapp} onChange={(s) => set("whatsapp", s)} />
-          <Text id="contact-email" label="Email" value={v.email} onChange={(s) => set("email", s)} />
-          <Text id="contact-address" label="Shop address" value={v.address} onChange={(s) => set("address", s)} />
-        </div>
-      </fieldset>
+        <Text id="contact-phone" label="Phone" value={v.phone} onChange={(next) => set("phone", next)} />
+        <Text id="contact-whatsapp" label="WhatsApp" value={v.whatsapp} onChange={(next) => set("whatsapp", next)} />
+        <Text id="contact-email" label="Email" value={v.email} onChange={(next) => set("email", next)} />
+        <Text id="contact-address" label="Shop address" value={v.address} onChange={(next) => set("address", next)} />
+      </section>
 
-      <fieldset className="border-border rounded-md border p-3">
-        <legend className="px-1 text-sm font-medium">Social</legend>
-        <div className="mt-1 space-y-4">
-          <Text id="social-instagram" label="Instagram" value={v.instagram} onChange={(s) => set("instagram", s)} />
-          <Text id="social-facebook" label="Facebook" value={v.facebook} onChange={(s) => set("facebook", s)} />
-        </div>
-      </fieldset>
+      <section className="space-y-5">
+        <h3 className="font-mono text-xs tracking-[0.08em] uppercase">Social</h3>
+        <Text id="social-instagram" label="Instagram" value={v.instagram} onChange={(next) => set("instagram", next)} />
+        <Text id="social-facebook" label="Facebook" value={v.facebook} onChange={(next) => set("facebook", next)} />
+      </section>
 
       <Button type="submit" disabled={saving} className="min-h-11">
         {saving ? <Loader2 aria-hidden className="size-4 animate-spin" /> : null}
@@ -799,68 +625,4 @@ export function StoreSettingsForm({ initial }: { initial: StoreFormValues }) {
   );
 }
 
-function Money({
-  id,
-  label,
-  hint,
-  value,
-  onChange,
-}: {
-  id: string;
-  label: string;
-  hint?: string;
-  value: number;
-  onChange: (value: number) => void;
-}) {
-  return (
-    <div>
-      <label htmlFor={id} className="block text-xs font-medium">
-        {label}
-      </label>
-      <div className="mt-1 flex items-center gap-2">
-        <span aria-hidden className="text-muted-foreground font-mono text-sm">
-          ₹
-        </span>
-        <Input
-          id={id}
-          type="number"
-          inputMode="decimal"
-          min={0}
-          step={1}
-          value={Number.isFinite(value) ? value : 0}
-          onChange={(event) => onChange(event.target.valueAsNumber)}
-          className="max-w-40"
-        />
-      </div>
-      {hint ? (
-        <p className="text-muted-foreground mt-1 text-sm text-pretty">{hint}</p>
-      ) : null}
-    </div>
-  );
-}
 
-function Text({
-  id,
-  label,
-  value,
-  onChange,
-}: {
-  id: string;
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <div>
-      <label htmlFor={id} className="block text-xs font-medium">
-        {label}
-      </label>
-      <Input
-        id={id}
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className="mt-1"
-      />
-    </div>
-  );
-}

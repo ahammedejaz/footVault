@@ -29,6 +29,18 @@
  *      read it degrading to "could not read" rather than to zero
  */
 
+// clients first, before any other import and before anything reads
+// process.env. This suite gets its database through the app's own
+// `createAdminClient()`, so it never names a Supabase credential and the first
+// version of the fixtures-guard import check did not flag it — while it was
+// creating and deleting `shipments` rows against the **live shop**, and picking
+// its fixture order out of production. Found in Phase 9 when its COD fixture
+// asserted against FV-2026-00623, an order that exists only in production.
+import "./clients";
+import { assertNotProduction } from "./clients";
+
+assertNotProduction("run shipping");
+
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -36,7 +48,10 @@ import { setTimeout as sleep } from "node:timers/promises";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 // The same loader the other audit suites use: no dotenv dependency, and a
-// variable already in the environment always wins so CI can override any of it.
+// variable already in the environment always wins so CI can override any of it
+// — which is precisely what makes the `./clients` import above effective, since
+// it has already written the staging credentials into `process.env` under these
+// names by the time this runs.
 for (const line of readFileSync(".env.local", "utf8").split("\n")) {
   const match = /^([A-Z0-9_]+)=(.*)$/.exec(line.trim());
   if (match && !process.env[match[1]]) process.env[match[1]] = match[2];

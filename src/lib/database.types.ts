@@ -598,6 +598,7 @@ export type Database = {
         Row: {
           changed_by: string | null
           created_at: string
+          customer_note: string | null
           id: string
           note: string | null
           order_id: string
@@ -606,6 +607,7 @@ export type Database = {
         Insert: {
           changed_by?: string | null
           created_at?: string
+          customer_note?: string | null
           id?: string
           note?: string | null
           order_id: string
@@ -614,6 +616,7 @@ export type Database = {
         Update: {
           changed_by?: string | null
           created_at?: string
+          customer_note?: string | null
           id?: string
           note?: string | null
           order_id?: string
@@ -659,13 +662,14 @@ export type Database = {
           payment_reference: string | null
           payment_status: Database["public"]["Enums"]["payment_status"]
           placed_at: string
+          prepaid_discount: number
           quote_source: string | null
-          quoted_rate_mode: string | null
           quote_taken_at: string | null
           quoted_cod_fee_paise: number | null
           quoted_courier_id: number | null
           quoted_courier_name: string | null
           quoted_forward_paise: number | null
+          quoted_rate_mode: string | null
           quoted_rto_paise: number | null
           rto_actual_charge_paise: number | null
           rto_at: string | null
@@ -704,13 +708,14 @@ export type Database = {
           payment_reference?: string | null
           payment_status?: Database["public"]["Enums"]["payment_status"]
           placed_at?: string
+          prepaid_discount?: number
           quote_source?: string | null
-          quoted_rate_mode?: string | null
           quote_taken_at?: string | null
           quoted_cod_fee_paise?: number | null
           quoted_courier_id?: number | null
           quoted_courier_name?: string | null
           quoted_forward_paise?: number | null
+          quoted_rate_mode?: string | null
           quoted_rto_paise?: number | null
           rto_actual_charge_paise?: number | null
           rto_at?: string | null
@@ -749,13 +754,14 @@ export type Database = {
           payment_reference?: string | null
           payment_status?: Database["public"]["Enums"]["payment_status"]
           placed_at?: string
+          prepaid_discount?: number
           quote_source?: string | null
-          quoted_rate_mode?: string | null
           quote_taken_at?: string | null
           quoted_cod_fee_paise?: number | null
           quoted_courier_id?: number | null
           quoted_courier_name?: string | null
           quoted_forward_paise?: number | null
+          quoted_rate_mode?: string | null
           quoted_rto_paise?: number | null
           rto_actual_charge_paise?: number | null
           rto_at?: string | null
@@ -1467,8 +1473,8 @@ export type Database = {
           payment_method: string
           postal_code: string
           quoted_at: string
-          shipping_fee_paise: number
           rate_mode: string
+          shipping_fee_paise: number
           source: string
           subtotal_paise: number
         }
@@ -1490,8 +1496,8 @@ export type Database = {
           payment_method: string
           postal_code: string
           quoted_at?: string
-          shipping_fee_paise?: number
           rate_mode?: string
+          shipping_fee_paise?: number
           source: string
           subtotal_paise: number
         }
@@ -1513,8 +1519,8 @@ export type Database = {
           payment_method?: string
           postal_code?: string
           quoted_at?: string
-          shipping_fee_paise?: number
           rate_mode?: string
+          shipping_fee_paise?: number
           source?: string
           subtotal_paise?: number
         }
@@ -1615,6 +1621,7 @@ export type Database = {
       cancel_order_with_restock: {
         Args: {
           p_changed_by?: string
+          p_customer_note?: string
           p_movement_reason?: Database["public"]["Enums"]["inventory_movement_reason"]
           p_order_id: string
           p_reason: string
@@ -1666,12 +1673,13 @@ export type Database = {
           p_initial_status: Database["public"]["Enums"]["order_status"]
           p_payment_method: string
           p_payment_status: Database["public"]["Enums"]["payment_status"]
+          p_prepaid_discount?: number
           p_quote_source?: string
-          p_quoted_rate_mode?: string
           p_quoted_cod_fee_paise?: number
           p_quoted_courier_id?: number
           p_quoted_courier_name?: string
           p_quoted_forward_paise?: number
+          p_quoted_rate_mode?: string
           p_quoted_rto_paise?: number
           p_shipping_address: Json
           p_shipping_flat_fee: number
@@ -1727,6 +1735,10 @@ export type Database = {
       reorder_product_images: {
         Args: { p_ids: string[]; p_product_id: string }
         Returns: undefined
+      }
+      restock_rto_order: {
+        Args: { p_actor: string; p_order_id: string }
+        Returns: string
       }
     }
     Enums: {
@@ -1976,3 +1988,4 @@ export const Constants = {
     },
   },
 } as const
+

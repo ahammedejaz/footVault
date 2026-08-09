@@ -133,6 +133,13 @@ type Decision = {
   status: OrderStatus;
   paymentStatus: PaymentStatus;
   note: string | null;
+  /**
+   * The same event in the customer's own register, or null when it has nothing
+   * to say to them. `note` here is written for whoever is reconciling a payment
+   * — "Capture is short by 4200 paise" — and was being printed on the
+   * customer's order page.
+   */
+  customerNote: string | null;
   /** Set when the event is real but the transition it implies is not legal. */
   illegal: string | null;
   /** What the order costs, per the order itself. */
@@ -185,6 +192,7 @@ function decide(
   let status = order.status;
   let paymentStatus = order.payment_status;
   let note: string | null = null;
+  let customerNote: string | null = null;
   let illegal: string | null = null;
 
   if (captured && shortfall > 0) {
@@ -211,6 +219,17 @@ function decide(
         shortfall < 0
           ? `Payment captured; ${-shortfall} paise overpaid`
           : "Payment captured";
+      /*
+        The one event on the whole timeline a customer is actually waiting for.
+        "Payment captured" is the provider's word for it; this is the shop's.
+
+        The two failure branches around this one stay null on purpose. A short
+        capture and a capture against a terminal order both need a person to
+        sort out, and telling the customer "capture is short by 4200 paise"
+        gives them something to worry about and nothing to do about it.
+      */
+      customerNote =
+        "Payment received. Your order is confirmed and we are getting it ready.";
     } else if (isTerminalStatus(order.status)) {
       // The money arrived anyway. Record it — payment_status still becomes
       // `paid` — but do not claim the transition happened, because it did not
@@ -231,7 +250,16 @@ function decide(
   if (outcome.providerPaymentId)
     patch.payment_reference = outcome.providerPaymentId;
 
-  return { status, paymentStatus, note, illegal, expected, shortfall, patch };
+  return {
+    status,
+    paymentStatus,
+    note,
+    customerNote,
+    illegal,
+    expected,
+    shortfall,
+    patch,
+  };
 }
 
 /**
@@ -248,6 +276,7 @@ async function recordHistory(
     order_id: orderId,
     status: decision.status,
     note: decision.note,
+    customer_note: decision.customerNote,
   });
   if (error) {
     console.error(

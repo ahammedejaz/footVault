@@ -2,6 +2,7 @@ import "server-only";
 
 import type { Database } from "@/lib/database.types";
 import { formatPaise } from "@/lib/format";
+import { REFUND_ARRIVAL_WINDOW } from "@/lib/orders/customer-copy";
 import {
   refundFor,
   stageFor,
@@ -526,6 +527,9 @@ export async function initiateRefund(input: {
       `(${sent.refund.providerRefundId}, ${verdict.reason}). ` +
       `It is complete when Razorpay's webhook confirms it.`,
     input.actorId,
+    // The customer's version of the same event: the amount, which is theirs to
+    // check, and none of the mechanism.
+    `We have sent ${formatPaise(verdict.refundPaise)} back to you.`,
   );
 
   return {
@@ -834,6 +838,16 @@ async function afterSettle(
       : `Razorpay reported refund ${provided.providerRefundId} failed. ` +
         `Nothing moved; the amount is available to refund again.`,
     null,
+    /*
+      A confirmed refund is worth telling the customer about; a failed one is
+      not, and that asymmetry is deliberate. A failure is the shop's problem to
+      retry — it moved no money and the customer can do nothing with the news
+      except worry. Null leaves the timeline showing the status label alone.
+    */
+    settledStatus === "processed"
+      ? `${formatPaise(provided.amountPaise)} is on its way back to your account. ` +
+        `Refunds usually take ${REFUND_ARRIVAL_WINDOW} to arrive.`
+      : null,
   );
 }
 
@@ -847,12 +861,24 @@ async function writeHistory(
   status: OrderStatus,
   note: string,
   actorId: string | null,
+  /**
+   * What the **customer** reads on their own order page, or null when this
+   * event has nothing to say to them.
+   *
+   * `note` above is an engineer's audit line and every one of them in this file
+   * names a provider id, a reason code or the webhook. Those are exactly right
+   * in an audit trail and were being printed straight onto the customer's
+   * timeline: `rfnd_TNeaZX8YweRyFi`, `cancelled_before_dispatch`, "webhook".
+   * Two audiences, two columns, and null is the safe default.
+   */
+  customerNote: string | null = null,
 ): Promise<void> {
   const admin = createAdminClient();
   const { error } = await admin.from("order_status_history").insert({
     order_id: orderId,
     status,
     note,
+    customer_note: customerNote,
     changed_by: actorId,
   });
   if (error) {

@@ -52,7 +52,8 @@ type RawItem = {
 
 type RawHistory = {
   status: OrderStatus;
-  note: string | null;
+  /** The customer-facing sentence. `note` is deliberately not selected. */
+  customer_note: string | null;
   created_at: string;
   changed_by: string | null;
 };
@@ -66,6 +67,7 @@ type RawOrder = {
   placed_at: string;
   subtotal: number;
   discount_total: number;
+  prepaid_discount: number;
   shipping_fee: number;
   tax_total: number;
   grand_total: number;
@@ -163,7 +165,12 @@ function toTimeline(
     .sort((a, b) => a.created_at.localeCompare(b.created_at))
     .map((row) => ({
       status: row.status,
-      note: row.note,
+      /*
+        `customer_note`, never `note`. The internal column is not selected at
+        all above, so there is no field on `row` to reach for by mistake — which
+        is the point of splitting the column rather than filtering the string.
+      */
+      note: row.customer_note,
       at: row.created_at,
       by: actorFor(row.changed_by, viewerId),
     }));
@@ -180,14 +187,14 @@ export async function getOrderForViewer(
 
   const query = supabase.from("orders").select(
     `id, order_number, status, payment_status, payment_method, placed_at,
-       subtotal, discount_total, shipping_fee, tax_total, grand_total,
+       subtotal, discount_total, prepaid_discount, shipping_fee, tax_total, grand_total,
        cod_handling_fee, advance_amount, balance_due_on_delivery, delivered_at,
        shipping_address, contact_email, contact_phone, customer_note, user_id,
        items:order_items (
          id, product_name, product_slug, size, color, sku,
          unit_price, quantity, line_total, image_url
        ),
-       history:order_status_history ( status, note, created_at, changed_by )`,
+       history:order_status_history ( status, customer_note, created_at, changed_by )`,
   );
 
   const scoped = UUID.test(key)
@@ -210,6 +217,7 @@ export async function getOrderForViewer(
     totals: {
       subtotal: row.subtotal,
       discountTotal: row.discount_total,
+      prepaidDiscount: row.prepaid_discount,
       shippingFee: row.shipping_fee,
       codHandlingFee: row.cod_handling_fee,
       taxTotal: row.tax_total,

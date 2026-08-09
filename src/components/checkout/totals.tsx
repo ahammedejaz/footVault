@@ -51,7 +51,10 @@ export function Totals({
   /** Money owed at the door is what makes an order a Pay-on-Delivery order. */
   const paysOnDelivery = totals.balanceDueOnDelivery > 0;
 
-  const prepaidDiscount = totals.prepaidDiscount ?? 0;
+  // No `?? 0` any more: `prepaidDiscount` is required on `OrderTotals`, so a
+  // read site that forgets it fails to compile rather than rendering a silent
+  // zero — which is what this row did for the whole of Phase 8.
+  const prepaidDiscount = totals.prepaidDiscount;
   const otherDiscount = Math.max(0, totals.discountTotal - prepaidDiscount);
 
   return (

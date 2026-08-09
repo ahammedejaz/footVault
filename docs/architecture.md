@@ -901,6 +901,9 @@ in CI, because it needs neither.
 | `lighthouse` | performance, on a local production build with device throttling |
 | `screenshots` | full-page captures at all six widths, for the eye |
 | `teardown` | sweeps accounts and rows the harnesses could not delete themselves |
+| `settings-controls` | every control on `/admin/settings`, located by its visible label, operated, and the stored value read back |
+| `customer-copy` | no internal vocabulary in customer-facing code or in a stored `customer_note` |
+| `checkout-discount` | the discount is on the checkout screen, named, whole-rupee, and the printed lines sum to the printed total |
 
 `fixtures.ts`, `routes.ts` and `states.ts` are shared helpers rather than
 suites — the route list and the page states every visual check iterates over.
@@ -922,6 +925,53 @@ produce a courier collecting the wrong amount. `shipping` covers the half that
 needs the Shiprocket mock, including a COD fixture built so that the balance,
 the grand total and the goods subtotal are three different numbers — otherwise
 the assertion would pass whichever one the code read.
+
+### The reachability rule
+
+> **Any owner-facing control ships with a test that locates the control by its
+> visible label, changes it, and asserts the stored value changed.**
+>
+> Locating by `id` is allowed only where no visible label exists — and that is
+> itself a defect to fix. Asserting on page text is never sufficient.
+
+This exists because of a specific and expensive failure. For two phases a
+delivery-mode selector and a Pay-on-Delivery switch were reported "Built ·
+proved". Both were on `/admin/settings` the whole time — rendering, interactive,
+deployed — and the owner could not find them and said so three times. Every gate
+stayed green, because this was the whole of what `admin-pages.ts` asserted about
+that page:
+
+```ts
+const settingsBody = await page.locator("body").innerText();
+check("the settings page renders for an admin",
+      settingsBody.includes("Pay on Delivery"), …);
+```
+
+`<Panel title="Delivery and Pay on Delivery">` satisfies that. Delete the
+checkbox and the check still passes. Meanwhile `delivery-rules.ts` proved the
+flat fee was honoured downstream — thoroughly and correctly, and with no
+database and no browser, so it could not prove anybody could turn it on. The
+report added the two together and called it proved.
+
+**The gap was precise: one gate proved a value is honoured, another proved the
+page renders something, and no gate anywhere asserted that a named control is on
+screen, is operable, and changes the value it names.**
+
+`scripts/audit/settings-controls.ts` is the mechanism. `getByLabel` is not an
+implementation detail of it — it is the rule: the locator resolves through the
+accessible name, so a control a screen reader cannot name is a control the
+harness cannot find, and a label that drifts from the thing it labels fails
+there rather than in somebody's hands. Coverage is asserted too: the run fails
+if any control in its table was never actually operated, and an assertion only
+counts once the control was successfully changed, so a read-back that happens to
+match proves nothing.
+
+**Where it does not reach yet, and this is deliberate.** The product, variant,
+category, brand, media and customer CRUD actions in `src/lib/actions/admin/` are
+driven by no test that operates their UI — roughly 29 actions. A wrong product
+description is visible and reversible; a wrong delivery setting is neither. The
+harness prints that gap at the end of every run so it cannot quietly become
+coverage.
 
 ### The shape snapshot
 

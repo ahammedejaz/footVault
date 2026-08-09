@@ -96,6 +96,8 @@ export default async function AdminOrderDetailPage({
 
   const paysOnDelivery = order.balanceDueOnDelivery > 0;
   const forwardLeg = order.shippingFee - order.codHandlingFee;
+  /** Everything off the goods that was not the prepaid incentive. */
+  const otherDiscount = Math.max(0, order.discountTotal - order.prepaidDiscount);
 
   return (
     <AdminPage>
@@ -145,8 +147,20 @@ export default async function AdminOrderDetailPage({
                   value={order.codHandlingFee}
                 />
               ) : null}
-              {order.discountTotal > 0 ? (
-                <Money label="Discount" value={-order.discountTotal} />
+              {/*
+                Two lines, not one, and for the owner's benefit rather than the
+                customer's: a single "Discount" row cannot tell a prepaid
+                incentive the shop chose to give from a coupon a customer
+                redeemed, and those reconcile differently. It is drawn the same
+                way and in the same order as the customer's own page, so the
+                owner and the customer are reading the same document when a
+                query comes in about a total.
+              */}
+              {order.prepaidDiscount > 0 ? (
+                <Money label="Paying online" value={-order.prepaidDiscount} />
+              ) : null}
+              {otherDiscount > 0 ? (
+                <Money label="Discount" value={-otherDiscount} />
               ) : null}
             </dl>
             <div className="border-border mt-3 flex items-baseline justify-between border-t pt-3">

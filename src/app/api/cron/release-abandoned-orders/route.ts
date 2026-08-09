@@ -182,6 +182,11 @@ export async function POST(request: Request): Promise<NextResponse> {
         p_require_unpaid: true,
         p_release_cart: false,
         p_movement_reason: "sweep",
+        // Reached only after Razorpay has confirmed nothing was ever authorised,
+        // so "nothing has been charged" is a fact here rather than a hope.
+        p_customer_note:
+          "We did not receive a payment for this order, so it was cancelled and " +
+          "the pairs went back on sale. Nothing has been charged.",
       },
     );
 

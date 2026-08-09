@@ -55,6 +55,21 @@ export type ShippingQuoteResult =
       /** Collected in cash by the courier. */
       balanceDuePaise: number;
       grandTotalPaise: number;
+      /**
+       * **Everything taken off the goods, and how much of it was for paying
+       * online.** Both, always, and this is the field whose absence was a live
+       * bug.
+       *
+       * `grandTotalPaise` above already has the discount deducted. Until this
+       * phase the two discount figures were *not* sent, so the checkout page
+       * replaced the total with the discounted one and left both discount rows
+       * reading from the pre-quote totals, where they are zero. The customer saw
+       * ₹799.80 come off and a Discount line that said "—". Any field that
+       * `grandTotal` is derived from has to travel with it, or the page shows a
+       * total whose own lines do not explain it.
+       */
+      discountTotalPaise: number;
+      prepaidDiscountPaise: number;
       /** False means no courier will carry there — checkout must refuse. */
       deliverable: boolean;
       codAvailable: boolean;
@@ -122,6 +137,8 @@ export async function quoteShipping(
       advancePaise: totals.advanceAmount,
       balanceDuePaise: totals.balanceDueOnDelivery,
       grandTotalPaise: totals.grandTotal,
+      discountTotalPaise: totals.discountTotal,
+      prepaidDiscountPaise: totals.prepaidDiscount,
       deliverable: totals.deliverable,
       codAvailable: totals.codAvailable,
       estimatedDays: totals.estimatedDays,

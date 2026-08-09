@@ -16,6 +16,18 @@
  * No elevated key anywhere: if RLS were wrong, this would fail rather than
  * paper over it.
  */
+// clients first, before any other import and before anything reads
+// process.env: importing it repoints this process at staging and refuses to
+// run against production. This file builds its own clients from .env.local and
+// therefore wrote guest carts, orders, payments and stock movements into the
+// LIVE shop every time it ran — the exact failure clients.ts exists to stop,
+// caught in Phase 9 when a new migration was missing from the database the run
+// was actually talking to. See scripts/audit/clients.ts.
+import "./clients";
+import { assertNotProduction } from "./clients";
+
+assertNotProduction("run cart-merge");
+
 import { readFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 

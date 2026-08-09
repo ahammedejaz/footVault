@@ -23,7 +23,7 @@
     "audit:links": "tsx scripts/audit/links.ts",
     "audit:keyboard": "tsx scripts/audit/keyboard.ts",
     "audit:shots": "tsx scripts/audit/screenshots.ts",
-    "audit": "npm run audit:literals && npm run audit:fixtures-guard && npm run audit:refund-message && npm run audit:refunds && npm run audit:rto && npm run audit:reconciler && npm run audit:payment-health && npm run audit:overflow && npm run audit:a11y && npm run audit:keyboard && npm run audit:keyboard-checkout && npm run audit:focus && npm run audit:gallery && npm run audit:hydration && npm run audit:interactions && npm run audit:links && npm run audit:auth && npm run audit:cart && npm run audit:bag && npm run audit:signedin && npm run audit:checkout && npm run audit:admin && npm run audit:admin-pages && npm run audit:security-advance && npm run audit:shipping && npm run audit:totals && npm run audit:delivery && npm run audit:parcel",
+    "audit": "npm run audit:literals && npm run audit:fixtures-guard && npm run audit:refund-message && npm run audit:customer-copy && npm run audit:refunds && npm run audit:rto && npm run audit:reconciler && npm run audit:payment-health && npm run audit:overflow && npm run audit:a11y && npm run audit:keyboard && npm run audit:keyboard-checkout && npm run audit:focus && npm run audit:gallery && npm run audit:hydration && npm run audit:interactions && npm run audit:links && npm run audit:auth && npm run audit:cart && npm run audit:bag && npm run audit:signedin && npm run audit:checkout && npm run audit:admin && npm run audit:admin-pages && npm run audit:settings-controls && npm run audit:security-advance && npm run audit:shipping && npm run audit:totals && npm run audit:checkout-discount && npm run audit:delivery && npm run audit:parcel",
     "audit:interactions": "tsx scripts/audit/interactions.ts",
     "audit:auth": "tsx scripts/audit/auth-rls.ts",
     "audit:cart": "tsx scripts/audit/cart-merge.ts",
@@ -52,7 +52,11 @@
     "audit:refunds": "NODE_OPTIONS=--conditions=react-server tsx scripts/audit/refunds.ts",
     "audit:rto": "NODE_OPTIONS=--conditions=react-server tsx scripts/audit/rto.ts",
     "audit:reconciler": "NODE_OPTIONS=--conditions=react-server tsx scripts/audit/reconciler.ts",
-    "audit:payment-health": "NODE_OPTIONS=--conditions=react-server tsx scripts/audit/payment-health.ts"
+    "audit:payment-health": "NODE_OPTIONS=--conditions=react-server tsx scripts/audit/payment-health.ts",
+    "types:stage": "tsx scripts/gen-types.ts",
+    "audit:checkout-discount": "tsx scripts/audit/checkout-discount.ts",
+    "audit:customer-copy": "tsx scripts/audit/customer-copy.ts",
+    "audit:settings-controls": "tsx scripts/audit/settings-controls.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.7.1",

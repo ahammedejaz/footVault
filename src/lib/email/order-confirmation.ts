@@ -114,6 +114,25 @@ export function buildOrderConfirmationEmail(
   const forwardLeg = input.totals.shippingFee - input.totals.codHandlingFee;
   const paysOnDelivery = input.totals.balanceDueOnDelivery > 0;
 
+  /**
+   * **The discount lines, so the email's own arithmetic adds up.**
+   *
+   * This email had no discount row at all and was handed `discountTotal: 0` by
+   * its one caller, which was harmless only for as long as no discount existed.
+   * Subtotal + shipping ≠ order total is the single fastest way to make a
+   * customer distrust a receipt, and it is the kind of thing they screenshot.
+   *
+   * Split the same way and in the same order as the checkout page and the
+   * account order page — "Paying online" first, then anything else — so the
+   * confirmation reads as a record of the screen the customer just left rather
+   * than as a different document about the same order.
+   */
+  const prepaidDiscount = input.totals.prepaidDiscount;
+  const otherDiscount = Math.max(
+    0,
+    input.totals.discountTotal - prepaidDiscount,
+  );
+
   const text = [
     `Thanks, ${input.customerName}. Your order is placed.`,
     "",
@@ -124,6 +143,12 @@ export function buildOrderConfirmationEmail(
     itemText,
     "",
     `Subtotal        ${formatPaise(input.totals.subtotal)}`,
+    ...(prepaidDiscount > 0
+      ? [`Paying online   −${formatPaise(prepaidDiscount)}`]
+      : []),
+    ...(otherDiscount > 0
+      ? [`Discount        −${formatPaise(otherDiscount)}`]
+      : []),
     `Shipping        ${forwardLeg === 0 ? "Free" : formatPaise(forwardLeg)}`,
     ...(input.totals.codHandlingFee > 0
       ? [`Pay-on-delivery fee  ${formatPaise(input.totals.codHandlingFee)}`]
@@ -162,6 +187,12 @@ export function buildOrderConfirmationEmail(
     `<a href="${orderUrl}">${orderUrl}</a></p>`,
     `<table style="border-collapse:collapse">${itemHtml}`,
     `<tr><td style="padding-top:12px">Subtotal</td><td style="padding-top:12px;text-align:right">${formatPaise(input.totals.subtotal)}</td></tr>`,
+    prepaidDiscount > 0
+      ? `<tr><td>Paying online</td><td style="text-align:right">−${formatPaise(prepaidDiscount)}</td></tr>`
+      : "",
+    otherDiscount > 0
+      ? `<tr><td>Discount</td><td style="text-align:right">−${formatPaise(otherDiscount)}</td></tr>`
+      : "",
     `<tr><td>Shipping</td><td style="text-align:right">${forwardLeg === 0 ? "Free" : formatPaise(forwardLeg)}</td></tr>`,
     input.totals.codHandlingFee > 0
       ? `<tr><td>Pay-on-delivery fee</td><td style="text-align:right">${formatPaise(input.totals.codHandlingFee)}</td></tr>`

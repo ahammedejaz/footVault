@@ -29,6 +29,18 @@
  * deleted, and stock levels are restored. The two throwaway sign-ups it needs
  * are left behind, same as scripts/audit/cart-merge.ts.
  */
+// clients first, before any other import and before anything reads
+// process.env: importing it repoints this process at staging and refuses to
+// run against production. This file builds its own clients from .env.local and
+// therefore wrote guest carts, orders, payments and stock movements into the
+// LIVE shop every time it ran — the exact failure clients.ts exists to stop,
+// caught in Phase 9 when a new migration was missing from the database the run
+// was actually talking to. See scripts/audit/clients.ts.
+import "./clients";
+import { assertNotProduction } from "./clients";
+
+assertNotProduction("run checkout-orders");
+
 import { readFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 
@@ -165,8 +177,9 @@ async function main() {
     return row?.status ?? "missing";
   };
 
-  // Six, not three: the E-1 sweep, the E-2 race and the E-3 adoption each need
-  // a variant of their own, or one section's decrements starve the next.
+  // Seven, not three: the E-1 sweep, the E-2 race, the E-3 adoption and the
+  // discount split each need a variant of their own, or one section's
+  // decrements starve the next.
   const variants = await rows<{ id: string; stock_quantity: number }>(
     "pick variants",
     anon
@@ -176,11 +189,12 @@ async function main() {
       )
       .eq("is_active", true)
       .gte("stock_quantity", 8)
-      .limit(6)
+      .limit(7)
       .overrideTypes<{ id: string; stock_quantity: number }[]>(),
   );
-  if (variants.length < 6) throw new Error("need six variants with stock >= 8");
-  const [main1, contested, forWebhook, forSweep, forRace, forAdopt] = variants;
+  if (variants.length < 7) throw new Error("need seven variants with stock >= 8");
+  const [main1, contested, forWebhook, forSweep, forRace, forAdopt, forDiscount] =
+    variants;
 
   /* ── 1 · a guest order is written whole ─────────────────────────────────── */
   const tokenA = randomUUID();
@@ -1066,6 +1080,175 @@ async function main() {
     !!guardUserError,
     guardUserError?.code ?? "no error",
   );
+
+  /* ── 11 · the discount split is recorded, and it adds up ────────────────── */
+  /*
+    9E's database half. The display half is `audit:checkout-discount`, in a
+    browser; this is the assertion that the *row* carries the reason money came
+    off, because four surfaces read the order back long after the checkout that
+    produced it and none of them can infer a prepaid incentive from
+    `discount_total` alone.
+
+    `p_prepaid_discount` is passed larger than it should be on purpose in the
+    second case. The function clamps it inside `p_discount_total` under the row
+    lock, which is what makes `orders_prepaid_discount_within_total`
+    unreachable from the checkout rather than merely unlikely — and a CHECK
+    violation there is a customer seeing "something went wrong" after their
+    stock has already been claimed.
+  */
+  {
+    const tokenD = randomUUID();
+    const guestD = guestClient(tokenD);
+    const cartD = await maybeRow<{ id: string }>(
+      "discount cart",
+      guestD
+        .from("carts")
+        .insert({ guest_token: tokenD })
+        .select("id")
+        .maybeSingle(),
+    );
+    if (!cartD) throw new Error("no discount cart");
+    const lineD = (
+      await guestD
+        .from("cart_items")
+        .insert({ cart_id: cartD.id, variant_id: forDiscount.id, quantity: 1 })
+    ).error;
+    if (lineD) throw new Error(`fill discount cart: ${lineD.message}`);
+
+    const DISCOUNT = 25_000;
+    const PREPAID = 25_000;
+    const { data: madeRows, error: madeError } = await admin.rpc(
+      "create_order_with_stock",
+      {
+        p_cart_id: cartD.id,
+        p_shipping_address: ADDRESS,
+        p_payment_method: "razorpay",
+        p_initial_status: "pending",
+        p_payment_status: "unpaid",
+        p_shipping_flat_fee: 9_900,
+        p_guest_token: tokenD,
+        p_contact_email: "audit@example.com",
+        p_contact_phone: "9876543210",
+        p_discount_total: DISCOUNT,
+        p_prepaid_discount: PREPAID,
+      },
+    );
+    check(
+      "an order with a prepaid discount is placed",
+      !madeError && !!madeRows?.[0],
+      madeError?.message ?? "",
+    );
+    const made = madeRows?.[0];
+    if (made) {
+      placedOrders.push(made.order_id);
+      const row = await maybeRow<{
+        subtotal: number;
+        discount_total: number;
+        prepaid_discount: number;
+        shipping_fee: number;
+        grand_total: number;
+        advance_amount: number;
+        balance_due_on_delivery: number;
+      }>(
+        "discounted order",
+        admin
+          .from("orders")
+          .select(
+            "subtotal, discount_total, prepaid_discount, shipping_fee, grand_total, advance_amount, balance_due_on_delivery",
+          )
+          .eq("id", made.order_id)
+          .maybeSingle(),
+      );
+      check(
+        "the discount is stored, not just applied",
+        row?.discount_total === DISCOUNT,
+        String(row?.discount_total),
+      );
+      check(
+        "and so is the part of it that was for paying online",
+        row?.prepaid_discount === PREPAID && (row?.prepaid_discount ?? 0) > 0,
+        String(row?.prepaid_discount),
+      );
+      check(
+        "subtotal − discount + delivery = grand total",
+        !!row &&
+          row.subtotal - row.discount_total + row.shipping_fee ===
+            row.grand_total,
+        row
+          ? `${row.subtotal} − ${row.discount_total} + ${row.shipping_fee} ≠ ${row.grand_total}`
+          : "no row",
+      );
+      check(
+        "advance + balance = grand total, unchanged by any of this",
+        !!row &&
+          row.advance_amount + row.balance_due_on_delivery === row.grand_total,
+        row ? `${row.advance_amount} + ${row.balance_due_on_delivery}` : "no row",
+      );
+    }
+
+    // The clamp: a prepaid part larger than the whole is held inside it rather
+    // than raising a constraint violation at the customer.
+    const tokenE = randomUUID();
+    const guestE = guestClient(tokenE);
+    const cartE = await maybeRow<{ id: string }>(
+      "clamp cart",
+      guestE
+        .from("carts")
+        .insert({ guest_token: tokenE })
+        .select("id")
+        .maybeSingle(),
+    );
+    if (cartE) {
+      const lineE = (
+        await guestE
+          .from("cart_items")
+          .insert({ cart_id: cartE.id, variant_id: forDiscount.id, quantity: 1 })
+      ).error;
+      if (lineE) throw new Error(`fill clamp cart: ${lineE.message}`);
+      const { data: clampRows, error: clampError } = await admin.rpc(
+        "create_order_with_stock",
+        {
+          p_cart_id: cartE.id,
+          p_shipping_address: ADDRESS,
+          p_payment_method: "razorpay",
+          p_initial_status: "pending",
+          p_payment_status: "unpaid",
+          p_shipping_flat_fee: 9_900,
+          p_guest_token: tokenE,
+          p_contact_email: "audit@example.com",
+          p_contact_phone: "9876543210",
+          p_discount_total: 10_000,
+          p_prepaid_discount: 999_999,
+        },
+      );
+      check(
+        "a prepaid part larger than the discount does not raise a constraint",
+        !clampError,
+        clampError?.message ?? "",
+      );
+      const clamped = clampRows?.[0];
+      if (clamped) {
+        placedOrders.push(clamped.order_id);
+        const row = await maybeRow<{
+          discount_total: number;
+          prepaid_discount: number;
+        }>(
+          "clamped order",
+          admin
+            .from("orders")
+            .select("discount_total, prepaid_discount")
+            .eq("id", clamped.order_id)
+            .maybeSingle(),
+        );
+        check(
+          "it is clamped to the discount it is part of",
+          row?.prepaid_discount === row?.discount_total &&
+            row?.prepaid_discount === 10_000,
+          `${row?.prepaid_discount} of ${row?.discount_total}`,
+        );
+      }
+    }
+  }
 
   /* ── cleanup ────────────────────────────────────────────────────────────── */
   for (const orderId of placedOrders) {

@@ -107,6 +107,81 @@ ok(
   noAmount,
 );
 
+/* ── Already refunded: the case that cost the shop money twice ────────────── */
+/*
+  This harness pinned the sentence for two phases and never constructed an
+  order that had already been refunded — so it passed while the message told
+  the owner to send ₹135 back to a customer who already had it. The shape
+  below is FV-2026-00623's, from production: ₹135 captured, ₹135 refunded,
+  webhook-confirmed, and the order still uncancellable.
+*/
+console.log("\n already refunded:");
+
+const settled = refundInstruction({
+  payment_method: "razorpay",
+  advance_amount: 13500,
+  grand_total: 13500,
+  payment_reference: "pay_TNeXHYc0x69NUo",
+  refunded_paise: 13500,
+});
+console.log(`   → ${settled}\n`);
+ok(
+  "a fully refunded order is never told to refund again",
+  !settled.includes("The money back") &&
+    !settled.includes(formatPaise(13500)) &&
+    settled.includes("already been refunded in full"),
+  settled,
+);
+ok(
+  "and it does not print ₹0 as the amount to send",
+  !settled.includes(formatPaise(0)),
+  settled,
+);
+ok(
+  "it says what pressing cancel will now do",
+  settled.includes("back on the shelf"),
+  settled,
+);
+
+const partial = refundInstruction({
+  payment_method: "cod",
+  advance_amount: 34900,
+  grand_total: 184800,
+  payment_reference: "pay_TNEWQBLIJ4gAGN",
+  refunded_paise: 10000,
+});
+console.log(`   → ${partial}\n`);
+ok(
+  "a partly refunded order names only what is left",
+  partial.includes(formatPaise(24900)),
+  partial,
+);
+ok(
+  "never the full advance again",
+  !partial.includes(`send ${formatPaise(34900)}`),
+  partial,
+);
+ok(
+  "and it accounts for the part already sent, so the two figures reconcile",
+  partial.includes(formatPaise(10000)) && partial.includes("already gone back"),
+  partial,
+);
+
+/*
+  An absent `refunded_paise` must behave exactly as before. Callers that have no
+  refund data — and every caller did until this phase — cannot be made worse by
+  the parameter existing.
+*/
+ok(
+  "an order with no refund data reads exactly as it always did",
+  refundInstruction({
+    payment_method: "razorpay",
+    advance_amount: 169800,
+    grand_total: 169800,
+    payment_reference: "pay_TN9GKQluiI5ExB",
+  }) === prepaid,
+);
+
 console.log(
   `\n${failures === 0 ? "PASS" : "FAIL"} — ${checks - failures}/${checks} checks\n`,
 );

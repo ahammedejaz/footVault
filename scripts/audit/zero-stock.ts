@@ -32,6 +32,18 @@
  *      cancelled and restocked, leaving the catalog as it was found.
  */
 
+// clients first, before any other import and before anything reads
+// process.env: importing it repoints this process at staging and refuses to
+// run against production. This file builds its own clients from .env.local and
+// therefore wrote guest carts, orders, payments and stock movements into the
+// LIVE shop every time it ran — the exact failure clients.ts exists to stop,
+// caught in Phase 9 when a new migration was missing from the database the run
+// was actually talking to. See scripts/audit/clients.ts.
+import "./clients";
+import { assertNotProduction } from "./clients";
+
+assertNotProduction("run zero-stock");
+
 import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";

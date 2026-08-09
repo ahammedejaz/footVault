@@ -312,7 +312,10 @@ function NoteForm({
       </label>
       <p className="text-muted-foreground mt-1 text-sm text-pretty">
         Goes on the timeline at the order&rsquo;s current status, so &ldquo;rang
-        the customer, no answer&rdquo; sits in the right place in the story.
+        the customer, no answer&rdquo; sits in the right place in the story.{" "}
+        <strong>Only you see this.</strong> The customer&rsquo;s own timeline
+        shows the status and the sentences the shop writes for them, never these
+        notes.
       </p>
       <div className="mt-2 flex flex-wrap gap-2">
         <Input

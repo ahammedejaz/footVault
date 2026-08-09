@@ -1,5 +1,6 @@
 import type { OrderStatus, PaymentStatus } from "@/lib/orders/types";
 import { formatPaise } from "@/lib/format";
+import { REFUND_ARRIVAL_WINDOW } from "@/lib/orders/customer-copy";
 import type { PaymentMethod } from "@/lib/payments/types";
 
 /**
@@ -110,6 +111,34 @@ export const PAYMENT_STATUS_LABEL: Readonly<Record<PaymentStatus, string>> = {
  * by both: an unpaid COD order is completely normal and an unpaid Razorpay
  * order is not, and a customer who cannot tell those apart will either worry
  * about nothing or ignore something.
+ *
+ * ## Why this is a switch now
+ *
+ * It used to be a chain of `if`s that handled `paid` and let everything else
+ * fall through to *"We have not seen your payment settle yet… reload this page
+ * rather than paying again"*. `refunded` is everything else. So the customer of
+ * FV-2026-00623 — whose ₹135 had been captured, refunded and confirmed by
+ * webhook — was told their payment had not settled and invited to reload.
+ *
+ * A `switch` over `PaymentStatus` with no default makes the next status added to
+ * that enum a **compile error** here rather than a sentence shown to somebody
+ * whose money is in the wrong place. That is the whole reason for the shape.
+ *
+ * ## And why `cancelled` has a matrix rather than a blurb
+ *
+ * Fixing the cancel guard (9B) created a state that could not exist before:
+ * `cancelled` **and** `refunded`. The cancelled blurb says the pairs went back
+ * on the shelf and says nothing about the money, which is the only thing the
+ * customer wants to know. Both halves are needed, and which second half is true
+ * depends on what was actually taken.
+ *
+ * **No figure is named for a refund, deliberately.** The exact amount lives in
+ * `refunds.amount_paise`, which a customer cannot read — the RLS policy grants
+ * `select` to admins only — and the nearest number on the order,
+ * `advance_amount`, is *not* the refunded amount when a refund was partial or
+ * carried an RTO deduction. Naming a figure here would mean either widening that
+ * policy or printing a number that is sometimes wrong, and a wrong refund figure
+ * is worse than no figure.
  */
 export function whatHappensNext(order: {
   status: OrderStatus;
@@ -117,30 +146,85 @@ export function whatHappensNext(order: {
   paymentMethod: PaymentMethod;
   totals?: { advanceAmount: number; balanceDueOnDelivery: number };
 }): string {
-  if (order.status === "cancelled") return ORDER_STATUS_COPY.cancelled.blurb;
+  if (order.status === "cancelled") return cancelledCopy(order.paymentStatus);
   if (order.status === "returned") return ORDER_STATUS_COPY.returned.blurb;
 
-  if (order.paymentMethod === "cod") {
-    const balance = order.totals?.balanceDueOnDelivery ?? 0;
-    if (balance === 0) return "Paid in full. Nothing left to do.";
-    /**
-     * Both numbers, always. This line used to say only "pay the delivery agent
-     * in cash when your parcel arrives", which under the old model was true and
-     * under this one leaves the customer believing they have paid nothing. That
-     * belief is what gets a parcel refused at the door, and a refused parcel
-     * costs the shop both legs of the delivery.
-     */
-    const paid = order.totals?.advanceAmount ?? 0;
-    return (
-      `You have paid ${formatPaise(paid)}. The courier will collect ` +
-      `${formatPaise(balance)} in cash when your parcel arrives — keep the exact ` +
-      "amount ready if you can."
-    );
-  }
+  switch (order.paymentStatus) {
+    case "refunded":
+      return `Your money is on its way back to you. ${REFUND_TIMING}`;
 
-  if (order.paymentStatus === "paid") {
-    return "Your payment has gone through. We will email you when the parcel leaves us.";
-  }
+    case "paid":
+      return order.paymentMethod === "cod"
+        ? codBalance(order.totals)
+        : "Your payment has gone through. We will email you when the parcel leaves us.";
 
-  return "We have not seen your payment settle yet. This can take a minute — reload this page rather than paying again, and nothing has been charged twice if you do.";
+    case "unpaid":
+      /**
+       * A Pay-on-Delivery order that has not settled has taken **nothing** yet,
+       * so it cannot be told what it has paid. The order is written `pending` /
+       * `unpaid` before the Razorpay modal opens, and a customer who dismisses
+       * that modal was on this page being told they had already paid ₹281.
+       */
+      return order.paymentMethod === "cod"
+        ? "We are holding these for you. The order confirms as soon as the amount " +
+            "due now settles — nothing has been taken yet."
+        : "We have not seen your payment settle yet. This can take a minute — reload this page rather than paying again, and nothing has been charged twice if you do.";
+  }
+}
+
+/**
+ * A cancellation, and what happened to the money.
+ *
+ * Its own function so the switch has to satisfy a `string` return type: a fourth
+ * `PaymentStatus` becomes "not all code paths return a value" here, rather than
+ * falling quietly through to the general copy below. Inlined in the caller it
+ * would have done exactly that.
+ */
+function cancelledCopy(paymentStatus: PaymentStatus): string {
+  const closed = ORDER_STATUS_COPY.cancelled.blurb;
+  switch (paymentStatus) {
+    case "unpaid":
+      return `${closed} Nothing was charged.`;
+    case "paid":
+      // Reachable only through a refund that has settled the balance — the
+      // cancel guard refuses while anything is still outstanding — or through a
+      // payment row that has not caught up with its refund yet. Both mean money
+      // is coming back.
+      return `${closed} Anything you paid is being returned to you. ${REFUND_TIMING}`;
+    case "refunded":
+      return `${closed} Your money is on its way back to you. ${REFUND_TIMING}`;
+  }
+}
+
+/**
+ * How long money takes to come back.
+ *
+ * The window itself is shared with `src/lib/orders/refunds.ts`, which writes the
+ * same fact onto the timeline when Razorpay confirms a refund. Two typed copies
+ * of "5–7 working days" is one edit away from telling a customer two different
+ * things about the same money.
+ */
+const REFUND_TIMING = `Refunds usually reach your account in ${REFUND_ARRIVAL_WINDOW}.`;
+
+/**
+ * What a settled Pay-on-Delivery order still owes at the door.
+ *
+ * Both numbers, always. This line used to say only "pay the delivery agent in
+ * cash when your parcel arrives", which under the old model was true and under
+ * this one leaves the customer believing they have paid nothing. That belief is
+ * what gets a parcel refused at the door, and a refused parcel costs the shop
+ * both legs of the delivery.
+ */
+function codBalance(totals?: {
+  advanceAmount: number;
+  balanceDueOnDelivery: number;
+}): string {
+  const balance = totals?.balanceDueOnDelivery ?? 0;
+  if (balance === 0) return "Paid in full. Nothing left to do.";
+  const paid = totals?.advanceAmount ?? 0;
+  return (
+    `You have paid ${formatPaise(paid)}. The courier will collect ` +
+    `${formatPaise(balance)} in cash when your parcel arrives — keep the exact ` +
+    "amount ready if you can."
+  );
 }

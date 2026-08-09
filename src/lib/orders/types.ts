@@ -271,11 +271,21 @@ export type OrderTotals = {
    * Broken out so the payment step can draw it as a **named** line beside the
    * Pay-on-Delivery option, which is the only place a customer can act on it. A
    * discount folded silently into a total is a discount that persuades nobody.
-   * Optional because an order read back from the database does not carry it —
-   * only `discount_total` is stored, and the reason it was given belongs to the
-   * moment of choosing rather than to the row.
+   *
+   * **Required, and it used to be optional.** The old comment argued that an
+   * order read back from the database does not carry this — "the reason it was
+   * given belongs to the moment of choosing rather than to the row" — and that
+   * held while the discount was zero everywhere. It stopped holding the moment a
+   * 20% prepaid discount went live: a customer opening their order a week later
+   * and an owner reconciling it both need to know why the goods total and the
+   * amount charged disagree. `orders.prepaid_discount` now stores it.
+   *
+   * The `?` is gone deliberately. While it was optional, every read site could
+   * omit the field and silently render a zero — which is precisely how the
+   * checkout came to show a discounted total beside a Discount row reading "—".
+   * Now omitting it is a compile error.
    */
-  prepaidDiscount?: number;
+  prepaidDiscount: number;
   /** The **total** charged for delivery, including any COD handling. */
   shippingFee: number;
   /**
@@ -297,6 +307,20 @@ export type OrderTotals = {
 
 export type OrderTimelineEntry = {
   status: OrderStatus;
+  /**
+   * What this event says **to the customer**, or null when it has nothing to
+   * say.
+   *
+   * Read from `order_status_history.customer_note`, never from `note`. `note`
+   * is the internal audit trail — a Razorpay refund id, a reason code, the word
+   * "webhook" — and it was rendered straight onto the customer's own order page
+   * for the whole of Phase 8. The customer of FV-2026-00623 read
+   * `rfnd_TNeaZX8YweRyFi`, `cancelled_before_dispatch` and "webhook" on their
+   * timeline.
+   *
+   * Null is the safe default and the common case: the entry then shows the
+   * status label alone, which is already good copy.
+   */
   note: string | null;
   at: string;
   /** "You", "Foot Vault", or a staff name. Resolved server-side. */
