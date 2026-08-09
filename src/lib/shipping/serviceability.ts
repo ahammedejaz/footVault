@@ -14,21 +14,29 @@ import { SHIPROCKET_SERVICEABILITY_TIMEOUT_MS } from "@/lib/shipping/config";
  *   2. **Gating COD by PIN code.** Phase 5 recorded that COD's `isAvailable()`
  *      is unconditionally true with a hook waiting for exactly this.
  *
- * **What the customer is charged does not come from here — yet.** Delivery is
- * ₹199, free at ₹2,499 and above, read from `site_settings.shipping`. The owner
- * has decided that below the threshold the customer should pay the courier's own
- * rate (cheapest non-India-Post, rounded up to ₹10), and that is a second step:
- * it cannot ship until the checkout page re-quotes when a PIN is entered, because
- * charging a number the customer was never shown is worse than charging too
- * little. Until then the rate below is captured for the admin and nowhere else.
+ * **What the customer is charged is decided in `deliveryFee()`, not here.** Two
+ * rupee figures used to sit in this paragraph describing the fee and the free
+ * threshold; both were stale within a phase — the threshold has been ₹6,499 for
+ * some time while this said ₹2,499 — which is the third recorded instance of the
+ * same number escaping into text nobody re-reads. Every threshold now resolves
+ * from `site_settings.shipping` at the point of use, and this comment names no
+ * amounts.
  *
- * **It fails soft, in one direction only.** Every failure — no credentials, a
- * timeout, a 500, a malformed body — resolves to "we do not know", and "we do
- * not know" means the default estimate and COD **available**. A logistics
- * outage must never block a sale. The opposite default would mean a Shiprocket
- * incident silently switching off the payment method most of this shop's
- * customers use, which is a worse failure than occasionally accepting a COD
- * order to a PIN code that turns out to need a different courier.
+ * **It fails soft, and reports rather than decides.** Every failure — no
+ * credentials, a timeout, a 500, a malformed body — resolves to "we do not
+ * know". `codAvailable` stays `true` on an unknown verdict because this type
+ * answers *what Shiprocket said*, and Shiprocket said nothing; it is not the
+ * place where the shop's policy lives.
+ *
+ * **The policy above it was reversed in Batch 2 and the reversal is deliberate.**
+ * Phase 5 and 6 read an unknown verdict as "offer Pay on Delivery anyway", on
+ * the reasoning that a logistics outage must never block a sale. That was right
+ * when a COD order cost the shop nothing up front and wrong once the advance
+ * became the shop's cover for a refused parcel: with no quote there is no round
+ * trip, so a cash order accepted during an outage is an unsecured one. The
+ * owner's decision, 2026-08-09, is `refuse_cod` — prepaid still sells through an
+ * outage with its price labelled an estimate, and cash does not. That rule is
+ * applied in `deliveryFee()` and `computeOrderTotals`, not here.
  */
 
 export type ServiceabilityVerdict = {
@@ -95,13 +103,21 @@ export type ServiceabilityVerdict = {
   couriers: CourierQuote[];
   /** Which courier Shiprocket itself recommends, and why it says it does. */
   recommendedCourierId: number | null;
-  /** How we arrived at this, so the UI and the audit can tell them apart. */
-  source: "shiprocket" | "unknown";
+  /**
+   * How we arrived at this, so the UI and the audit can tell them apart.
+   *
+   * `flat` is not a failure and must never be treated as one. It means the shop
+   * is pricing from `flat_shipping_fee_paise` and **no call was made** — the
+   * owner's requirement for the festival-sale toggle. Collapsing it into
+   * `unknown` would make switching to a flat price silently switch off Pay on
+   * Delivery, which is a pricing toggle causing a business outage.
+   */
+  source: "shiprocket" | "unknown" | "flat";
   /** Set when `source` is `unknown`, for the log and the audit script. */
   reason?: string;
 };
 
-/** What every failure resolves to. Availability over accuracy, on purpose. */
+/** What every failure resolves to. A report of ignorance, not a decision. */
 export const UNKNOWN_SERVICEABILITY: ServiceabilityVerdict = {
   estimatedDays: null,
   deliverable: true,
@@ -116,6 +132,22 @@ export const UNKNOWN_SERVICEABILITY: ServiceabilityVerdict = {
   couriers: [],
   recommendedCourierId: null,
   source: "unknown",
+};
+
+/**
+ * What flat mode uses instead of a quote.
+ *
+ * Every cost field is null because none of them was asked for, and that is the
+ * honest record: `cost_forward_paise` on a flat-mode quote row is null *by
+ * design*, not because a call failed. `deliverable` and `codAvailable` are true
+ * because with no call the shop cannot say otherwise — flat mode trades
+ * PIN-level serviceability for a price that does not depend on a third party,
+ * which is the trade the owner asked for.
+ */
+export const FLAT_SERVICEABILITY: ServiceabilityVerdict = {
+  ...UNKNOWN_SERVICEABILITY,
+  source: "flat",
+  reason: "flat rate mode — no courier call was made",
 };
 
 /**

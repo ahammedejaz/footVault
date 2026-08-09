@@ -58,14 +58,37 @@ export type ContentTokens = Record<string, string>;
  * the whole of what they need to know.
  */
 export async function contentTokens(): Promise<ContentTokens> {
+  /**
+   * **A threshold that cannot be read is not substituted.**
+   *
+   * `shippingSettings()` throws rather than falling back to a constant — the old
+   * constant said ₹2,499 while the live threshold was ₹6,499, which is the same
+   * escaped number this file was written to stop. So an unreadable row leaves
+   * `{{free_shipping_threshold}}` visible in the page instead, which is exactly
+   * what this file already does with an unknown token and for the same reason: a
+   * visible placeholder is reported within the hour, and a sentence promising
+   * free delivery at the wrong number is not reported at all.
+   */
   const [shipping, returnDays] = await Promise.all([
-    shippingSettings(),
+    shippingSettings().catch((error: unknown) => {
+      console.error(
+        "[content] delivery thresholds unreadable; leaving their tokens unfilled:",
+        error instanceof Error ? error.message : "unknown",
+      );
+      return null;
+    }),
     returnWindowDays(),
   ]);
 
   return {
-    free_shipping_threshold: formatPaise(shipping.freeAbovePaise),
-    cod_minimum_order_value: formatPaise(shipping.codMinimumOrderValuePaise),
+    ...(shipping
+      ? {
+          free_shipping_threshold: formatPaise(shipping.freeAbovePaise),
+          cod_minimum_order_value: formatPaise(
+            shipping.codMinimumOrderValuePaise,
+          ),
+        }
+      : {}),
     return_window: describeWindow(returnDays),
     /**
      * The advance is quoted live per PIN code and per basket, so there is no

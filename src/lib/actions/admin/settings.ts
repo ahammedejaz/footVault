@@ -56,12 +56,19 @@ const shippingSchema = z
     prepaidDiscountValue: z
       .number({ message: "The prepaid discount must be a number." })
       .min(0, "The prepaid discount cannot be negative."),
-    customerDeliveryFeeMode: z.enum(["live", "flat"]),
-    customerDeliveryFlatRupees: rupees("The flat delivery charge"),
+    shippingRateMode: z.enum(["live", "flat"]),
+    flatShippingFeeRupees: rupees("The flat delivery charge"),
+    flatCodDepositMode: z.enum(["unset", "multiplier", "fixed"]),
+    flatCodDepositMultiplier: z
+      .number({ message: "The deposit multiplier must be a number." })
+      .min(0, "The deposit multiplier cannot be negative."),
+    flatCodDepositRupees: rupees("The flat-mode deposit"),
+    waiveCodFeeAboveThreshold: z.boolean(),
+    fallbackBehaviour: z.enum(["refuse_cod", "allow_all"]),
     rtoDeductionPolicy: z.enum(["actual_freight", "flat", "none"]),
     rtoDeductionFlatRupees: rupees("The flat return deduction"),
-    fallbackPrepaidRupees: rupees("The prepaid fallback"),
-    fallbackCodRupees: rupees("The Pay-on-Delivery fallback"),
+    prepaidEstimateRupees: rupees("The prepaid estimate"),
+    walletLowBalanceRupees: rupees("The low wallet-balance warning"),
   })
   .refine(
     (value) =>
@@ -74,13 +81,84 @@ const shippingSchema = z
   )
   .refine(
     (value) =>
-      value.customerDeliveryFeeMode !== "flat" ||
-      value.customerDeliveryFlatRupees > 0,
+      value.shippingRateMode !== "flat" || value.flatShippingFeeRupees > 0,
     {
       message:
         "A flat delivery charge of ₹0 means free delivery on every order. " +
         "Set an amount, or switch back to charging the live courier rate.",
-      path: ["customerDeliveryFlatRupees"],
+      path: ["flatShippingFeeRupees"],
+    },
+  )
+  /**
+   * **The guard that stops flat mode collecting nothing.**
+   *
+   * The owner's instruction, 2026-08-09: *"the Pay-on-Delivery deposit still
+   * needs a round-trip figure in flat mode, so derive it from the flat fee via a
+   * configurable multiplier or a configurable flat deposit — never silently
+   * collect nothing."*
+   *
+   * Flat mode makes no Shiprocket call, so there is no forward leg and no return
+   * leg to build an advance from. Saved without a deposit rule it would take a
+   * deposit of a rupee against a parcel that costs ₹280 to send and bring back —
+   * which is order FV-2026-00488 again, arrived at by configuration instead of
+   * by code.
+   *
+   * Refused at the point of saving rather than only at checkout, so the shop
+   * cannot be *put* into that state. `computeOrderTotals` refuses Pay on
+   * Delivery too if it somehow gets there, but a runtime refusal is a silently
+   * lost sale and this is a sentence the owner can act on.
+   *
+   * Only when Pay on Delivery is actually on: flat mode with cash switched off
+   * has nothing to secure, and blocking it would be a rule with no purpose.
+   */
+  .refine(
+    (value) =>
+      !value.codEnabled ||
+      value.shippingRateMode !== "flat" ||
+      value.flatCodDepositMode !== "unset",
+    {
+      message:
+        "A flat delivery charge needs a Pay-on-Delivery deposit to go with it. " +
+        "With no live courier quote there is no round trip to charge, so the " +
+        "deposit would be nothing and a refused parcel would cost you both " +
+        "journeys. Set a deposit, or switch Pay on Delivery off.",
+      path: ["flatCodDepositMode"],
+    },
+  )
+  /**
+   * The same rule for `allow_all`, which is the other way to reach a cash order
+   * with no quote behind it. There is no configuration of this shop in which a
+   * parcel goes out against a deposit of nothing.
+   */
+  .refine(
+    (value) =>
+      !value.codEnabled ||
+      value.fallbackBehaviour !== "allow_all" ||
+      value.flatCodDepositMode !== "unset",
+    {
+      message:
+        "Offering Pay on Delivery during a courier outage needs a deposit to " +
+        "secure it — there is no quote to work one out from. Set a deposit, or " +
+        "leave Pay on Delivery switched off during outages.",
+      path: ["fallbackBehaviour"],
+    },
+  )
+  .refine(
+    (value) =>
+      value.flatCodDepositMode !== "multiplier" ||
+      value.flatCodDepositMultiplier > 0,
+    {
+      message:
+        "A deposit of zero times the delivery charge is a deposit of nothing.",
+      path: ["flatCodDepositMultiplier"],
+    },
+  )
+  .refine(
+    (value) =>
+      value.flatCodDepositMode !== "fixed" || value.flatCodDepositRupees > 0,
+    {
+      message: "A fixed deposit of ₹0 collects nothing. Set an amount.",
+      path: ["flatCodDepositRupees"],
     },
   )
   .refine(
@@ -167,14 +245,33 @@ export async function saveShippingSettings(
                   ? v.prepaidDiscountValue
                   : Math.round(v.prepaidDiscountValue * 100),
             },
-            customer_delivery_fee_mode: v.customerDeliveryFeeMode,
-            customer_delivery_flat_paise: v.customerDeliveryFlatRupees,
+            shipping_rate_mode: v.shippingRateMode,
+            flat_shipping_fee_paise: v.flatShippingFeeRupees,
+            /*
+              Null rather than absent when unset, so the row says "the owner has
+              not chosen" out loud. `readFlatDeposit` treats both the same, but
+              only one of them is legible to a person reading the JSON.
+
+              A multiplier is a ratio, not money, so it is written as typed —
+              `rupees()` would multiply 1.5 into 150.
+            */
+            flat_cod_deposit_mode:
+              v.flatCodDepositMode === "unset" ? null : v.flatCodDepositMode,
+            flat_cod_deposit_multiplier:
+              v.flatCodDepositMode === "multiplier"
+                ? v.flatCodDepositMultiplier
+                : null,
+            flat_cod_deposit_paise:
+              v.flatCodDepositMode === "fixed" ? v.flatCodDepositRupees : null,
+            waive_cod_fee_above_threshold: v.waiveCodFeeAboveThreshold,
+            fallback_behaviour: v.fallbackBehaviour,
             rto_deduction_policy: v.rtoDeductionPolicy,
             rto_deduction_flat_paise: v.rtoDeductionFlatRupees,
-            fallback_fee_paise: {
-              razorpay: v.fallbackPrepaidRupees,
-              cod: v.fallbackCodRupees,
-            },
+            prepaid_estimate_fee_paise: v.prepaidEstimateRupees,
+            // Zero means "no threshold chosen" and the dashboard says so, rather
+            // than warning at a figure this file invented.
+            wallet_low_balance_paise:
+              v.walletLowBalanceRupees > 0 ? v.walletLowBalanceRupees : null,
           },
         })
         .eq("key", "shipping");
@@ -276,6 +373,107 @@ export async function saveStoreSettings(
        */
       updateTag(CATALOG_CACHE_TAG);
       revalidatePath("/", "layout");
+      return { ok: true };
+    },
+  );
+}
+
+/* ------------------------------------------------ the shop's parcel ------- */
+
+/**
+ * The one box every product ships in.
+ *
+ * The owner's decision, 2026-08-09: one common box for the whole catalogue,
+ * roughly 20 × 10 cm and about 1 kg packed, applied to every existing product
+ * and every product added afterwards. `products.weight_grams` and its three
+ * siblings stay as an override for something bulky like boots, and almost
+ * nothing needs one.
+ *
+ * **Every dimension is required and none of them has a default.** That is the
+ * point rather than an oversight. This form used to have a silent partner — a
+ * 900g literal in `src/lib/shipping/quote.ts` reached whenever a field was
+ * missing — which meant a half-filled row and a filled one looked identical
+ * while quoting different parcels. There is nothing to fall through to now, so
+ * a missing field stops quoting and says which field it was.
+ *
+ * Shiprocket prices on volumetric weight as well as actual weight, which is why
+ * a guessed height is not a small error: it silently misprices every parcel in
+ * the direction nobody checks.
+ */
+const parcelSchema = z.object({
+  weightGrams: z
+    .number({ message: "The packed weight must be a number." })
+    .int("The packed weight must be a whole number of grams.")
+    .min(1, "A parcel cannot weigh nothing.")
+    .max(50_000, "That is over 50kg — check the units are grams."),
+  lengthCm: dimension("The box length"),
+  breadthCm: dimension("The box breadth"),
+  heightCm: dimension("The box height"),
+  pickupPostcode: z
+    .string()
+    .regex(/^\d{6}$/, "The pickup PIN code must be six digits."),
+});
+
+/**
+ * A box side in centimetres.
+ *
+ * The ceiling is Shiprocket's own courier limit rather than an arbitrary large
+ * number: a side beyond it is rejected at shipment creation, which is a third
+ * party refusing an order somebody has already paid for.
+ */
+function dimension(label: string) {
+  return z
+    .number({ message: `${label} must be a number.` })
+    .positive(`${label} must be more than zero — a parcel has three sides.`)
+    .max(120, `${label} looks wrong. Couriers refuse a side over 120cm.`);
+}
+
+export async function saveParcelDefaults(
+  input: unknown,
+): Promise<AdminResult<object>> {
+  return adminAction<object>(
+    "saveParcelDefaults",
+    "adminMutation",
+    async ({ supabase }) => {
+      const parsed = parcelSchema.safeParse(input);
+      if (!parsed.success) {
+        return {
+          ok: false,
+          reason: "invalid",
+          message:
+            parsed.error.issues[0]?.message ?? "Check those numbers and try again.",
+        };
+      }
+      const v = parsed.data;
+
+      /**
+       * Written whole rather than merged, unlike the shipping row above.
+       *
+       * `shipping_defaults` has exactly these five fields and the schema
+       * requires all five, so there is nothing a merge would preserve — and a
+       * merge here would quietly keep an old `weight_grams` key beside the new
+       * `default_parcel_weight_grams`, which is the sort of leftover that gets
+       * read by mistake two phases later.
+       */
+      const { error } = await supabase
+        .from("site_settings")
+        .update({
+          value: {
+            default_parcel_weight_grams: v.weightGrams,
+            default_parcel_length_cm: v.lengthCm,
+            default_parcel_breadth_cm: v.breadthCm,
+            default_parcel_height_cm: v.heightCm,
+            pickup_postcode: v.pickupPostcode,
+          } satisfies Record<string, Json>,
+        })
+        .eq("key", "shipping_defaults");
+
+      if (error) {
+        return { ok: false, reason: "error", message: "That did not save." };
+      }
+
+      updateTag(CATALOG_CACHE_TAG);
+      revalidatePath("/admin/settings");
       return { ok: true };
     },
   );

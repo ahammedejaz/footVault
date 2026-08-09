@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import {
+  ParcelDefaultsForm,
   ShippingSettingsForm,
   StoreSettingsForm,
 } from "@/components/admin/settings/settings-forms";
@@ -12,6 +13,7 @@ import {
   settingObject,
   settingString,
 } from "@/lib/queries/admin/settings";
+import { parcelDefaultsStatus } from "@/lib/shipping/quote";
 
 export const metadata: Metadata = { title: "Settings" };
 export const dynamic = "force-dynamic";
@@ -31,16 +33,15 @@ export const dynamic = "force-dynamic";
  * where they live and sends the owner there.
  */
 export default async function AdminSettingsPage() {
-  const settings = await getAdminSettings();
+  const [settings, parcel] = await Promise.all([
+    getAdminSettings(),
+    parcelDefaultsStatus(),
+  ]);
 
   const shipping = settingObject(settings, "shipping");
+  const parcelRow = settingObject(settings, "shipping_defaults");
   const contact = settingObject(settings, "contact");
   const social = settingObject(settings, "social");
-  const fallback = (shipping.fallback_fee_paise ?? {}) as Record<
-    string,
-    unknown
-  >;
-
   const prepaidDiscount = (shipping.prepaid_discount ?? {}) as {
     mode?: string;
     value?: unknown;
@@ -60,15 +61,25 @@ export default async function AdminSettingsPage() {
         >
           <ShippingSettingsForm
             initial={{
-              freeAboveRupees: paiseToRupees(shipping.free_above_paise, 2499),
+              /*
+                Every fallback here is 0, and none of them used to be: this page
+                carried ₹2,499, ₹999 and ₹500 as the values to show when a field
+                was missing. ₹2,499 was the free-delivery threshold two phases
+                ago and has been ₹6,499 for some time, so a row that lost the
+                field would have shown the owner a stale number, invited them to
+                press Save, and written it back as though they had chosen it.
+                Zero renders as an empty box and cannot be mistaken for a
+                setting.
+              */
+              freeAboveRupees: paiseToRupees(shipping.free_above_paise, 0),
               codEnabled: shipping.cod_enabled !== false,
               codMinimumOrderRupees: paiseToRupees(
                 shipping.cod_minimum_order_value_paise,
-                999,
+                0,
               ),
               codAdvanceMaximumRupees: paiseToRupees(
                 shipping.cod_advance_maximum_paise,
-                500,
+                0,
               ),
               includeGstInAdvance: shipping.include_gst_in_advance === true,
               prepaidDiscountMode:
@@ -80,12 +91,37 @@ export default async function AdminSettingsPage() {
                 prepaidDiscount.mode === "percent"
                   ? Number(prepaidDiscount.value ?? 0)
                   : paiseToRupees(prepaidDiscount.value, 0),
-              customerDeliveryFeeMode:
-                shipping.customer_delivery_fee_mode === "flat" ? "flat" : "live",
-              customerDeliveryFlatRupees: paiseToRupees(
-                shipping.customer_delivery_flat_paise,
+              shippingRateMode:
+                shipping.shipping_rate_mode === "flat" ? "flat" : "live",
+              flatShippingFeeRupees: paiseToRupees(
+                shipping.flat_shipping_fee_paise,
                 0,
               ),
+              /*
+                `unset` is a real value here, not a missing one. It is what the
+                form refuses to save flat mode with, and collapsing it to a
+                default would be this page quietly choosing what the shop
+                collects against a returned parcel.
+              */
+              flatCodDepositMode:
+                shipping.flat_cod_deposit_mode === "multiplier" ||
+                shipping.flat_cod_deposit_mode === "fixed"
+                  ? shipping.flat_cod_deposit_mode
+                  : "unset",
+              // A ratio, not money — it is not divided by a hundred.
+              flatCodDepositMultiplier: Number(
+                shipping.flat_cod_deposit_multiplier ?? 0,
+              ),
+              flatCodDepositRupees: paiseToRupees(
+                shipping.flat_cod_deposit_paise,
+                0,
+              ),
+              waiveCodFeeAboveThreshold:
+                shipping.waive_cod_fee_above_threshold === true,
+              fallbackBehaviour:
+                shipping.fallback_behaviour === "allow_all"
+                  ? "allow_all"
+                  : "refuse_cod",
               rtoDeductionPolicy:
                 shipping.rto_deduction_policy === "flat" ||
                 shipping.rto_deduction_policy === "none"
@@ -95,13 +131,41 @@ export default async function AdminSettingsPage() {
                 shipping.rto_deduction_flat_paise,
                 0,
               ),
-              fallbackPrepaidRupees: paiseToRupees(fallback.razorpay, 199),
-              fallbackCodRupees: paiseToRupees(fallback.cod, 349),
+              prepaidEstimateRupees: paiseToRupees(
+                shipping.prepaid_estimate_fee_paise,
+                0,
+              ),
+              walletLowBalanceRupees: paiseToRupees(
+                shipping.wallet_low_balance_paise,
+                0,
+              ),
             }}
           />
         </Panel>
 
         <div className="space-y-6">
+          <Panel
+            title="The shop's parcel"
+            description="One box for the whole catalogue."
+          >
+            <ParcelDefaultsForm
+              missing={parcel.ok ? [] : parcel.missing}
+              /*
+                Read from the settings row rather than from `parcel.defaults`,
+                because an incomplete row has no `defaults` to read — and the
+                fields that *are* filled must still show what they hold. Zero
+                stands for "not set" and the form renders it as an empty box.
+              */
+              initial={{
+                weightGrams: Number(parcelRow.default_parcel_weight_grams ?? 0),
+                lengthCm: Number(parcelRow.default_parcel_length_cm ?? 0),
+                breadthCm: Number(parcelRow.default_parcel_breadth_cm ?? 0),
+                heightCm: Number(parcelRow.default_parcel_height_cm ?? 0),
+                pickupPostcode: String(parcelRow.pickup_postcode ?? ""),
+              }}
+            />
+          </Panel>
+
           <Panel title="The shop">
             <StoreSettingsForm
               initial={{

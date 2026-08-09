@@ -10,6 +10,7 @@ import {
   Panel,
   StatTile,
 } from "@/components/admin/ui";
+import { ShiprocketWalletStatus } from "@/components/admin/shipping/wallet-status";
 import { Table, TableWrap, Td, Th } from "@/components/admin/table";
 import { Button } from "@/components/ui/button";
 import { formatPaise } from "@/lib/format";
@@ -23,6 +24,7 @@ import {
   LOW_STOCK_THRESHOLD,
   type RefundQueue,
 } from "@/lib/queries/admin/dashboard";
+import { shiprocketWalletStatus } from "@/lib/shipping/wallet";
 
 export const metadata: Metadata = { title: "Dashboard" };
 
@@ -41,7 +43,18 @@ export const dynamic = "force-dynamic";
  * owner cannot act on is decoration.
  */
 export default async function AdminDashboard() {
-  const snapshot = await getDashboard();
+  /**
+   * The wallet is fetched beside the dashboard's own numbers, not after them.
+   *
+   * It is the only thing on this page that leaves the building, and it is
+   * written to fail soft — a Shiprocket outage comes back as "could not read"
+   * rather than as a throw, so `Promise.all` cannot take the page down with it.
+   * See `src/lib/shipping/wallet.ts`.
+   */
+  const [snapshot, wallet] = await Promise.all([
+    getDashboard(),
+    shiprocketWalletStatus(),
+  ]);
 
   return (
     <>
@@ -53,14 +66,17 @@ export default async function AdminDashboard() {
 
       <AdminPage className="space-y-5">
         {/*
-          Three health strips, above the numbers rather than below them, in
+          Four health strips, above the numbers rather than below them, in
           descending order of "how much money is this costing right now".
-          Two of the three render nothing at all when there is nothing wrong;
-          the webhook line always renders, because the useful thing about a
-          heartbeat is that you can see it beating.
+          The first two render nothing at all when there is nothing wrong; the
+          wallet and the webhook always render, because the useful thing about a
+          heartbeat is that you can see it beating — and a warning that has
+          never once appeared is a warning nobody believes the first time it
+          does.
         */}
         <RefundsOwedAlert queue={snapshot.refundsOwed} />
         <KeyModeWarning check={snapshot.keyMode} />
+        <ShiprocketWalletStatus status={wallet} />
         <WebhookStatus health={snapshot.webhook} />
 
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6">

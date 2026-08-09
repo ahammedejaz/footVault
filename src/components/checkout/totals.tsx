@@ -74,8 +74,24 @@ export function Totals({
 
         {totals.codHandlingFee > 0 ? (
           <Row
-            label="Pay-on-delivery fee"
-            hint=" — covers the return journey if the parcel is refused"
+            label="Cash-handling fee"
+            /*
+              **The old hint said this covered the return journey. It has not
+              since Phase 7.**
+
+              The return leg moved into the advance — money the customer pays
+              online and which is netted straight off what the courier collects.
+              This line is Shiprocket's own charge for collecting cash at the
+              door, `cod_charges`, and nothing else. Describing it as covering a
+              return was a sentence a customer could reasonably dispute, and they
+              would have been right.
+
+              It matters more now than it did: since the free-delivery threshold
+              started applying to Pay on Delivery, this is often the *only* line
+              a cash customer sees under a free delivery, so it is the one they
+              will ask about.
+            */
+            hint=" — what the courier charges us to collect cash at your door"
           >
             {formatPaise(totals.codHandlingFee)}
           </Row>

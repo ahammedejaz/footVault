@@ -94,6 +94,82 @@ export function advanceFor(input: {
     ? Math.round(roundTrip * GST_MULTIPLIER)
     : roundTrip;
 
+  return bound(withTax, rule, grandTotalPaise);
+}
+
+/* ------------------------------------------------- flat mode's deposit ---- */
+
+/**
+ * What secures a Pay-on-Delivery order when there is no round trip to charge.
+ *
+ * Flat mode makes no Shiprocket call by design, so `forward` and `rto` do not
+ * exist and `advanceFor` above has nothing to work with. Left alone it would
+ * compute an advance of zero, floor it to Razorpay's ₹1, and hand the courier
+ * the entire order to collect in cash — unsecured Pay on Delivery, which is the
+ * exact failure Phase 7 was built to remove and which order FV-2026-00488 is a
+ * record of.
+ *
+ * So flat mode carries its own rule, and the owner's instruction was that it
+ * must **never silently collect nothing**. `unset` therefore returns null rather
+ * than a number, and every caller is obliged to treat null as "refuse Pay on
+ * Delivery" rather than as "take zero". A multiplier against a flat fee of zero
+ * returns null for the same reason: it is arithmetically a deposit, and
+ * commercially it is nothing.
+ */
+export type FlatDepositRule =
+  | { mode: "multiplier"; multiplier: number }
+  | { mode: "fixed"; paise: number }
+  | { mode: "unset" };
+
+export function flatModeDepositPaise(input: {
+  rule: FlatDepositRule;
+  flatShippingFeePaise: number;
+}): number | null {
+  const { rule, flatShippingFeePaise } = input;
+  if (rule.mode === "unset") return null;
+
+  const raw =
+    rule.mode === "fixed"
+      ? rule.paise
+      : Math.round(Math.max(0, flatShippingFeePaise) * rule.multiplier);
+
+  return raw > 0 ? raw : null;
+}
+
+/**
+ * The flat-mode split, from a deposit the owner chose rather than a quote.
+ *
+ * GST is deliberately **not** applied. `includeGstInAdvance` exists to recover
+ * the tax Shiprocket adds to a freight bill; a flat deposit is not a freight
+ * bill, it is a figure the owner typed, and inflating it by 18% would charge the
+ * customer a tax on a number that never carried one.
+ *
+ * Every other guard rail still binds — the cap, the order total, Razorpay's
+ * floor, and the whole-rupee balance — because those are properties of the
+ * split rather than of where the number came from.
+ */
+export function advanceForFlat(input: {
+  rule: AdvanceRule;
+  depositPaise: number;
+  grandTotalPaise: number;
+}): AdvanceSplit {
+  return bound(input.depositPaise, input.rule, input.grandTotalPaise);
+}
+
+/**
+ * Clamp a proposed advance into something a customer can actually be charged
+ * and a courier can actually collect.
+ *
+ * Extracted so live mode and flat mode cannot drift: the two differ only in how
+ * they arrive at `rawPaise`, and every rule after that point is identical.
+ */
+function bound(
+  rawPaise: number,
+  rule: AdvanceRule,
+  grandTotalPaise: number,
+): AdvanceSplit {
+  const withTax = Math.max(0, rawPaise);
+
   /**
    * Razorpay's floor of 100 paise is the provider's and is not negotiable: an
    * order below it cannot be created at all. Under this model it is always

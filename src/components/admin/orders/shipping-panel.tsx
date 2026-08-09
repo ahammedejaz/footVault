@@ -39,6 +39,13 @@ import { cn } from "@/lib/utils";
  * The steps gate on each other because Shiprocket does: there is no AWB without
  * an order, no pickup without an AWB. A disabled button here says "not yet",
  * and the line under it says what is missing.
+ *
+ * **Why the failure message is not rendered here.** It would be the obvious
+ * place, and it would be wrong: this component only knows about failures it
+ * caused itself, in this tab, since the page loaded. The reason a parcel is
+ * stuck has to survive a reload and be visible to the second admin who opens
+ * the order — so it is stored by the step, read by the page, and rendered above
+ * this panel by `ShipmentErrorNotice`.
  */
 
 export type ShipmentView = {
@@ -82,10 +89,19 @@ export function ShippingPanel({
       const result = await action();
       if (result.ok) {
         toast.done(result.message ?? "Done.");
-        router.refresh();
       } else {
         toast.failed(result.message ?? "That did not work.");
       }
+      /**
+       * Refreshed on failure too, not only on success.
+       *
+       * The toast is three and a half seconds of red text, and it used to be
+       * the only trace a Shiprocket refusal left anywhere. The step now writes
+       * the reason to the database before it returns, and the server component
+       * above renders it — so the refresh is what turns a message that vanishes
+       * into one that is still on the page when the owner looks up.
+       */
+      router.refresh();
     } finally {
       setBusy(null);
     }

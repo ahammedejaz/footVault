@@ -7,42 +7,58 @@ import type { ShippingSettings } from "@/lib/shipping/settings";
 /**
  * What the customer pays for delivery.
  *
- * **Every rate here comes from Shiprocket.** The owner's instruction, given
+ * **Every live rate here comes from Shiprocket.** The owner's instruction, given
  * 2026-08-08: *"Delivery charges should be picked up from shiprocket api we will
  * not hardcode anything. Min order value is decided by us or admin from admin
- * panel."* So this file contains no prices — it contains the *rules*, and the
- * thresholds those rules compare against arrive in `settings`.
+ * panel."* So this file contains no prices — it contains the *rules*, and every
+ * threshold and every flat amount those rules compare against arrives in
+ * `settings`, editable at `/admin/settings`.
  *
- * The rules are the owner's:
+ * ## The rules, as the owner set them on 2026-08-09
  *
- *   **Prepaid, at or above the free-delivery threshold** — free.
- *   **Prepaid, below it** — the cheapest courier's forward rate, excluding
+ *   **At or above the free-delivery threshold** — the delivery charge is zero,
+ *     **for Pay on Delivery as well as prepaid**. That is decision 2, and the
+ *     previous behaviour was the bug: the free tier was gated `!isCod`, so a
+ *     ₹7,000 cash order paid full freight while a ₹7,000 card order paid
+ *     nothing, and nothing on the page explained why.
+ *
+ *   **The cash-handling fee is still charged on top of free delivery.** Decision
+ *     3, `waive_cod_fee_above_threshold = false`. It is a real courier cost and
+ *     it gives customers a reason to prepay. Turning the setting on waives it.
+ *
+ *   **Below the threshold, live mode** — the cheapest courier's rate excluding
  *     India Post, rounded up to the nearest ₹10.
- *   **Pay on Delivery, any value** — the live COD rate for the lane: forward
- *     freight plus Shiprocket's cash-collection fee. No free threshold.
  *
- * **The return leg left this file in Phase 7, and that is the money model
- * changing rather than a rule being relaxed.** Until then a COD delivery charge
- * was `forward + RTO`, so the customer paid for a return that usually never
- * happened. The RTO leg is now covered by the *advance* — money the customer
- * pays online and which is netted straight off what the courier collects, so it
- * costs them nothing on a delivered parcel and covers the shop completely on a
- * refused one. See `src/lib/payments/advance.ts`. What the customer pays for
- * delivery is now simply what the courier charges to deliver.
+ *   **Below the threshold, flat mode** — `flat_shipping_fee_paise`, with no
+ *     Shiprocket call made at all. Decision 6, so a festival sale is a fixed
+ *     price rather than a fixed price plus an API dependency.
  *
- * **The COD extra is still a named line.** `codHandlingPaise` is Shiprocket's
- * cash-collection fee — a percentage of the declared value, `cod_multiplier`
- * 3% on this account — and it is the whole of the difference between a prepaid
- * delivery charge and a Pay-on-Delivery one. Returned separately so it can be
- * drawn as its own row: the owner's condition for charging it at all is that a
- * customer can see it and point at it.
+ *   **No live quote, live mode** — `prepaid_estimate_fee_paise`, and the
+ *     customer is told it is an estimate. Pay on Delivery is withdrawn upstream
+ *     rather than priced here; see `computeOrderTotals`.
  *
- * **Two figures here are the shop's cost and never the customer's price.**
+ * ## `codHandlingPaise` is Shiprocket's `cod_charges` or it is zero
+ *
+ * There is no third possibility and there must never be one. This is decision 9,
+ * and it is written as a rule rather than a preference because the old code
+ * broke it in a way that reached a customer: the no-quote branch computed
+ * `fallback_fee_paise.cod − fallback_fee_paise.razorpay` — ₹349 − ₹199 — and
+ * presented **₹150, the difference between two numbers the owner typed**, as
+ * though it were the courier's cash-collection fee. Order FV-2026-00571 carries
+ * that line. Both constants are now gone from settings entirely, so the
+ * subtraction cannot be rewritten by accident.
+ *
+ * The consequence, stated so it is not mistaken for an oversight: in flat mode
+ * and on an unavailable quote the cash-handling line is **zero**, because
+ * Shiprocket was never asked. The shop absorbs it.
+ *
+ * ## Two figures here are the shop's cost and never the customer's price
+ *
  * `costForwardPaise` is freight alone and `costRtoPaise` is the return leg;
  * together they are the advance. They are carried through this type rather than
  * re-quoted downstream so that both legs provably come from **one courier
  * entry** — the brief's rule, and under a round-trip advance a mismatched pair
- * would price a journey no parcel takes.
+ * would price a journey no parcel takes. Both are null in flat mode, by design.
  */
 
 /** Rounded up to the nearest ₹10 so the customer never sees ₹210.68. */
@@ -55,7 +71,8 @@ export type DeliveryFee = {
    */
   shippingFeePaise: number;
   /**
-   * The Pay-on-Delivery extra, shown as its own line. Always 0 for prepaid.
+   * The Pay-on-Delivery extra, shown as its own line. Always 0 for prepaid, and
+   * always Shiprocket's own `cod_charges` or nothing. See the header.
    */
   codHandlingPaise: number;
   /** What the customer actually pays for delivery. The sum of the two above. */
@@ -67,13 +84,30 @@ export type DeliveryFee = {
   courierName: string | null;
   /**
    * Shop cost, and the two numbers the advance is made of. Never rendered to a
-   * customer as a price. **Both come from the same courier entry.**
+   * customer as a price. **Both come from the same courier entry**, and both are
+   * null in flat mode because no entry was fetched.
    */
   costForwardPaise: number | null;
   costRtoPaise: number | null;
   courierId: number | null;
-  /** `shiprocket` when priced from a live quote, `fallback` when guessed. */
-  basis: "free" | "shiprocket" | "fallback";
+  /**
+   * How this fee was arrived at.
+   *
+   * `free` deliberately does not say which mode produced it — that is
+   * `rateMode`'s job. `unavailable` replaces the old `fallback`, because
+   * "fallback" named the number substituted rather than the thing that happened,
+   * and what happened is that the courier could not be reached.
+   */
+  basis: "free" | "live" | "flat" | "unavailable";
+  /**
+   * The pricing mode in force, frozen onto the quote and onto the order.
+   *
+   * The owner's requirement: *"Freeze the mode used on each order alongside the
+   * quote."* `basis` cannot answer it — a free-delivery order reads `free` in
+   * both modes — and the question gets asked exactly once, the day after a
+   * festival sale, about a refund.
+   */
+  rateMode: "live" | "flat";
 };
 
 export function deliveryFee(input: {
@@ -96,94 +130,114 @@ export function deliveryFee(input: {
     // on exactly the orders the advance exists to cover.
     costForwardPaise: verdict.freightPaise ?? verdict.forwardCostPaise,
     costRtoPaise: verdict.rtoCostPaise,
+    rateMode: settings.shippingRateMode,
   };
 
   /**
-   * The owner can choose to charge a flat delivery fee and absorb the
-   * difference — `customer_delivery_fee_mode`. It changes only what the
-   * *customer* pays; the shop's costs above still come from the live quote, so
-   * the advance and the RTO ledger stay truthful about what a parcel really
-   * costs. Free delivery still wins over it, because that is a promise.
+   * The three states a quote can be in, and the reason `flat` is one of them.
+   *
+   * `flat` and `unavailable` both mean "there is no courier rate", and they must
+   * not be collapsed: `unavailable` withdraws Pay on Delivery under decision 4,
+   * and if flat mode shared that path then switching to a festival price would
+   * silently switch off Pay on Delivery for the whole shop. A pricing toggle
+   * must not be able to cause a business outage.
+   *
+   * A `shiprocket` verdict with no rate on it — every courier answered but none
+   * quoted a price, or the route is unserviceable — is `unavailable` too. The
+   * source says we reached them; it does not say they gave us a number.
    */
-  const flatMode = settings.customerDeliveryFeeMode === "flat";
+  const flat = verdict.source === "flat";
+  const hasLiveRate =
+    verdict.source === "shiprocket" && verdict.forwardCostPaise !== null;
 
-  // Prepaid crosses the threshold. Checked before the courier lookup matters,
-  // so a Shiprocket outage cannot cost a customer their free delivery. A
-  // threshold of 0 disables the free tier entirely.
-  if (
-    !isCod &&
-    settings.freeAbovePaise > 0 &&
-    subtotalPaise >= settings.freeAbovePaise
-  ) {
+  /**
+   * Decision 2. Checked before the courier lookup matters, so a Shiprocket
+   * outage cannot cost a customer their free delivery, and applied to **both**
+   * payment methods. A threshold of 0 disables the free tier entirely.
+   */
+  const freeDelivery =
+    settings.freeAbovePaise > 0 && subtotalPaise >= settings.freeAbovePaise;
+
+  /**
+   * Decision 9, enforced in one place so it cannot be re-derived elsewhere:
+   * Shiprocket's own `cod_charges`, or zero. Never a subtraction between two
+   * settings, which is what produced the ₹150 on FV-2026-00571.
+   */
+  const quotedCodFee = isCod ? Math.max(0, verdict.codFeePaise ?? 0) : 0;
+
+  // Decision 3: free delivery does not waive the cash-handling fee unless the
+  // owner says it does.
+  const codLine =
+    freeDelivery && settings.waiveCodFeeAboveThreshold ? 0 : quotedCodFee;
+
+  if (freeDelivery) {
     return {
       ...shared,
       shippingFeePaise: 0,
-      codHandlingPaise: 0,
-      feePaise: 0,
+      codHandlingPaise: codLine,
+      feePaise: codLine,
       basis: "free",
     };
   }
 
-  if (flatMode) {
-    const total = settings.customerDeliveryFlatPaise;
-    const codFee = isCod
-      ? Math.min(total, Math.max(0, verdict.codFeePaise ?? 0))
-      : 0;
+  if (flat) {
+    /**
+     * No call was made, so `codLine` is zero and the flat fee is the whole
+     * charge. The shop absorbs the cash-collection cost in flat mode; that is
+     * the price of a delivery charge that does not depend on a third party.
+     */
+    const total = Math.max(0, settings.flatShippingFeePaise);
     return {
       ...shared,
-      shippingFeePaise: total - codFee,
-      codHandlingPaise: codFee,
-      feePaise: total,
-      basis: verdict.source === "shiprocket" ? "shiprocket" : "fallback",
+      shippingFeePaise: total,
+      codHandlingPaise: codLine,
+      feePaise: total + codLine,
+      basis: "flat",
     };
   }
 
-  const forward = verdict.forwardCostPaise;
-
-  /**
-   * Shiprocket could not be reached.
-   *
-   * The fallback amounts are settings rather than constants so the owner can
-   * correct them without a deploy, and the COD figure is expressed as a total
-   * so that the split below still produces a sensible named line. Refusing to
-   * sell during a courier outage is a worse outcome than mispricing a handful
-   * of orders.
-   */
-  if (forward === null) {
-    const prepaid = settings.fallbackFeePaise.razorpay;
-    const total = isCod ? settings.fallbackFeePaise.cod : prepaid;
+  if (!hasLiveRate) {
+    /**
+     * Shiprocket could not be reached, or answered without a price.
+     *
+     * Prepaid still sells — refusing to sell during a courier outage is a worse
+     * outcome than mispricing a handful of orders — and the checkout labels this
+     * figure an estimate rather than presenting it as a rate. Pay on Delivery is
+     * withdrawn in `computeOrderTotals` under decision 4, so a cash order is
+     * never priced from this branch.
+     */
+    const total = Math.max(0, settings.prepaidEstimateFeePaise);
     return {
       ...shared,
-      shippingFeePaise: Math.min(prepaid, total),
-      codHandlingPaise: Math.max(0, total - prepaid),
-      feePaise: total,
-      basis: "fallback",
+      shippingFeePaise: total,
+      codHandlingPaise: codLine,
+      feePaise: total + codLine,
+      basis: "unavailable",
     };
   }
 
   /**
-   * `forward` is the courier's all-in `rate`. Under Pay on Delivery the quote
-   * was taken with `cod=1`, so it already contains the cash-collection fee;
-   * under prepaid it was taken with `cod=0` and the two are the same number.
-   * Either way it is what the courier charges to deliver, and it is what the
-   * customer pays.
+   * `forwardCostPaise` is the courier's all-in `rate`. Under Pay on Delivery the
+   * quote was taken with `cod=1`, so it already contains the cash-collection
+   * fee; under prepaid it was taken with `cod=0` and the two are the same
+   * number. Either way it is what the courier charges to deliver, and it is what
+   * the customer pays.
    *
-   * Rounded once on the total and then split, never rounded twice. Rounding
-   * each part separately quietly raises the price: ₹139.36 and ₹52.00 become
-   * ₹140 and ₹60 — ₹200 instead of ₹200… and ₹105.20 and ₹30.10 become ₹110 and
-   * ₹40 rather than ₹140. The customer pays the rounded total and the named
-   * line carries whatever the remainder is.
+   * Rounded once on the total and then split, never rounded twice. Rounding each
+   * part separately quietly raises the price: ₹139.36 and ₹52.00 become ₹140 and
+   * ₹60 — ₹200 instead of ₹192 — and ₹105.20 and ₹30.10 become ₹110 and ₹40
+   * rather than ₹140. The customer pays the rounded total and the named line
+   * carries whatever the remainder is.
    */
-  const feePaise = roundUp(forward);
-  const codFee = isCod ? Math.max(0, verdict.codFeePaise ?? 0) : 0;
-  const shippingFeePaise = Math.max(0, feePaise - Math.min(codFee, feePaise));
+  const feePaise = roundUp(verdict.forwardCostPaise ?? 0);
+  const codHandlingPaise = Math.min(codLine, feePaise);
 
   return {
     ...shared,
-    shippingFeePaise,
-    codHandlingPaise: feePaise - shippingFeePaise,
+    shippingFeePaise: feePaise - codHandlingPaise,
+    codHandlingPaise,
     feePaise,
-    basis: "shiprocket",
+    basis: "live",
   };
 }
 

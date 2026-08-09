@@ -7,7 +7,12 @@ import {
   type ListParams,
 } from "@/lib/admin/list-params";
 import { maybeRow, pagedRows, rows } from "@/lib/queries/run";
-import { getShipment, type ShipmentRow } from "@/lib/shipping/fulfilment";
+import {
+  getShipment,
+  getShipmentError,
+  type ShipmentErrorRow,
+  type ShipmentRow,
+} from "@/lib/shipping/fulfilment";
 import { createClient } from "@/lib/supabase/server";
 
 /** Columns the orders table may be ordered by. Allow-listed; see list-params. */
@@ -429,4 +434,24 @@ export async function getOrderShipment(
   orderId: string,
 ): Promise<ShipmentRow | null> {
   return getShipment(await createClient(), orderId);
+}
+
+/**
+ * Why the last fulfilment step failed, or null when nothing is wrong.
+ *
+ * A separate read rather than a join, and a separate table rather than columns
+ * on `shipments` — see `20260809120000_shipment_errors.sql`. It is one row by
+ * primary key on an order the page has already loaded, and it has to be its own
+ * read because the failure that matters most is the one where the shipments row
+ * was deleted and there is nothing to join to.
+ *
+ * Through the caller's own RLS client, like everything else on this page. The
+ * table's only policy is `is_admin()`, so a customer reading their own order
+ * cannot reach it — deliberately: these messages are about the shop's Shiprocket
+ * account rather than about their parcel.
+ */
+export async function getOrderShipmentError(
+  orderId: string,
+): Promise<ShipmentErrorRow | null> {
+  return getShipmentError(await createClient(), orderId);
 }
