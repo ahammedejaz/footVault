@@ -6,6 +6,10 @@ import { saveAddress as saveAddressToBook } from "@/lib/actions/address";
 import { getCurrentUser } from "@/lib/auth";
 import { stockChanged } from "@/lib/stock-freshness";
 import { readGuestToken } from "@/lib/cart/token";
+import {
+  couponRejectionMessage,
+  evaluateCoupon,
+} from "@/lib/coupons/validate";
 import { sendOrderConfirmation, sendOwnerNewOrder } from "@/lib/email";
 import {
   CHECKOUT_SQLSTATE,
@@ -225,8 +229,35 @@ export async function placeOrder(
      * `create_order_with_stock`, so `PlaceOrderInput` remains a type with no
      * number in it.
      */
+    /**
+     * The code waiting on the cart, re-validated now — advisory here, binding
+     * again inside `create_order_with_stock` under the coupon's row lock. A
+     * dead code refuses the placement rather than silently charging the
+     * undiscounted total: the customer was shown a price with the discount in
+     * it, and the honest failure is the one that says why the price moved.
+     */
+    let couponDiscountPaise = 0;
+    if (cart.couponCode) {
+      const verdict = await evaluateCoupon({
+        code: cart.couponCode,
+        userId: user?.id ?? null,
+        goodsTotalPaise: cart.subtotal,
+      });
+      if (!verdict.ok) {
+        return {
+          ok: false,
+          reason: "coupon_rejected",
+          message:
+            `${couponRejectionMessage(verdict)} ` +
+            "Remove the code in your bag, or change it, then place the order again.",
+        };
+      }
+      couponDiscountPaise = verdict.discountPaise;
+    }
+
     const units = cart.lines.reduce((total, line) => total + line.quantity, 0);
     const totals = await computeOrderTotals({
+      discountPaise: couponDiscountPaise,
       // Withdrawn from this customer by the owner, for refusing parcels. Read
       // here rather than assumed false: the parameter existed and nothing
       // passed it, so the control was a column.
@@ -375,6 +406,13 @@ export async function placeOrder(
         p_contact_email: data.contactEmail ?? user?.email ?? undefined,
         p_contact_phone: data.contactPhone ?? address.phone,
         p_customer_note: data.customerNote ?? undefined,
+        // Only when the coupon won the no-stacking decision. The function
+        // re-validates and recomputes under the coupon's row lock; passing a
+        // code that lost to the prepaid discount would redeem it for nothing.
+        p_coupon_code:
+          totals.discountApplied === "coupon"
+            ? (cart.couponCode ?? undefined)
+            : undefined,
       },
     );
 
@@ -393,6 +431,31 @@ export async function placeOrder(
           ok: false,
           reason: "empty_cart",
           message: "Your bag is empty.",
+        };
+      }
+      if (error.code === "CPNRJ") {
+        /**
+         * The authoritative check disagreed with the preview a moment ago —
+         * the code was spent, expired or pulled in the gap. The message is the
+         * same sentence the preview would have used; `detail` carries the
+         * minimum when that is the reason.
+         */
+        const reason = (
+          ["unknown", "expired", "minimum", "limit", "used"] as const
+        ).find((candidate) => candidate === error.message);
+        return {
+          ok: false,
+          reason: "coupon_rejected",
+          message:
+            couponRejectionMessage({
+              ok: false,
+              reason: reason ?? "unknown",
+              minOrderPaise:
+                reason === "minimum" && error.details
+                  ? Number(error.details)
+                  : undefined,
+            }) +
+            " Remove the code in your bag, or change it, then place the order again.",
         };
       }
       if (error.code === CHECKOUT_SQLSTATE.cartUnavailable) {
@@ -519,6 +582,8 @@ export async function placeOrder(
       subtotal: order.subtotal,
       discountTotal: totals.discountTotal,
       prepaidDiscount: totals.prepaidDiscount,
+      couponCode:
+        totals.discountApplied === "coupon" ? (cart.couponCode ?? null) : null,
       shippingFee: order.shipping_fee,
       codHandlingFee: totals.codHandlingFee,
       grandTotal,
@@ -852,6 +917,7 @@ async function confirmByEmail(args: {
   subtotal: number;
   discountTotal: number;
   prepaidDiscount: number;
+  couponCode: string | null;
   shippingFee: number;
   codHandlingFee: number;
   grandTotal: number;
@@ -906,6 +972,7 @@ async function confirmToCustomer(args: {
   subtotal: number;
   discountTotal: number;
   prepaidDiscount: number;
+  couponCode: string | null;
   shippingFee: number;
   codHandlingFee: number;
   grandTotal: number;
@@ -929,6 +996,7 @@ async function confirmToCustomer(args: {
     customerName: args.customerName,
     paymentMethod: args.method,
     lines: args.lines,
+    couponCode: args.couponCode,
     totals: {
       subtotal: args.subtotal,
       /*

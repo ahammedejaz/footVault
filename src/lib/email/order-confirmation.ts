@@ -30,6 +30,8 @@ export type OrderConfirmationInput = {
     lineTotal: number;
   }[];
   totals: OrderTotals;
+  /** Set when a coupon won the discount, so the line can name it. */
+  couponCode?: string | null;
   shippingAddress: ShippingAddress;
 };
 
@@ -148,7 +150,9 @@ export function buildOrderConfirmationEmail(
       ? [`Paying online   −${formatPaise(prepaidDiscount)}`]
       : []),
     ...(otherDiscount > 0
-      ? [`Discount        −${formatPaise(otherDiscount)}`]
+      ? [
+          `${input.couponCode ? `Coupon ${input.couponCode}` : "Discount"}        −${formatPaise(otherDiscount)}`,
+        ]
       : []),
     `Shipping        ${forwardLeg === 0 ? "Free" : formatPaise(forwardLeg)}`,
     ...(input.totals.codHandlingFee > 0
@@ -193,7 +197,7 @@ export function buildOrderConfirmationEmail(
       ? `<tr><td>Paying online</td><td style="text-align:right">−${formatPaise(prepaidDiscount)}</td></tr>`
       : "",
     otherDiscount > 0
-      ? `<tr><td>Discount</td><td style="text-align:right">−${formatPaise(otherDiscount)}</td></tr>`
+      ? `<tr><td>${input.couponCode ? `Coupon ${escapeHtml(input.couponCode)}` : "Discount"}</td><td style="text-align:right">−${formatPaise(otherDiscount)}</td></tr>`
       : "",
     `<tr><td>Shipping</td><td style="text-align:right">${forwardLeg === 0 ? "Free" : formatPaise(forwardLeg)}</td></tr>`,
     input.totals.codHandlingFee > 0

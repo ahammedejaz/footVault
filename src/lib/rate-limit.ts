@@ -106,6 +106,13 @@ export const RATE_LIMITS = {
    * rows.
    */
   cartWrite: [90, 60],
+  /**
+   * Trying a coupon code. The refusal messages deliberately collapse "no such
+   * code" and "not for you" into one sentence so codes cannot be told apart —
+   * this bounds how fast anyone can try telling anyway. Ten a minute is a
+   * customer mistyping twice, not a dictionary.
+   */
+  couponCheck: [10, 60],
   errorReport: [3, 3600],
   /**
    * And a ceiling across *all* fingerprints, because the per-fingerprint limit

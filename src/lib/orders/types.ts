@@ -195,6 +195,18 @@ export type PlaceOrderResult =
   | { ok: false; reason: "payment_unavailable"; message: string }
   | {
       /**
+       * The code waiting on the cart died between the bag and Place Order —
+       * expired, ran out, was switched off. Distinct from `invalid_input`
+       * because the fix is in the bag, not on this form: the customer removes
+       * or replaces the code and tries again. Charging them the undiscounted
+       * total instead would be quieter and worse.
+       */
+      ok: false;
+      reason: "coupon_rejected";
+      message: string;
+    }
+  | {
+      /**
        * No courier will carry to this pin code at all — not a slow provider, not
        * a timeout, but Shiprocket saying so explicitly. Distinct from
        * `payment_unavailable` because changing payment method will not help;
@@ -335,6 +347,8 @@ export type OrderView = {
   paymentMethod: PaymentMethod;
   placedAt: string;
   totals: OrderTotals;
+  /** The code that discounted this order, for the named row. Null when none did. */
+  couponCode: string | null;
   /**
    * When the courier recorded delivery, or null. The 24-hour window for
    * reporting shipment damage runs from this instant.

@@ -117,6 +117,9 @@ type StoredQuoteView = {
   /** Everything off the goods, and the part of it given for paying online. */
   discountTotalPaise: number;
   prepaidDiscountPaise: number;
+  /** The coupon's part after no-stacking, and its code for the named row. */
+  couponDiscountPaise: number;
+  couponCode: string | null;
   deliverable: boolean;
   codAvailable: boolean;
   estimatedDays: number | null;
@@ -277,6 +280,8 @@ export function CheckoutFlow({
           grandTotalPaise: result.grandTotalPaise,
           discountTotalPaise: result.discountTotalPaise,
           prepaidDiscountPaise: result.prepaidDiscountPaise,
+          couponDiscountPaise: result.couponDiscountPaise,
+          couponCode: result.couponCode,
           deliverable: result.deliverable,
           codAvailable: result.codAvailable,
           estimatedDays: result.estimatedDays,
@@ -342,6 +347,9 @@ export function CheckoutFlow({
         prepaidDiscount: quote.prepaidDiscountPaise,
       }
     : totals;
+
+  /** Which code the Discount row names, per the no-stacking rule. */
+  const shownCouponCode = quote?.couponCode ?? null;
 
   /**
    * **Nothing may be placed at a price the customer has not been shown.**
@@ -1124,6 +1132,7 @@ export function CheckoutFlow({
               <Totals
                 totals={shownTotals}
                 itemCount={itemCount}
+                couponCode={shownCouponCode}
                 pendingDelivery={!quote}
               />
 
