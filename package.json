@@ -13,6 +13,7 @@
     "shapes": "tsx scripts/shape-snapshot.ts",
     "shapes:write": "tsx scripts/shape-snapshot.ts --write",
     "format": "prettier --write .",
+    "rebuild:stage": "tsx scripts/db-rebuild.ts",
     "seed:sql": "tsx scripts/seed.ts --sql",
     "seed": "tsx scripts/seed.ts",
     "seed:stage": "tsx scripts/stage.ts tsx scripts/seed.ts",

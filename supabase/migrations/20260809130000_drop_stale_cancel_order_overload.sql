@@ -1,0 +1,32 @@
+-- The five-argument `cancel_order_with_restock` must not exist, and on some
+-- databases it does.
+--
+-- The history that produces it: `20260808090600` created the five-argument
+-- form. `20260807223318` — authored later but timestamped *earlier*, because it
+-- was backdated into the sequence — drops that form and creates the
+-- six-argument one that writes `inventory_movements`. Production applied the
+-- files in the order they were written, so it holds exactly one function, the
+-- six-argument form. A fresh database applies them in timestamp order:
+-- `223318` runs first (its drop a no-op, its create the six-argument form), and
+-- `090600` then recreates the five-argument form beside it.
+--
+-- Two overloads whose extra parameter is defaulted means every call with five
+-- or fewer arguments is ambiguous. PostgREST refuses the RPC with `Could not
+-- choose the best candidate function` — order cancellation stops working — and
+-- the sweep functions call it the same way at runtime. Staging, built by
+-- replay, has both overloads today and `scripts/audit/teardown.ts` reported
+-- exactly that error on every order it tried to cancel (Batch 2 report, §three
+-- defects).
+--
+-- The fix is at the end of the sequence rather than an edit to `090600`,
+-- because it has to repair three kinds of database at once:
+--
+--   - production: only the six-argument form → this drop is a no-op;
+--   - staging today: both forms → the stale one goes;
+--   - any fresh replay: both forms exist between `090600` and here, harmlessly
+--     — nothing calls the function during a replay — and the end state is one
+--     function.
+--
+-- Editing `090600` instead would fix only the third case, and an edit to an
+-- already-applied migration cannot reach staging, which has the defect now.
+drop function if exists public.cancel_order_with_restock(uuid, text, uuid, boolean, boolean);

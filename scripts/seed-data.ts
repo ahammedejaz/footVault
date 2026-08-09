@@ -1044,25 +1044,14 @@ export const siteSettings: Array<{
     },
     description: "Social links in the footer.",
   },
-  {
-    key: "shipping",
-    value: {
-      // No flat fee. Delivery is quoted per destination from the Shiprocket
-      // API and never hardcoded — the owner's rule. What lives here are the
-      // shop's own thresholds, which are the shop's decision to make.
-      free_above_paise: 249900,
-      currency: "INR",
-      regions: ["IN"],
-      cod_enabled: true,
-      cod_advance_mode: "greater_of",
-      cod_advance_minimum_paise: 9900,
-      cod_advance_fixed_paise: 9900,
-      // Reached only when Shiprocket is unreachable. Not a price list.
-      fallback_fee_paise: { razorpay: 19900, cod: 34900 },
-    },
-    description:
-      "Free-delivery threshold, the Pay-on-Delivery advance rule, and the amounts used only when Shiprocket cannot be reached. Rates themselves always come from the courier.",
-  },
+  // There is deliberately no `shipping` entry here. The seed used to carry one
+  // and it was a fossil: the ₹2,499 threshold from two phases before, plus the
+  // exact keys (`fallback_fee_paise`, the three `cod_advance_*`) that
+  // `20260809110100` deletes — so reseeding a migrated database un-migrated its
+  // settings, and docs/staging.md grew a "now repair the row" step. The row is
+  // created by `20260809140000_shipping_settings_row_exists.sql` with the
+  // owner's confirmed numbers and belongs to the migrations alone. If you are
+  // about to add it back, that migration's header is the argument against.
   {
     key: "return_window_days",
     value: 1,
