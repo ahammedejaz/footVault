@@ -1830,6 +1830,18 @@ export type Database = {
           subtotal: number
         }[]
       }
+      cron_health: {
+        Args: never
+        Returns: {
+          active: boolean
+          jobname: string
+          last_finished: string
+          last_message: string
+          last_started: string
+          last_status: string
+          schedule: string
+        }[]
+      }
       current_guest_token: { Args: never; Returns: string }
       discontinued_product_hint: {
         Args: { p_slug: string }

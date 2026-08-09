@@ -223,7 +223,10 @@ export async function getDashboard(): Promise<DashboardSnapshot> {
  * The verdict is judged against the last *paid order*, never the clock: see
  * `judgeWebhookLiveness`.
  */
-async function readWebhookLiveness(supabase: Supabase): Promise<WebhookHealth> {
+/** Exported for the health page, which shows the same verdict in more company. */
+export async function readWebhookLiveness(
+  supabase: Supabase,
+): Promise<WebhookHealth> {
   try {
     const [lastEvent, lastPaid] = await Promise.all([
       maybeRow<{ received_at: string }>(
