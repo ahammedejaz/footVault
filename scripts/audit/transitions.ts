@@ -33,7 +33,10 @@ import {
   TERMINAL_ORDER_STATUSES,
   type OrderStatus,
 } from "../../src/lib/orders/types";
-import { transitionOrder } from "../../src/lib/orders/transition";
+import {
+  transitionOrder,
+  type TransitionResult,
+} from "../../src/lib/orders/transition";
 
 const URL_ = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
@@ -71,13 +74,17 @@ function service(): SupabaseClient<Database> {
  * treats that specific throw as "completed; verify the database" — any other
  * throw is a real failure and re-raised.
  */
+type CancelOutcome =
+  | { completed: true; result: TransitionResult }
+  | { completed: true; threwAfterCommit: true };
+
 async function cancelVia(
   admin: SupabaseClient<Database>,
   orderId: string,
   actorId: string,
-): Promise<"threw_after_commit" | Awaited<ReturnType<typeof transitionOrder>>> {
+): Promise<CancelOutcome> {
   try {
-    return await transitionOrder({
+    const result = await transitionOrder({
       supabase: admin,
       elevated: () => admin,
       orderId,
@@ -85,12 +92,18 @@ async function cancelVia(
       note: "audit: cancel via transitionOrder",
       actorId,
     });
+    return { completed: true, result };
   } catch (error) {
     if (error instanceof Error && error.message.includes("updateTag")) {
-      return "threw_after_commit";
+      return { completed: true, threwAfterCommit: true };
     }
     throw error;
   }
+}
+
+/** Committed either way — as a verdict, or as the known post-commit throw. */
+function cancelCommitted(outcome: CancelOutcome): boolean {
+  return "threwAfterCommit" in outcome ? true : outcome.result.ok;
 }
 
 async function main() {
@@ -196,7 +209,7 @@ async function main() {
   const account = await createAccount("transitions-actor");
   const actor = account.userId;
 
-  const historyRows = async (orderId: string, status: string) => {
+  const historyRows = async (orderId: string, status: OrderStatus) => {
     const { data, error } = await admin
       .from("order_status_history")
       .select("id")
@@ -250,7 +263,7 @@ async function main() {
       "the order ends delivered",
       (await statusOf(chain.orderId)) === "delivered",
     );
-    for (const status of ["packed", "shipped", "delivered"]) {
+    for (const status of ["packed", "shipped", "delivered"] as OrderStatus[]) {
       check(
         `exactly one history row for ${status}`,
         (await historyRows(chain.orderId, status)) === 1,
@@ -348,8 +361,7 @@ async function main() {
     const cancelled = await cancelVia(admin, cancel.orderId, actor);
     check(
       "the cancel commits (verdict or the known post-commit throw)",
-      cancelled === "threw_after_commit" ||
-        (cancelled !== "threw_after_commit" && cancelled.ok),
+      cancelCommitted(cancelled),
     );
     check(
       "the order is cancelled",
@@ -367,9 +379,7 @@ async function main() {
     const stockAfterSecond = await stockOf(vCancel.id);
     check(
       "a second cancel restocks nothing",
-      stockAfterSecond === vCancel.stock_quantity &&
-        (again === "threw_after_commit" ||
-          (again !== "threw_after_commit" && again.ok)),
+      stockAfterSecond === vCancel.stock_quantity && cancelCommitted(again),
       String(stockAfterSecond),
     );
 
