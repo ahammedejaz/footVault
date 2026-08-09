@@ -1,0 +1,383 @@
+import "server-only";
+
+import { razorpayModeHealth, type ModeCheck, type WebhookHealth } from "@/lib/payments/health";
+import { readWebhookLiveness } from "@/lib/queries/admin/dashboard";
+import { maybeRow, rows } from "@/lib/queries/run";
+import { shiprocketWalletStatus, type WalletStatus } from "@/lib/shipping/wallet";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { createClient } from "@/lib/supabase/server";
+
+/**
+ * Everything about the shop that fails silently, on one screen (§Batch D).
+ *
+ * The dashboard answers "what needs doing"; this page answers "is the
+ * machinery alive". Every section degrades to an honest "could not read"
+ * rather than a guess, for the same reason the wallet does — a health page
+ * that renders a wrong "fine" teaches the owner to stop opening it.
+ *
+ * ## The stuck-order thresholds
+ *
+ * Operational judgment calls, not business numbers — nothing here changes
+ * what a customer is charged:
+ *
+ * - **Captured, not confirmed — 15 minutes.** The webhook grace is ten;
+ *   an order still `pending` with captured money past that is the exact
+ *   shape of FV-2026-00623 and it is holding the customer's money.
+ * - **Confirmed, not packed — 48 hours.** The shop hands parcels to the
+ *   courier daily; two days of silence on a paid order is a forgotten one.
+ * - **Shipped, not tracking — 72 hours.** A parcel can be handed over
+ *   before the AWB lands, but three days with no tracking number, or a
+ *   tracker that has not been checked in three days, is a parcel nobody
+ *   can answer questions about.
+ */
+export const STUCK_THRESHOLDS = {
+  capturedNotConfirmedMs: 15 * 60_000,
+  confirmedNotPackedMs: 48 * 3_600_000,
+  shippedNotTrackingMs: 72 * 3_600_000,
+} as const;
+
+export type StuckOrder = {
+  id: string;
+  orderNumber: string;
+  status: string;
+  placedAt: string;
+  grandTotal: number;
+  /** What makes it stuck, phrased for the row. */
+  detail: string;
+};
+
+export type CronJobHealth = {
+  jobname: string;
+  schedule: string;
+  active: boolean;
+  lastStatus: string | null;
+  lastStarted: string | null;
+  lastFinished: string | null;
+  lastMessage: string | null;
+};
+
+export type ShiprocketAuthHealth =
+  | { state: "held"; expiresAt: string }
+  | { state: "expired"; expiresAt: string }
+  | { state: "none" }
+  | { state: "locked_out"; reason: string; until: string }
+  | { state: "unreadable"; message: string };
+
+export type DriftHealth =
+  | { state: "clean"; variantsChecked: number }
+  | {
+      state: "drifted";
+      variantsChecked: number;
+      rows: { sku: string; stock: number; ledger: number; drift: number }[];
+    }
+  | { state: "unreadable"; message: string };
+
+export type HealthSnapshot = {
+  keyMode: ModeCheck;
+  webhook: WebhookHealth;
+  wallet: WalletStatus;
+  shiprocketAuth: ShiprocketAuthHealth;
+  stuck: {
+    capturedNotConfirmed: StuckOrder[];
+    confirmedNotPacked: StuckOrder[];
+    shippedNotTracking: StuckOrder[];
+    unreadable: string | null;
+  };
+  drift: DriftHealth;
+  cron: { jobs: CronJobHealth[]; unreadable: string | null };
+};
+
+export async function getHealth(): Promise<HealthSnapshot> {
+  const supabase = await createClient();
+
+  const [webhook, wallet, shiprocketAuth, stuck, drift, cron] =
+    await Promise.all([
+      readWebhookLiveness(supabase),
+      shiprocketWalletStatus(),
+      readShiprocketAuth(),
+      readStuckOrders(supabase),
+      readDrift(),
+      readCron(),
+    ]);
+
+  return {
+    keyMode: razorpayModeHealth(),
+    webhook,
+    wallet,
+    shiprocketAuth,
+    stuck,
+    drift,
+    cron,
+  };
+}
+
+type Supabase = Awaited<ReturnType<typeof createClient>>;
+
+/**
+ * Whether a Shiprocket call made right now would have a token to ride on.
+ *
+ * "None" is not an error: the client logs in lazily, so an idle shop holds no
+ * token. What the owner needs called out is the *lockout* row — the latch the
+ * token module sets after repeated auth failures, during which every
+ * fulfilment call fails fast — because that one means somebody changed the
+ * password and the shop cannot ship.
+ *
+ * Through the admin client, not the RLS one: `integration_tokens` grants
+ * nothing to any browser role on purpose (it holds a bearer token), and this
+ * page sits behind the double admin lock. Found by this very page rendering
+ * its own 42501 on first light.
+ */
+async function readShiprocketAuth(): Promise<ShiprocketAuthHealth> {
+  try {
+    const supabase = createAdminClient();
+    const [token, lockout] = await Promise.all([
+      maybeRow<{ expires_at: string }>(
+        "admin.health.shiprocketToken",
+        supabase
+          .from("integration_tokens")
+          .select("expires_at")
+          .eq("provider", "shiprocket")
+          .maybeSingle(),
+      ),
+      maybeRow<{ token: string; expires_at: string }>(
+        "admin.health.shiprocketLockout",
+        supabase
+          .from("integration_tokens")
+          .select("token, expires_at")
+          .eq("provider", "shiprocket:auth_lockout")
+          .maybeSingle(),
+      ),
+    ]);
+
+    if (lockout && Date.parse(lockout.expires_at) > Date.now()) {
+      return {
+        state: "locked_out",
+        reason: lockout.token,
+        until: lockout.expires_at,
+      };
+    }
+    if (!token) return { state: "none" };
+    return Date.parse(token.expires_at) > Date.now()
+      ? { state: "held", expiresAt: token.expires_at }
+      : { state: "expired", expiresAt: token.expires_at };
+  } catch (error) {
+    return {
+      state: "unreadable",
+      message:
+        error instanceof Error ? error.message : "could not read the tokens",
+    };
+  }
+}
+
+async function readStuckOrders(
+  supabase: Supabase,
+): Promise<HealthSnapshot["stuck"]> {
+  const now = Date.now();
+  try {
+    const [pendingPaid, confirmedOld, shippedRows] = await Promise.all([
+      /**
+       * Money captured, order still pending. Joined through `payments` rather
+       * than `payment_status`, because the failure being hunted is exactly the
+       * one where the capture never applied to the order.
+       */
+      rows<{
+        order_id: string;
+        created_at: string;
+        order: {
+          id: string;
+          order_number: string;
+          status: string;
+          placed_at: string;
+          grand_total: number;
+        } | null;
+      }>(
+        "admin.health.capturedNotConfirmed",
+        supabase
+          .from("payments")
+          .select(
+            "order_id, created_at, order:orders!inner ( id, order_number, status, placed_at, grand_total )",
+          )
+          .eq("status", "captured")
+          .eq("order.status", "pending")
+          .overrideTypes<
+            {
+              order_id: string;
+              created_at: string;
+              order: {
+                id: string;
+                order_number: string;
+                status: string;
+                placed_at: string;
+                grand_total: number;
+              } | null;
+            }[]
+          >(),
+      ),
+      rows<{
+        id: string;
+        order_number: string;
+        status: string;
+        placed_at: string;
+        grand_total: number;
+        updated_at: string;
+      }>(
+        "admin.health.confirmedNotPacked",
+        supabase
+          .from("orders")
+          .select("id, order_number, status, placed_at, grand_total, updated_at")
+          .eq("status", "confirmed")
+          .lt(
+            "updated_at",
+            new Date(now - STUCK_THRESHOLDS.confirmedNotPackedMs).toISOString(),
+          ),
+      ),
+      rows<{
+        id: string;
+        order_number: string;
+        status: string;
+        placed_at: string;
+        grand_total: number;
+        shipments: { awb_code: string | null; tracked_at: string | null }[];
+      }>(
+        "admin.health.shippedNotTracking",
+        supabase
+          .from("orders")
+          .select(
+            "id, order_number, status, placed_at, grand_total, shipments ( awb_code, tracked_at )",
+          )
+          .eq("status", "shipped")
+          .overrideTypes<
+            {
+              id: string;
+              order_number: string;
+              status: string;
+              placed_at: string;
+              grand_total: number;
+              shipments: { awb_code: string | null; tracked_at: string | null }[];
+            }[]
+          >(),
+      ),
+    ]);
+
+    const capturedNotConfirmed: StuckOrder[] = pendingPaid
+      .filter(
+        (row) =>
+          row.order &&
+          now - Date.parse(row.created_at) >
+            STUCK_THRESHOLDS.capturedNotConfirmedMs,
+      )
+      .map((row) => ({
+        id: row.order!.id,
+        orderNumber: row.order!.order_number,
+        status: row.order!.status,
+        placedAt: row.order!.placed_at,
+        grandTotal: row.order!.grand_total,
+        detail: "money captured, order still pending — the customer has paid",
+      }));
+
+    const confirmedNotPacked: StuckOrder[] = confirmedOld.map((row) => ({
+      id: row.id,
+      orderNumber: row.order_number,
+      status: row.status,
+      placedAt: row.placed_at,
+      grandTotal: row.grand_total,
+      detail: `confirmed and untouched since ${row.updated_at.slice(0, 10)}`,
+    }));
+
+    const shippedNotTracking: StuckOrder[] = shippedRows
+      .filter((row) => {
+        const shipment = row.shipments[0];
+        if (!shipment) return true;
+        if (!shipment.awb_code) return true;
+        if (!shipment.tracked_at) return false; // AWB assigned, tracker simply not polled yet
+        return (
+          now - Date.parse(shipment.tracked_at) >
+          STUCK_THRESHOLDS.shippedNotTrackingMs
+        );
+      })
+      .map((row) => ({
+        id: row.id,
+        orderNumber: row.order_number,
+        status: row.status,
+        placedAt: row.placed_at,
+        grandTotal: row.grand_total,
+        detail: row.shipments[0]?.awb_code
+          ? "tracking has not been checked in three days"
+          : "shipped with no tracking number",
+      }));
+
+    return {
+      capturedNotConfirmed,
+      confirmedNotPacked,
+      shippedNotTracking,
+      unreadable: null,
+    };
+  } catch (error) {
+    return {
+      capturedNotConfirmed: [],
+      confirmedNotPacked: [],
+      shippedNotTracking: [],
+      unreadable:
+        error instanceof Error ? error.message : "could not read the orders",
+    };
+  }
+}
+
+/**
+ * `reconcile_inventory()` compares every variant's shelf figure with the sum
+ * of its movement ledger. Service-role only, so this read goes through the
+ * admin client — the page itself is already double-locked behind `is_admin`.
+ */
+async function readDrift(): Promise<DriftHealth> {
+  try {
+    const admin = createAdminClient();
+    const { data, error } = await admin.rpc("reconcile_inventory");
+    if (error) return { state: "unreadable", message: error.message };
+    const all = data ?? [];
+    const drifted = all.filter((row) => row.drift !== 0);
+    if (drifted.length === 0)
+      return { state: "clean", variantsChecked: all.length };
+    return {
+      state: "drifted",
+      variantsChecked: all.length,
+      rows: drifted.map((row) => ({
+        sku: row.sku,
+        stock: row.stock_quantity,
+        ledger: Number(row.ledger_total),
+        drift: Number(row.drift),
+      })),
+    };
+  } catch (error) {
+    return {
+      state: "unreadable",
+      message:
+        error instanceof Error ? error.message : "could not run the reconcile",
+    };
+  }
+}
+
+async function readCron(): Promise<HealthSnapshot["cron"]> {
+  try {
+    const admin = createAdminClient();
+    const { data, error } = await admin.rpc("cron_health");
+    if (error) return { jobs: [], unreadable: error.message };
+    return {
+      jobs: (data ?? []).map((row) => ({
+        jobname: row.jobname,
+        schedule: row.schedule,
+        active: row.active,
+        lastStatus: row.last_status,
+        lastStarted: row.last_started,
+        lastFinished: row.last_finished,
+        lastMessage: row.last_message,
+      })),
+      unreadable: null,
+    };
+  } catch (error) {
+    return {
+      jobs: [],
+      unreadable:
+        error instanceof Error ? error.message : "could not read the schedule",
+    };
+  }
+}

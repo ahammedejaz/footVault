@@ -53,6 +53,11 @@ export const ADMIN_NAV: readonly AdminNavItem[] = [
     label: "Settings",
     hint: "Shop details and rules",
   },
+  {
+    href: "/admin/health",
+    label: "Health",
+    hint: "Is the machinery alive",
+  },
 ] as const;
 
 /** Whether `pathname` is inside `item`. */
