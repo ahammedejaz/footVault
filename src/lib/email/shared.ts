@@ -50,8 +50,9 @@ export function addressLines(address: ShippingAddress): string[] {
  */
 export function replacementPolicy(): string {
   return (
-    "Damaged in transit? Contact us within 24 hours of delivery and we will " +
-    `replace it. We do not offer refunds or returns. ${SITE_URL}/page/returns`
+    `Damaged in transit? Email ${REPLY_TO} within 24 hours of delivery and ` +
+    "we will replace it. We do not offer refunds or returns. " +
+    `${SITE_URL}/page/returns`
   );
 }
 
@@ -60,12 +61,15 @@ export const SIGN_OFF = "— Foot Vault";
 /**
  * Where a customer's reply goes.
  *
- * **There is no mailbox at footvault.in.** Resend Inbound accepts mail for the
- * domain and puts it in a dashboard, which is not somewhere anyone reads. So a
- * customer who does the obvious thing — hit reply on their order confirmation —
- * sends to `orders@footvault.in` and is answered by nobody. The send succeeds,
- * the delivery succeeds, and the message is still lost; there is no bounce to
- * notice and no error to log.
+ * **The shop's own domain, now that mail to it reaches a person.** Resend
+ * Inbound accepts anything `@footvault.in` and `/api/email/inbound` forwards it
+ * to the owner's Gmail, proven end to end before this address was put in front
+ * of customers.
+ *
+ * It was a Gmail address until that was true. A reply-to nobody reads is worse
+ * than no reply-to: the send succeeds, the delivery succeeds, and the message
+ * is still lost, with no bounce to notice and no error to log. So the order of
+ * operations mattered — forwarding first, then this.
  *
  * The one that decides it is the damage claim. The replacement window is 24
  * hours from delivery (`replacementPolicy` above), the delivered notice is the
@@ -78,7 +82,7 @@ export const SIGN_OFF = "— Foot Vault";
  * silently — nothing about a missing reply-to looks like a fault from the
  * sending side. `scripts/audit/emails.ts` asserts every builder sets it.
  */
-export const REPLY_TO = "footvault3@gmail.com";
+export const REPLY_TO = "inquiry@footvault.in";
 
 /**
  * How long a refund takes to appear, quoted in exactly one place.
