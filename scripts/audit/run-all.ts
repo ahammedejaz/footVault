@@ -66,6 +66,7 @@ const GATES = [
   "audit:links",
   "audit:auth",
   "audit:cart",
+  "audit:cart-limit",
   "audit:bag",
   "audit:signedin",
   "audit:address-book",

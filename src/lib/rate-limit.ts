@@ -81,6 +81,31 @@ export const RATE_LIMITS = {
    * thousand identical messages in it is indistinguishable from an inbox with
    * none. Three is enough to notice and to see it is still happening.
    */
+  /**
+   * Writing to a bag. The one limit here that guards *row creation* by an
+   * unauthenticated caller.
+   *
+   * **Keyed on the IP, never on the guest token**, and that is the whole point
+   * rather than a detail. A guest cart is owned by a cookie the caller holds,
+   * so a client that simply declines to send one gets a fresh token — and
+   * `getOrCreateCartId` a fresh `carts` row — on every single request. A limit
+   * bucketed by guest token would therefore be a limit an attacker resets at
+   * will by dropping a cookie, which is not a limit. `callerIdentity(null)`
+   * returns `ip:…` for exactly this reason.
+   *
+   * Ninety a minute: a customer tapping a quantity stepper is the busiest
+   * legitimate caller and comes nowhere near it, while a script minting carts
+   * is stopped a long way before it is interesting. Same trade as everything
+   * else here — a limit tight enough to be exciting is a limit that eventually
+   * rejects a real customer behind one hotel NAT.
+   *
+   * This bounds the *rate*, not the total. It is a shock absorber, not
+   * authorization: every one of these actions is still scoped by RLS to the
+   * cart the caller owns, and stock is still decided in the database at
+   * checkout. What it stops is one source turning an afternoon into a million
+   * rows.
+   */
+  cartWrite: [90, 60],
   errorReport: [3, 3600],
   /**
    * And a ceiling across *all* fingerprints, because the per-fingerprint limit
