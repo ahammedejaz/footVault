@@ -244,8 +244,13 @@ day this cost.
 | `audit:auth` | **PASS 11/11** — including "/admin is 200 for an admin", the check that exposed the six-harness find |
 | `audit:signedin` / `audit:admin` / `audit:admin-pages` | PASS / PASS / **PASS 56/56** — all re-run after the repoint, since their prior passes partly described the wrong database |
 | `audit:actions` | **PASS 89/89** — every admin action refuses customers and anonymous callers; the positive control runs |
-| `audit:security` | <!-- SECURITY --> |
-| Lighthouse (mobile, devtools throttling) | <!-- LIGHTHOUSE -->
+| `audit:security` | **PASS 123/123** — the adversarial suite over real HTTP, including the abandoned-release check now driven through the deployed cron route with a real test-mode Razorpay order |
+| Lighthouse (mobile, devtools throttling, staged production build) | **perf ≥98, a11y 100, best-practices 100 on all five routes** — home 99, shop 99, product 98, cart 99, checkout 99; LCP 1.65–2.04s, CLS ≤0.001, TBT ≤80ms. SEO 58–69 everywhere is `SITE_INDEXABLE=false` doing its job on a noindex environment, same as Batch 2 |
+
+After the last gate: `audit:teardown` swept every fixture and
+`reconcile_inventory()` reports **zero drifting variants** — the batch's
+fixtures, including three overflow runs' leftovers, netted out to a clean
+ledger.
 
 ---
 
@@ -282,6 +287,28 @@ production guard as every other harness. `audit:auth` then passes 11/11
 against staging end to end, admin 200 included. The gates that "passed"
 before the fix (`audit:admin` among them) were re-run after it, since what
 they had previously proven was partly a statement about the wrong database.
+
+### And the repoint found a live bug in the reconciler cron
+
+Three of the re-pointed gates then failed on **stale assertions** — checks
+still describing pre-Batch-2 contracts that only ever passed against
+production's unmigrated row (dead `cod_advance_mode` surviving a settings
+save; the SQL sweep cancelling Razorpay-backed orders, the exact behaviour
+the narrowing removed; a colour-blind keyboard walk). Each was rewritten to
+assert the property rather than the fossil: a planted sentinel for the
+settings merge, the deployed cron route for the release path, an activated
+size chip for the keyboard.
+
+Driving the release path for real then surfaced a genuine application bug:
+**`src/app/api/cron/release-abandoned-orders/route.ts` called
+`stockChanged()` — `updateTag`, Server-Actions-only in this Next — so the
+first tick that ever actually cancelled an order would have 500'd** after the
+cancel, with pg_cron's fire-and-forget caller reading only "request queued".
+It had never fired because no real cancel had ever flowed through the route.
+One line (`stockChangedFromRoute()`, which existed beside it all along), a
+rebuild, and `audit:security` closed at 123/123 — the six-hour-old order's
+unit going back on the shelf with Razorpay's own "nobody ever paid" as the
+evidence.
 
 ## Autonomous decisions, with rationale
 
