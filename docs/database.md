@@ -660,15 +660,26 @@ were **deleted**, along with the rule they configured.
 
 | Key | What it decides |
 |---|---|
-| `free_above_paise` | Prepaid delivery is free at or above this |
+| `free_above_paise` | Delivery is free at or above this, **both** methods since Batch 2 |
+| `prepaid_estimate_fee_paise` | What a prepaid customer pays when Shiprocket is unreachable, labelled an estimate. Batch 2 renamed it from `fallback_fee_paise.razorpay`; the COD counterpart was deleted, not renamed — see `fallback_behaviour` |
 | `cod_enabled` | Master switch for Pay on Delivery |
-| `cod_minimum_order_value_paise` | Below this the method is withdrawn |
+| `cod_minimum_order_value_paise` | Below this the method is withdrawn. Optional; absent or `0` means no minimum |
 | `cod_advance_maximum_paise` | Cap on the deposit. `0` means no cap |
 | `include_gst_in_advance` | Recover Shiprocket's 18%, or absorb it |
 | `prepaid_discount` | `{mode: flat\|percent, value}` — a percentage is stored as a percentage, a flat amount as paise |
-| `customer_delivery_fee_mode` | `live` passes the courier's rate through; `flat` charges `customer_delivery_flat_paise` and the shop absorbs the difference |
+| `shipping_rate_mode` | `live` quotes Shiprocket per PIN; `flat` charges `flat_shipping_fee_paise` and makes **no** Shiprocket call. Renamed from `customer_delivery_fee_mode` in Batch 2 |
+| `flat_cod_deposit_mode` (+ `_multiplier` / `_paise`) | What secures a cash order in flat mode. **Unset refuses Pay on Delivery in flat mode** rather than collecting nothing |
+| `waive_cod_fee_above_threshold` | Owner's decision: `false`. The cash-handling fee survives free delivery |
+| `fallback_behaviour` | `refuse_cod` (owner's decision) or `allow_all`. With no live quote there is no round trip to secure |
 | `rto_deduction_policy` | `actual_freight` / `flat` / `none` |
-| `fallback_fee_paise` | Reached **only** when Shiprocket is unreachable |
+| `wallet_low_balance_paise` | Warn on the dashboard below this Shiprocket balance. Null means the owner has not chosen |
+
+The table above is the Batch 2 shape. `fallback_fee_paise` and the three dead
+`cod_advance_*` keys are gone — `20260809110100` deletes them, and the seed no
+longer knows the key exists at all: `20260809140000` creates the row with the
+owner's confirmed numbers on any database that lacks it, which is what makes a
+rebuild from empty open at the right threshold instead of one from two phases
+ago.
 
 ### The Shiprocket auth latch
 
@@ -677,3 +688,33 @@ not a token: `token` holds the reason and `expires_at` is when sign-in may be
 attempted again. See `src/lib/shipping/token.ts` — this account's API user was
 locked out during setup by repeated failed logins, and the code as it stood
 would have done it again at one login attempt per request.
+
+## What Batch 3 added
+
+### The migration set became a backup
+
+Four defects stopped a replay from empty — `pg_cron` scheduled before it
+existed, a stale five-argument `cancel_order_with_restock` resurrected by
+timestamp order, `rls_auto_enable` revoked by a migration and created by
+nothing, and a seed that un-migrated `site_settings.shipping`. All four are
+fixed in the files themselves (see `docs/staging.md` §6 for each one's story),
+and `npm run rebuild:stage` rebuilds staging from zero and verifies the result
+on every run. `20260809150000` writes the owner's box height, so a rebuilt
+database quotes Pay on Delivery instead of reopening the hole Batch 2 left by
+instruction.
+
+### The refund guards
+
+Two promises moved into the schema, where every writer meets them:
+
+| | |
+|---|---|
+| `refunds_one_in_flight_per_order` | Partial unique index on `(order_id) where status = 'created'`. The admin flow inserts before calling Razorpay, so a double click is decided by this index, not by the API being fast |
+| `refunds_guard()` + trigger | Locks the order row, then refuses any insert/update that would take non-failed refunds past the sum of captured payments. Holds under concurrency; `scripts/audit/refunds.ts` proves it against staging |
+
+`refunds.status` semantics are unchanged and load-bearing: `processed` is
+written only by the webhook (`refund.processed`), never by the API call
+returning 200. A refund Razorpay knows and the database does not — issued from
+their dashboard — becomes a row the moment its webhook or the order page's
+import runs; `payment_events` dedupes deliveries under the derived
+`refund.processed:rfnd_x` key, so a replay is one refund, also proven.

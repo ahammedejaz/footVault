@@ -761,6 +761,38 @@ is unchanged, and anything short of the advance is still refused. It is read
 from the order row and never from `payments.amount`, so the check cannot be
 pointed at a figure that has drifted.
 
+### Refunds run the same discipline in reverse
+
+Batch 3. The moving parts are deliberately the same ones payments use, because
+they are answering the same shape of question — *did money move, exactly once?*
+
+- **The amount is never typed and never trusted from the browser.** The policy
+  matrix (`src/lib/orders/refund-policy.ts`, a pure table over the order's
+  stage) computes it server-side; the browser returns only the figure it was
+  shown, which is recomputed and refused on drift.
+- **The row precedes the API call.** `initiateRefund` inserts `status='created'`
+  first; a partial unique index allows one in-flight row per order, so a double
+  click is settled by Postgres before Razorpay can be reached twice. The row id
+  travels in the provider's `notes`, which is how a create call that times out
+  is later matched to what it actually did.
+- **The webhook is authoritative, again.** `refund.processed` / `refund.failed`
+  parse into their own verified shape (never a `PaymentOutcome` — a refund must
+  not be able to move order payment state through the payment path), claim
+  `payment_events` under the derived `refund.processed:rfnd_x` key, and are the
+  only writers of `refunds.status = 'processed'`.
+- **The ceiling is a trigger.** `refunds_guard` locks the order row and refuses
+  any write taking non-failed refunds past the captured sum — for the admin,
+  the webhook and the import alike. `orders.payment_status` becomes `refunded`
+  only when every captured paise has gone back; partial refunds stay visible as
+  rows with itemised deductions.
+- **A refund the database never issued** — made in the Razorpay dashboard —
+  becomes a row when its webhook lands or when the order page's "Check
+  Razorpay" import runs, both through one idempotent settle path.
+
+`npm run audit:refunds` proves the gate promises against staging: the cap, the
+one-in-flight index, replay-equals-one-refund, the dashboard import, and the
+timeout adoption.
+
 ---
 
 ## Returns, and a window that has to be provable

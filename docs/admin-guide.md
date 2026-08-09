@@ -238,6 +238,37 @@ is returned. That is not a return — it is money taken for goods that will neve
 be sent, and keeping it was never an option. The no-refund policy does not cover
 that case, and it does not override Indian consumer law either. The site says so.
 
+### Sending money back, from the order page
+
+Since Batch 3 there is a panel called **The money back** on each order's page,
+under the money summary. It appears only on orders where something was actually
+paid online. You never type an amount:
+
+1. Open the order and find the panel.
+2. Pick **why** the money is going back — either *the order stopped* (cancelled,
+   refused at the door, undeliverable) or *our mistake* (wrong item, wrong size,
+   damaged before it was dispatched). That is the one thing only you can know.
+3. The panel shows the amount, computed from where the order stopped, with every
+   deduction listed — for example the delivery journeys on a parcel that came
+   back. Read the explanation; it is the same sentence you can say to the
+   customer.
+4. Press the button, then press it again to confirm. The money goes back along
+   the same payment the customer made.
+
+**"Waiting for Razorpay" is normal.** A refund is only marked returned when
+Razorpay confirms it — usually within moments, sometimes minutes. The page
+updates itself on refresh.
+
+**A Pay-on-Delivery order refunds at most the advance**, because the advance is
+all the shop ever held — the cash balance was collected by the courier or never
+collected at all. The panel does this arithmetic for you and will not let you
+send more than was taken.
+
+**If you refunded in the Razorpay dashboard instead** — or ever did in the past
+— press **Check Razorpay** on the same panel. It pulls every refund Razorpay
+holds for the order into the page, so the record stops being wrong. Do this once
+for any order you refunded by hand before this existed.
+
 ---
 
 ## 4 · Shiprocket — the jobs only you can do
@@ -440,30 +471,22 @@ second wipes out the other's count and nobody notices. Two differences both land
 
 ## 7 · What is not built yet
 
-So you are not hunting for something that is not there.
+So you are not hunting for something that is not there. This list was rewritten
+in Batch 3; the earlier version predated the order screen and undersold what
+works.
 
-**In the admin panel, these work:** Dashboard, Orders and Inventory.
+**In the admin panel, these work:** Dashboard, Orders, the **single order
+screen** (money, shipping buttons, replacements, notes, and since Batch 3 the
+refund panel), Inventory, and **Settings** — delivery rates, the parcel box,
+Pay on Delivery controls.
 
-**These are in the menu and open to a "page not found":** Products, Categories,
-Brands, Customers, Media, Settings — and the **single order screen**.
+**Still in the menu but opening to "page not found":** Products, Categories,
+Brands, Customers, Media. Adding and editing products still happens in the
+database, not in the panel.
 
-What that costs you, in plain terms:
-
-- **You cannot open one order.** Everything about an individual order — its
-  address, its lines, its notes — has to be looked up in the database.
-- **The five Shiprocket buttons do not exist anywhere.** The steps behind them
-  are written and tested, but there is no screen with the buttons on it, so the
-  test in 4.5 cannot be run and no parcel can be booked from the site.
-- **You cannot record a replacement.** The shop can account for one, but the
-  place to enter it is the order screen, which is not built.
-- **Adding and editing products** still happens in the database, not in the
-  panel.
-- **Delivery settings** (section 2) have no screen — hence "ask your developer".
-
-**Also not built:** refunds of any kind (a refund made in the Razorpay dashboard
-will not show up in the order), coupon codes (the box on the bag page is visibly
-switched off and nothing typed into it can change a total), reviews, and the
-homepage builder.
+**Also not built:** coupon codes (the box on the bag page is visibly switched
+off and nothing typed into it can change a total), reviews, and the homepage
+builder (`/admin/appearance` — promised, still owed, scheduled as Batch 5).
 
 **Order confirmation emails are written but nobody receives them.** No email
 provider is connected yet — see 8.3.
