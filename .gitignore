@@ -10,9 +10,13 @@ build/
 out/
 
 # Environment
-.env
-.env.local
-.env.*.local
+# Catch-all, deliberately. The named-file approach here missed .env.staging
+# once (and backup-*.sql below for the same reason): every new shape had to be
+# remembered. Anything starting .env is a secret unless excepted on the next
+# line. This now covers .env.production and .env.development, which the old
+# `.env.*.local` pattern did not.
+.env*
+!.env.example
 
 # Logs
 *.log
@@ -64,6 +68,3 @@ CLAUDE.md
 # Never in the repository. See docs/admin-guide.md section 12.
 backup-*.sql
 *.dump
-
-# staging credentials (.env.*.local above does not cover this shape)
-.env.staging

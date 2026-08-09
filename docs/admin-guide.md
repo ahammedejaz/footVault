@@ -515,8 +515,10 @@ database, not in the panel.
 off and nothing typed into it can change a total), reviews, and the homepage
 builder (`/admin/appearance` — promised, still owed, scheduled as Batch 5).
 
-**Order confirmation emails are written but nobody receives them.** No email
-provider is connected yet — see 8.3.
+**Order emails are built and wired — five to the customer and one to you — but
+nobody receives them until an email provider is connected.** That is a
+twenty-minute job and it is yours: see 8.3. Until it is done every email is
+written to the server log instead, and no order is affected either way.
 
 ---
 
@@ -547,14 +549,69 @@ needs a person typing a test card into Razorpay's own window. Do it once, in tes
 mode, before you take a real Pay-on-Delivery order — and check the three figures
 on the confirmation: paid now, due at the door, total.
 
-### 8.3 · Connect an email provider — ask your developer
+### 8.3 · Order emails — the setup is yours, and it is about twenty minutes
 
-Order confirmations are written and sent, but the only sender configured today
-writes them to a log file, so no customer receives one. Your developer needs an
-account with an email provider and a couple of DNS records on your domain,
-otherwise confirmations land in spam.
+**Everything on our side is built.** Six emails are written and wired: five to
+the customer — order placed, payment received, shipped with tracking, delivered,
+refunded — and one to you, when a new order arrives. None of them can send until
+you create an account and add three settings, and until you do, every one of
+them is written to the server log instead. **No order is ever affected by this**,
+before or after: a mail provider that is missing, slow or broken never fails a
+checkout, never blocks a refund, and never stops a parcel being booked.
 
-Until then a missing email never costs anybody their order.
+#### What you will need
+
+An account with **Resend** (resend.com — free up to 3,000 emails a month, which
+is far more than this shop will send), and the ability to add two DNS records to
+`footvault.in` wherever the domain is managed.
+
+#### The steps, in order
+
+1. **Create the Resend account** and add `footvault.in` under **Domains → Add
+   Domain**.
+
+2. **Add the DNS records Resend shows you.** There are two that matter — an
+   **SPF** record and a **DKIM** record. Resend gives you the exact values;
+   paste them into your DNS provider as-is. This is the step that decides
+   whether order confirmations arrive in an inbox or in spam, so do not skip it
+   and do not go on until Resend shows the domain as **Verified**. Verification
+   usually takes a few minutes and occasionally a few hours.
+
+3. **Create an API key** under **API Keys → Create**. It starts `re_`. Copy it
+   now; Resend will not show it again.
+
+4. **Add three settings in Vercel** (Project → Settings → Environment
+   Variables). Add each one to **Production** and **Preview** separately:
+
+   | Name | Value |
+   |---|---|
+   | `EMAIL_API_KEY` | the `re_…` key from step 3 |
+   | `EMAIL_FROM` | `Foot Vault <orders@footvault.in>` |
+   | `OWNER_EMAIL` | the address where you want new-order alerts |
+
+   `EMAIL_FROM` must use the domain you verified in step 2. A Gmail or Outlook
+   address will not work and will be rejected.
+
+5. **Redeploy.** Environment variables are read when the site starts, so nothing
+   changes until the next deployment.
+
+#### How to check it worked
+
+Place a real order on the live site and pay for it. You should receive the
+**new-order email** within a minute, and the customer address should receive the
+confirmation. If neither arrives, ask your developer to look at the deployment
+logs for a line beginning `[email]` — it will name the reason, usually an
+unverified domain or a mistyped `from` address.
+
+#### Two things worth knowing
+
+- **Set `EMAIL_API_KEY` and `EMAIL_FROM` together or not at all.** With only one
+  of the two, the shop refuses to use the provider and logs loudly, on purpose:
+  a key with no from-address sends from Resend's own sandbox domain, which looks
+  like it worked and quietly lands in spam.
+- **`OWNER_EMAIL` is optional and separate.** Leaving it unset means you get no
+  new-order alerts; customers still get everything. If more than one person
+  needs the alert, use a forwarding alias — it is one address.
 
 ### 8.4 · Let search engines in — ask your developer, when you are ready
 

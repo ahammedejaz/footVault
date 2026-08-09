@@ -69,6 +69,25 @@ cached product without one, and add-to-bag quietly believed no size had been
 chosen. `SHAPE_VERSION` in the key parts turns a shape change into a cache miss.
 **Bump it whenever a cached type changes.**
 
+### And they carry which database answered
+
+The key parts say nothing about the *connection* a value came through, so the
+same code pointed at a different Supabase project asks the same question and is
+handed the other project's answer. `DATA_SOURCE` — the project ref parsed out of
+`NEXT_PUBLIC_SUPABASE_URL` — is the second key part, and `keyFor()` in
+`src/lib/queries/cached.ts` composes both so a new cached read cannot forget
+either.
+
+This is why `npm run audit` could not be run against a production build.
+`next build` populates `.next/cache/fetch-cache`, the cache survives a rebuild,
+and a build made against `.env.local` followed by `npm run build:stage` left the
+staging server serving **production's catalogue**. The symptom was a product
+with 44 units in staging rendering "sold out" with no Add to Bag button, so
+every gate needing a bag failed. The cause recorded at the time — the guest
+cookie's `secure` flag being dropped on plain-http localhost — was wrong;
+Chromium keeps `Secure` cookies on `http://localhost` and the cookie was never
+involved.
+
 ---
 
 ## The client/server boundary
@@ -287,6 +306,31 @@ restocks **exactly once**: `orders.stock_restored_at` is the marker, the row is
 locked `FOR UPDATE` before the check, and a webhook and an admin cancelling the
 same order seconds apart cannot both give the units back. Two restocks would
 invent inventory that nobody ordered and nobody has.
+
+### `inventory_movements.reference_id` dangles, and that is not a fault
+
+There is **no foreign key** on `reference_id` — only `actor` and `variant_id`
+have one — so deleting an order leaves its movements pointing at nothing. Most
+historical rows are in exactly that state: measured on production on
+2026-08-09, **21 of the 339** movements that name an order still resolve, and
+the order numbers in the free-text `note` column run back to **FV-2026-00489**
+for orders that no longer exist. They are the residue of QA runs across several
+phases, including the ones that were writing to the live shop.
+
+Two consequences, and they pull in opposite directions:
+
+- **The ledger is unaffected.** `reconcile_inventory` compares each variant's
+  `stock_quantity` against the sum of its deltas and never asks whether the
+  referenced order exists. Zero drift is still zero drift, and the deleted
+  orders' `order` and `cancellation` rows still sum to zero on their own.
+- **Anything joining movements to orders must handle a missing order
+  explicitly.** An inner join silently drops most of the ledger; a
+  `note`-scraping reconciliation chases ghosts. Neither fails loudly. If a
+  report needs "which order caused this movement", it has to render "order no
+  longer exists" as a real outcome rather than treating a null as impossible.
+
+The reliable question is the one the ledger already answers: deltas per variant,
+which is what `reconcile_inventory` asks and what the gate checks.
 
 ### One transaction, split across two functions
 

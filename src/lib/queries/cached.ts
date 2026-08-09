@@ -88,30 +88,67 @@ export const CHROME_CACHE_TAG = "chrome";
  */
 const SHAPE_VERSION = "v4";
 
+/**
+ * Which database the entry was read from.
+ *
+ * `unstable_cache` keys on the key parts and nothing else — including nothing
+ * about the connection the value came through. So the same code, pointed at a
+ * different Supabase project, asks the *same question* and is handed the other
+ * project's answer.
+ *
+ * That is not hypothetical either. It is why `npm run audit` could not be run
+ * against a production build: `next build` populates `.next/cache/fetch-cache`,
+ * the cache survives a rebuild, and a build made with `.env.local` (production)
+ * followed by `npm run stage -- next build` left the staging server serving
+ * production's catalogue. The visible symptom was a product with 44 units in
+ * staging rendering "sold out" with no Add to Bag button, so every gate that
+ * needs a bag failed — and the diagnosis recorded at the time blamed the guest
+ * cookie's `secure` flag, which was wrong. Chromium keeps `Secure` cookies on
+ * http://localhost; the cookie was never involved.
+ *
+ * The project ref is the hostname of every request the browser already makes,
+ * so it is not a secret. Keying on it makes a credentials switch a cache miss
+ * rather than a silent cross-database read, which is the same trick as
+ * SHAPE_VERSION applied to *where* rather than *what shape*.
+ */
+const DATA_SOURCE =
+  /^https:\/\/([a-z0-9]+)\.supabase\./.exec(
+    process.env.NEXT_PUBLIC_SUPABASE_URL ?? "",
+  )?.[1] ?? "no-project";
+
+/**
+ * Every cache key, composed in one place.
+ *
+ * A helper rather than a spread at each site so a new cached read cannot be
+ * added that forgets either part. Both are load-bearing: the version guards the
+ * shape, the source guards the database.
+ */
+const keyFor = (name: string): string[] => [SHAPE_VERSION, DATA_SOURCE, name];
+
 const ONE_HOUR = 3600;
 const options = { revalidate: ONE_HOUR, tags: [CHROME_CACHE_TAG] };
 
 export const cachedCategoryTree = unstable_cache(
   getCategoryTree,
-  [SHAPE_VERSION, "chrome:category-tree"],
+  keyFor("chrome:category-tree"),
   options,
 );
 
 export const cachedPopularBrands = unstable_cache(
   (limit: number) => getPopularBrands(limit),
-  [SHAPE_VERSION, "chrome:popular-brands"],
+  keyFor("chrome:popular-brands"),
   options,
 );
 
 export const cachedSiteSettings = unstable_cache(
   getSiteSettings,
-  [SHAPE_VERSION, "chrome:site-settings"],
+  keyFor("chrome:site-settings"),
   options,
 );
 
 export const cachedPages = unstable_cache(
   listPages,
-  [SHAPE_VERSION, "chrome:pages"],
+  keyFor("chrome:pages"),
   options,
 );
 
@@ -144,25 +181,25 @@ const catalog = { revalidate: ONE_HOUR, tags: [CATALOG_CACHE_TAG] };
 
 export const cachedHomepageSections = unstable_cache(
   getHomepageSections,
-  [SHAPE_VERSION, "catalog:homepage-sections"],
+  keyFor("catalog:homepage-sections"),
   catalog,
 );
 
 export const cachedBanner = unstable_cache(
   (placement: string) => getBanner(placement),
-  [SHAPE_VERSION, "catalog:banner"],
+  keyFor("catalog:banner"),
   catalog,
 );
 
 export const cachedCategoryTiles = unstable_cache(
   (slugs: string[]) => getCategoryTiles(slugs),
-  [SHAPE_VERSION, "catalog:category-tiles"],
+  keyFor("catalog:category-tiles"),
   catalog,
 );
 
 export const cachedCollection = unstable_cache(
   (slug: string) => getCollection(slug),
-  [SHAPE_VERSION, "catalog:collection"],
+  keyFor("catalog:collection"),
   catalog,
 );
 
@@ -172,7 +209,7 @@ export const cachedCollection = unstable_cache(
  */
 const cachedProductContent = unstable_cache(
   (slug: string) => getProduct(slug),
-  [SHAPE_VERSION, "catalog:product"],
+  keyFor("catalog:product"),
   catalog,
 );
 
@@ -190,7 +227,7 @@ export async function cachedProduct(slug: string): Promise<ProductDetail | null>
 
 export const cachedPage = unstable_cache(
   (slug: string) => getPage(slug),
-  [SHAPE_VERSION, "catalog:page"],
+  keyFor("catalog:page"),
   catalog,
 );
 
@@ -198,7 +235,7 @@ export const cachedPage = unstable_cache(
 const cachedCollectionContent = unstable_cache(
   (collectionSlug: string, perPage: number) =>
     listProducts({ collectionSlug, perPage }),
-  [SHAPE_VERSION, "catalog:collection-products"],
+  keyFor("catalog:collection-products"),
   catalog,
 );
 
@@ -214,7 +251,7 @@ export async function cachedCollectionProducts(
 const cachedCategoryContent = unstable_cache(
   (categorySlug: string, perPage: number) =>
     listProducts({ categorySlug, perPage }),
-  [SHAPE_VERSION, "catalog:category-products"],
+  keyFor("catalog:category-products"),
   catalog,
 );
 
