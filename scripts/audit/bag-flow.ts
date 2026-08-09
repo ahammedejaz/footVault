@@ -144,13 +144,52 @@ async function main() {
     `${await rows.count()} rows`,
   );
 
-  await drawer.locator("button[aria-label^='One more']").first().click();
-  await back.waitForTimeout(1500);
-  check(
-    "the stepper adds a unit",
-    (await bagCount(back)) === 4,
-    `badge = ${await bagCount(back)}`,
+  /*
+    The stepper, on a line that actually has headroom.
+
+    `.first()` conflated "in stock" with "more than one in stock". Both are
+    true of production's catalogue and only the first is true of staging's,
+    which is how this step passed while the harness was measuring the wrong
+    database — and why it started timing out for thirty seconds the moment it
+    was pointed at the right one. A size chip says "sold out" or nothing; it
+    never says how many are left, so a variant with exactly one unit is
+    indistinguishable until its stepper renders.
+
+    A disabled plus on such a line is `QuantityStepper` doing its job — `max`
+    is live stock — so the gate was wrong to click it, not the shop wrong to
+    refuse. Selecting on `:not([disabled])` tests the stepper against a line
+    that can move, and the count of capped lines is printed so the next person
+    can see the fixture's shape rather than inferring it from a timeout.
+  */
+  const steppers = drawer.locator("button[aria-label^='One more']");
+  const withHeadroom = drawer.locator(
+    "button[aria-label^='One more']:not([disabled])",
   );
+  const total = await steppers.count();
+  const movable = await withHeadroom.count();
+
+  check(
+    "at least one line has stock headroom to increment",
+    movable > 0,
+    `${movable} of ${total} lines can take another unit`,
+  );
+
+  if (movable > 0) {
+    await withHeadroom.first().click();
+    await back.waitForTimeout(1500);
+    check(
+      "the stepper adds a unit",
+      (await bagCount(back)) === 4,
+      `badge = ${await bagCount(back)}`,
+    );
+  } else {
+    check(
+      "the stepper adds a unit",
+      false,
+      "every line was already at its stock ceiling — reseed staging before " +
+        "reading this as a defect",
+    );
+  }
 
   await back.keyboard.press("Escape");
 
