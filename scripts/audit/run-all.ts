@@ -52,6 +52,7 @@ const GATES = [
   // Database-backed, read-mostly.
   "audit:refunds",
   "audit:coupons",
+  "audit:transitions",
   "audit:rto",
   "audit:reconciler",
   "audit:payment-health",

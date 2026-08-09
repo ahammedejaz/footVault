@@ -60,6 +60,7 @@
     "audit:customer-copy": "tsx scripts/audit/customer-copy.ts",
     "audit:emails": "tsx scripts/audit/emails.ts",
     "audit:coupons": "tsx scripts/audit/coupons.ts",
+    "audit:transitions": "NODE_OPTIONS=--conditions=react-server tsx scripts/audit/transitions.ts",
     "audit:inbound-email": "tsx scripts/audit/inbound-email.ts",
     "audit:address-book": "tsx scripts/audit/address-book.ts",
     "audit:error-reporting": "tsx scripts/audit/error-reporting.ts",
