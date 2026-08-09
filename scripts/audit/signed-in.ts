@@ -17,6 +17,14 @@
  * The account is left behind — deleting it needs a service-role key. The
  * teardown is in docs/rls-tests.md §8.
  */
+// clients first, before any other import and before anything reads
+// process.env: importing it repoints this process at staging and refuses to
+// run against production. This file used to read .env.local itself and
+// therefore built its accounts and admin promotions on the LIVE shop while
+// the app under test pointed at staging — found in Batch 3, the exact
+// near-miss clients.ts exists to stop. See the batch 3 report.
+import "./clients";
+
 import { readFileSync } from "node:fs";
 import { createServerClient } from "@supabase/ssr";
 import { createClient, type Session } from "@supabase/supabase-js";

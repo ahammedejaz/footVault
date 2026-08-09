@@ -211,9 +211,72 @@ verification, rewritten to check every delete.
 
 ## The gates
 
-<!-- GATES-SECTION: numbers after the full run -->
+All against staging (`pblgpvcdappfpoxdascd`). The database and pure gates ran
+against the live staging schema; the browser gates ran against a production
+build (`next build` + `next start`, staged) — see "what I got wrong" for the
+day this cost.
+
+| Gate | Result |
+|---|---|
+| `audit:literals` | PASS — no typed rupee figure, code and CMS content |
+| `audit:fixtures-guard` | PASS 9/9 — resolved target is staging |
+| `audit:refund-message` | PASS 9/9 |
+| `audit:refunds` | **PASS 23/23** — the cap, the double-click index, replay = one refund, dashboard import, timeout adoption |
+| `audit:rto` | **PASS 35/35** — detection idempotency, receive guards, restock exactly once with the ledger asserted, repeat-phone flag |
+| `audit:reconciler` | PASS 15/15 |
+| `audit:payment-health` | PASS 31/31 |
+| `audit:totals` | PASS 43/43 — advance + balance = total across modes |
+| `audit:delivery` | PASS 53/53 — live/flat × free-tier × refuse_cod, all 256 decision inputs leave no order unsecured |
+| `audit:shipping` | PASS 96/96 — COD collectable equals the balance |
+| `audit:parcel` | **PASS 12/12** — the height is no longer the one deliberate failure |
+| `audit:cart` | PASS — merge under RLS |
+| `audit:bag` | PASS — the whole purchase path at 390px |
+| `audit:checkout` | PASS — checkout, orders, webhook idempotency on the live DB |
+| `audit:security-advance` | PASS — a customer cannot lower the minimum advance |
+| `inventory_movements` reconciliation | **zero drift** — `reconcile_inventory()` returns no drifting variant |
+| `npm run shapes` | PASS (in CI on every push) |
+| `npm run rebuild:stage` | **PASS** — staging from empty, one command, every check green |
+| `audit:overflow` | **PASS** — 22 routes + 15 populated states × 6 widths (360/390/768/1024/1440/1920), 9,197 interactive elements: no overflow, no tap target under 44px, no input under 16px |
+| `audit:a11y` | <!-- A11Y --> |
+| remaining browser gates | <!-- BROWSER --> |
+| `audit:actions` / `audit:security` | <!-- SECURITY --> |
+| Lighthouse (mobile, devtools throttling) | <!-- LIGHTHOUSE -->
 
 ---
+
+## Six harnesses were quietly testing the live shop
+
+The most serious find of the batch, and it was found by a *failing positive
+control*, which is why positive controls exist.
+
+`audit:auth` failed one check — "/admin is 200 for an admin" — while every
+refusal check passed. The trail: the promoted admin was real, `is_admin()`
+said true over PostgREST, yet the app 404'd the session. The session cookie
+named the wrong project. **Six harnesses — `auth-rls`, `signed-in`,
+`admin-pages`, `admin-security`, `security-checkout`, `server-actions` — never
+went through `scripts/audit/clients.ts`**: each read `.env.local` itself and
+took `NEXT_PUBLIC_SUPABASE_URL` at its word, which is production. Batch 2
+wired the fixture harnesses through the staging chokepoint and these six were
+missed — so every run since has been creating QA users on the **live shop's**
+auth, promoting one to admin on the **production** database, exercising RLS
+there, and deleting them afterwards, while the app under test pointed at
+staging.
+
+Checked immediately on production: **no `fv-test-` or `fv-qa.` user exists** —
+every run's cleanup completed, including today's. Nothing was left behind.
+But the exposure was real: a harness crash between "promote" and "delete"
+would have left an admin account with a password printed in this repository
+on the live shop. The reason it was never caught is exactly the reason it was
+caught today: with production and the app on the *same* project the straddle
+is invisible and every check passes; the staging split made the two halves
+disagree, and the positive control was the disagreement.
+
+The fix is one line per file — `import "./clients"` before anything reads
+`process.env` — which routes them through the same staging resolution and
+production guard as every other harness. `audit:auth` then passes 11/11
+against staging end to end, admin 200 included. The gates that "passed"
+before the fix (`audit:admin` among them) were re-run after it, since what
+they had previously proven was partly a statement about the wrong database.
 
 ## Autonomous decisions, with rationale
 
@@ -254,6 +317,17 @@ verification, rewritten to check every delete.
 - **The first refunds fixture violated `orders_advance_balance_sums`** — I
   forgot the money identity the schema itself enforces (advance + balance =
   total). The constraint did its job; the fixture now states the identity.
+- **The first full gate run was driven against `next dev`, and its failures
+  were the server's, not the shop's.** The chain died at `audit:overflow` with
+  two states timing out at all six widths; both passed in isolation minutes
+  later, and a second run failed a *different* state at one width. Meanwhile
+  `audit:actions`' positive control 404'd because it posts action ids read
+  from the build manifest at a dev server that mints its own. The README had
+  said all along that the browser gates need `npm run build && npm start`;
+  the browser and action gates were then rerun against a staged production
+  build, which is what the numbers above are from. Lesson recorded here
+  because it cost the better part of an hour: a gate flaking on `next dev` is
+  telling you about `next dev`.
 - **The refund history line initially typed `status` as `string`** and the
   compiler refused the enum column. Typed at the load boundary instead.
 

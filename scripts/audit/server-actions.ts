@@ -60,6 +60,14 @@
  * *shape* still exposes the bypass.
  */
 
+// clients first, before any other import and before anything reads
+// process.env: importing it repoints this process at staging and refuses to
+// run against production. This file used to read .env.local itself and
+// therefore built its accounts and admin promotions on the LIVE shop while
+// the app under test pointed at staging — found in Batch 3, the exact
+// near-miss clients.ts exists to stop. See the batch 3 report.
+import "./clients";
+
 import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 
