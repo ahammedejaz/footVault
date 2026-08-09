@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 
 import {
+  claimVerdict,
+  CLAIM_LEASE_MINUTES,
   collectAttachments,
   fetchAttachments,
   fetchReceivedEmail,
@@ -168,6 +170,7 @@ export async function POST(request: Request): Promise<NextResponse> {
   const { error: claimError } = await admin.from("inbound_emails").insert({
     email_id: emailId,
     svix_id: svixId,
+    last_attempt_at: new Date().toISOString(),
     from_address: payload.data?.from ?? null,
     to_addresses: payload.data?.received_for ?? payload.data?.to ?? null,
     subject: payload.data?.subject ?? null,
@@ -175,8 +178,29 @@ export async function POST(request: Request): Promise<NextResponse> {
 
   if (claimError) {
     if (claimError.code === "23505") {
-      console.info("[inbound] already handled", { svixId, emailId });
-      return json(200, { ok: true, duplicate: true });
+      /*
+        Seen before — but seen is not the same as delivered.
+
+        The first version returned `duplicate` here and stopped, which made the
+        claim a headstone rather than a lock: three real messages arrived on
+        2026-08-09 while the API key could not yet read message bodies, were
+        recorded with `forward_error` set, and could never be recovered. A
+        replay from the dashboard hit this branch and answered 200 without
+        forwarding anything. The dedupe that existed to stop a double send was
+        also stopping the only send.
+
+        The rule this now follows, and the one the payment guards next door
+        already followed: **an idempotency key records having succeeded, not
+        having been seen.** `recordAndApply` releases its `payment_events` claim
+        on every failing path for exactly this reason.
+
+        Taking a row over is a compare-and-swap on the `svix_id` observed a
+        moment ago, not a bare update. Two deliveries arriving together would
+        otherwise both find a stale row, both take it, and both forward — the
+        double send this whole table exists to prevent. Postgres serialises the
+        two updates and the loser matches zero rows.
+      */
+      return takeOverOrDedupe(admin, emailId, svixId, apiKey);
     }
     // The claim itself failed. Nothing has been forwarded and a retry may work.
     console.error("[inbound] could not claim", {
@@ -192,6 +216,33 @@ export async function POST(request: Request): Promise<NextResponse> {
     From here on the message is ours and every path answers 200. Failures are
     written to the row rather than to the status code — see the header.
   */
+  return forwardClaimed(
+    admin,
+    emailId,
+    apiKey,
+    payload.data?.received_for ?? payload.data?.to ?? null,
+  );
+}
+
+/**
+ * Fetch the message and send it on, for a row this request has claimed.
+ *
+ * One body shared by the first attempt and by a retry that took a stale claim
+ * over, because two copies of this is two places for the failure handling to
+ * drift — and the retry path is the one that will be exercised least and
+ * matter most.
+ *
+ * `receivedFor` is null on the retry path: the addresses were recorded on the
+ * row when it was first claimed, and the webhook payload for a redelivery
+ * carries them again anyway. Reading them back would be a round trip to
+ * re-learn something only used to render one line of the forward.
+ */
+async function forwardClaimed(
+  admin: ReturnType<typeof createAdminClient>,
+  emailId: string,
+  apiKey: string,
+  receivedFor: string[] | null,
+): Promise<NextResponse> {
   try {
     const received = await fetchReceivedEmail(emailId, apiKey);
     if (!received) {
@@ -215,11 +266,14 @@ export async function POST(request: Request): Promise<NextResponse> {
       received,
       attachments: taken,
       omittedAttachments: omitted,
-      receivedFor: payload.data?.received_for ?? payload.data?.to ?? [],
+      receivedFor: receivedFor ?? (received.to ?? []),
     });
 
     if (!result.ok) {
-      console.error("[inbound] forward refused", { emailId, reason: result.reason });
+      console.error("[inbound] forward refused", {
+        emailId,
+        reason: result.reason,
+      });
       await recordFailure(admin, emailId, result.reason);
       return json(200, { ok: true, forwarded: false });
     }
@@ -276,6 +330,112 @@ async function recordFailure(
       emailId,
       detail: error.message,
     });
+}
+
+/**
+ * A message we have a row for. Decide whether this delivery may forward it.
+ *
+ * Three outcomes, and each is a different fact rather than a different guess:
+ *
+ *   already forwarded  → a true duplicate. Nothing to do, 200.
+ *   claimed just now   → another request is probably mid-forward. 200 without
+ *                        sending, because the cost of being wrong here is the
+ *                        customer's mail arriving twice.
+ *   claimed and stale  → the previous attempt failed or died. Take it and send.
+ */
+async function takeOverOrDedupe(
+  admin: ReturnType<typeof createAdminClient>,
+  emailId: string,
+  svixId: string | null,
+  apiKey: string,
+): Promise<NextResponse> {
+  const { data: existing, error: readError } = await admin
+    .from("inbound_emails")
+    .select("svix_id, forwarded_at, received_at, last_attempt_at")
+    .eq("email_id", emailId)
+    .maybeSingle();
+
+  if (readError || !existing) {
+    console.error("[inbound] could not read the existing claim", {
+      emailId,
+      detail: readError?.message,
+    });
+    return json(200, { ok: true, duplicate: true });
+  }
+
+
+  /*
+    Measured from `last_attempt_at`, never from `received_at`. `received_at`
+    records when the *message* arrived and never moves, so a row older than the
+    lease would be takeable by every delivery for ever — including one arriving
+    while another request was still mid-forward, which sends the customer's mail
+    twice. Staging caught exactly that: two redeliveries in a row, and the
+    second took a claim the first was still holding.
+  */
+  const verdict = claimVerdict({
+    forwardedAt: existing.forwarded_at,
+    lastAttemptAt: existing.last_attempt_at ?? existing.received_at,
+    now: Date.now(),
+  });
+
+  if (verdict === "already-forwarded") {
+    console.info("[inbound] already forwarded", { svixId, emailId });
+    return json(200, { ok: true, duplicate: true });
+  }
+
+  if (verdict === "in-flight") {
+    console.info("[inbound] claimed moments ago, leaving it alone", {
+      svixId,
+      emailId,
+      leaseMinutes: CLAIM_LEASE_MINUTES,
+    });
+    return json(200, { ok: true, duplicate: true });
+  }
+
+  /*
+    The swap. Conditional on the `svix_id` this request just observed, so a
+    second delivery racing it finds the value already changed and matches
+    nothing. `is`/`eq` because PostgREST cannot compare a null with `eq`.
+  */
+  let swap = admin
+    .from("inbound_emails")
+    .update({
+      svix_id: svixId,
+      forward_error: null,
+      // Advancing the lease *is* the takeover. Without it the next delivery
+      // finds the same stale timestamp and takes the claim straight back.
+      last_attempt_at: new Date().toISOString(),
+    })
+    .eq("email_id", emailId)
+    .is("forwarded_at", null);
+  swap =
+    existing.svix_id === null
+      ? swap.is("svix_id", null)
+      : swap.eq("svix_id", existing.svix_id);
+
+  const { data: won, error: swapError } = await swap.select("email_id");
+
+  if (swapError) {
+    console.error("[inbound] could not take over the claim", {
+      emailId,
+      detail: swapError.message,
+    });
+    return json(200, { ok: true, duplicate: true });
+  }
+
+  if (!won || won.length === 0) {
+    console.info("[inbound] another delivery took it first", {
+      svixId,
+      emailId,
+    });
+    return json(200, { ok: true, duplicate: true });
+  }
+
+  console.info("[inbound] retrying a claim whose forward never completed", {
+    svixId,
+    emailId,
+  });
+  return forwardClaimed(admin, emailId, apiKey, null);
 }
 
 /**

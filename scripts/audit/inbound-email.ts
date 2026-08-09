@@ -14,6 +14,7 @@
 import { createHmac } from "node:crypto";
 
 import {
+  claimVerdict,
   extractAddress,
   verifyResendWebhook,
 } from "../../src/lib/email/inbound";
@@ -174,6 +175,77 @@ check(
 check(
   "a bare address is left alone",
   extractAddress("priya@example.com") === "priya@example.com",
+);
+
+/* ------------------------------------------ 6 · seen is not delivered -- */
+
+console.log(
+  "\n\u001b[1m6 \u00b7 a claim records having succeeded, not having been seen\u001b[0m",
+);
+
+/*
+ * This decision has been wrong twice and both failures were silent.
+ *
+ * Keyed on having been *seen*, three real messages that failed to forward on
+ * 2026-08-09 were unrecoverable: every replay from the dashboard answered 200
+ * without sending, because the row existed.
+ *
+ * Keyed on `received_at`, the fix reintroduced the opposite bug — that column
+ * never moves, so any row past the window was takeable by every delivery for
+ * ever, including one arriving while another request was still forwarding.
+ * Both would send. The lease is its own column and the takeover advances it.
+ */
+const NOW = Date.parse("2026-08-10T12:00:00Z");
+const minutesAgo = (n: number) => new Date(NOW - n * 60_000).toISOString();
+
+check(
+  "a forwarded message is never sent twice",
+  claimVerdict({
+    forwardedAt: minutesAgo(600),
+    lastAttemptAt: minutesAgo(600),
+    now: NOW,
+  }) === "already-forwarded",
+);
+check(
+  "a claim taken seconds ago is left alone",
+  claimVerdict({
+    forwardedAt: null,
+    lastAttemptAt: minutesAgo(0),
+    now: NOW,
+  }) === "in-flight",
+  "another request is probably mid-forward",
+);
+check(
+  "a claim whose forward never completed is recoverable",
+  claimVerdict({
+    forwardedAt: null,
+    lastAttemptAt: minutesAgo(60),
+    now: NOW,
+  }) === "take-it",
+  "the three stuck messages become replayable",
+);
+check(
+  "a forward still running is never overtaken",
+  claimVerdict({
+    forwardedAt: null,
+    lastAttemptAt: minutesAgo(4),
+    now: NOW,
+  }) === "in-flight",
+  "4 minutes < the 5 minute lease",
+);
+/*
+ * The regression test proper. A row whose *message* arrived hours ago but whose
+ * attempt is seconds old must be left alone — that is precisely the case the
+ * `received_at` version got wrong, and it looks identical from the outside.
+ */
+check(
+  "an old message with a fresh attempt is in flight, not stale",
+  claimVerdict({
+    forwardedAt: null,
+    lastAttemptAt: minutesAgo(1),
+    now: NOW,
+  }) === "in-flight",
+  "the bug the lease column exists to prevent",
 );
 
 /* ------------------------------------------------------------- summary -- */

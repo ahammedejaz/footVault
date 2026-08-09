@@ -349,3 +349,43 @@ export async function collectAttachments(
 
   return { taken, omitted };
 }
+
+/* ------------------------------------------------------------ the lease -- */
+
+/** How long a claim is treated as in flight before a redelivery may take it. */
+export const CLAIM_LEASE_MINUTES = 5;
+
+export type ClaimVerdict = "already-forwarded" | "in-flight" | "take-it";
+
+/**
+ * What a redelivery may do with a row that already exists.
+ *
+ * The decision that had the bug, twice, so it lives here where a gate can hold
+ * it still rather than inside a route that needs a server and a database.
+ *
+ * **First bug: keyed on having been seen.** The row's existence was treated as
+ * proof the message was handled, so three messages that failed to forward on
+ * 2026-08-09 could never be recovered — every replay answered 200 without
+ * sending. An idempotency key records having *succeeded*.
+ *
+ * **Second bug, introduced by the fix: the lease was read from `received_at`.**
+ * That column records when the message arrived and never moves, so any row past
+ * the window was takeable by every delivery for ever — including one arriving
+ * while another request was still forwarding. Both would send. Caught in
+ * staging by redelivering twice and watching the second take a claim the first
+ * still held. `lastAttemptAt` is a separate column and the takeover advances
+ * it; that advance *is* the lock.
+ */
+export function claimVerdict(input: {
+  forwardedAt: string | null;
+  /** `last_attempt_at`, falling back to `received_at` for pre-lease rows. */
+  lastAttemptAt: string;
+  now: number;
+  leaseMinutes?: number;
+}): ClaimVerdict {
+  if (input.forwardedAt) return "already-forwarded";
+  const lease = (input.leaseMinutes ?? CLAIM_LEASE_MINUTES) * 60_000;
+  return new Date(input.lastAttemptAt).getTime() > input.now - lease
+    ? "in-flight"
+    : "take-it";
+}
