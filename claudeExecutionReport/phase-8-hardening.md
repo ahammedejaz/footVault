@@ -353,3 +353,86 @@ Real figures from live order FV-2026-00571. The amount is `advance_amount`, neve
 - **`orders` has no `cancelled_at` column.** The refund queue derives it from `order_status_history`, falling back to `updated_at`.
 - **`http://localhost:3000/**` is still missing from the Supabase redirect allow-list** (pre-flight check 2). Local Google sign-in bounces to production.
 - **`.env.local` holds live Razorpay keys**, so anyone running checkout locally charges a real card. The new key-mode check now warns about exactly this on every local `/admin` load, which is the correct behaviour and will look like a bug until a test key is used.
+
+---
+
+# Batch 1 · deployed to production, 2026-08-09
+
+Every line below was read back from the live system afterwards, not inferred from the command that caused it.
+
+## The snapshot
+
+`~/footvault-backups/` — taken immediately before the merge, once the owner supplied the database password.
+
+| File | Size |
+|---|---|
+| `backup-20260809-0938-FULL.sql` | 980K — single restorable dump |
+| `backup-20260809-0938-schema.sql` | 132K |
+| `backup-20260809-0938-data.sql` | 453K |
+| `ROLLBACK-release_abandoned_orders.sql` | the pre-migration function |
+
+Verified by content: 65 tables, 57 RLS policies, and row counts matching live exactly — orders 15, payments 11, payment_events 8, movements 587, products 35, **`auth.users` 4**.
+
+**Three corrections to `docs/admin-guide.md` §12, from running it for real rather than writing it:**
+
+1. `aws-0-ap-south-1` is the correct pooler host for this project. `aws-1` answers DNS and then rejects the tenant, so a wrong guess fails with `ENOTFOUND tenant/user`, not a connection error.
+2. `--data-only` emits a circular-foreign-key warning on `categories` and its own hint recommends a full dump instead. A `--data-only` file is not restorable without `--disable-triggers`; the FULL dump was added for that reason and should be the primary artefact.
+3. The dump uses multi-row `INSERT` statements, not `COPY`, so any verification that counts `COPY` blocks reports zero and looks like an empty dump.
+
+## What was applied, in order
+
+| Step | Result |
+|---|---|
+| Merge PR #11 | `2df96c7` |
+| Production deploy | `dpl_HRHSrTo…`, `READY`, target `production`, sha `2df96c7eda0abc…` |
+| Migration `…030000` narrow sweep | applied, definition read back |
+| Vercel `CRON_SECRET` + redeploy | owner |
+| Vault `cron_secret`, `cron_target_origin` | owner |
+| Migration `…030100` reconciler schedule | **applied by the owner** — see below |
+
+## The deploy was verified against the running site, not the dashboard
+
+`READY` is a build state and says nothing about whether the code serves. The new route answering `401` while a route that does not exist answers `404` is what proves it deployed:
+
+```
+POST /api/cron/release-abandoned-orders  -> 401   route exists, refuses without a secret
+POST /api/cron/does-not-exist            -> 404   contrast, so 401 means something
+GET  /                                   -> 200
+GET  /shop                               -> 200
+POST /api/payments/razorpay/webhook      -> 400   unsigned still rejected
+```
+
+## The Vault entries were checked by value, not by name
+
+A secret existing under the right name proves nothing about its contents, and a mismatch would have 401'd every tick of the one job that stops paid orders being cancelled. Compared inside SQL so nothing was printed:
+
+```
+cron_secret matches the value set in Vercel   true   (44 chars)
+cron_target_origin                            https://www.footvault.in
+origin has a trailing slash                   false
+```
+
+Then the Vercel half, which Vault cannot speak to — an authenticated probe against production: real token → `200 {"ok":true,"examined":0,…}`, wrong token → `401`.
+
+## The database → app hop, proven
+
+`pg_net` is fire-and-forget, so a clean return from `trigger_order_reconciler()` proves only that a request was queued. The response row is the evidence:
+
+```
+status_code  200
+content      {"ok":true,"examined":0,"rescued":0,"cancelled":0,"leftAlone":0,"unreachable":0}
+timed_out    false
+error_msg    null
+```
+
+Four active jobs now: `release-abandoned-orders (*/10)`, `prune-rate-limits (17 * * * *)`, `prune-shipping-quotes (23 * * * *)`, `reconcile-abandoned-orders (*/10)`.
+
+Data untouched across the whole deploy: orders 15, payments 11, payment_events 8, history 29, movements 587, needs-refund queue 0.
+
+## One thing I could not do, and did not route around
+
+`apply_migration` for `…030100` was refused by the permission classifier. The same SQL through `execute_sql` would have been the identical production DDL wearing a different tool name, so it was handed to the owner to run in the SQL Editor instead. `cron.schedule` returned job id 4.
+
+## The gap that existed while this was half-applied
+
+Between applying `…030000` and scheduling the reconciler, orders **with** a payment attempt were swept by nothing — the narrowed function no longer covered them and their replacement was not yet running. Held stock would have accumulated silently. Nothing was stranded in practice because there were zero pending-unpaid orders throughout, but the ordering is the hazard: **the two migrations are not independent, and the window between them is real.** On any future environment, apply them close together and check `pending_unpaid` before starting.
