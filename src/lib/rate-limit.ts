@@ -72,6 +72,23 @@ export const RATE_LIMITS = {
    * page for free.
    */
   serviceability: [60, 60],
+  /**
+   * How often one *distinct* server error may email the owner.
+   *
+   * Three an hour per fingerprint. The thing being defended against is not an
+   * attacker, it is a broken deploy: one failing page, crawled or refreshed,
+   * produces the same error thousands of times, and an inbox with four
+   * thousand identical messages in it is indistinguishable from an inbox with
+   * none. Three is enough to notice and to see it is still happening.
+   */
+  errorReport: [3, 3600],
+  /**
+   * And a ceiling across *all* fingerprints, because the per-fingerprint limit
+   * does not bound a failure that produces a different message every time —
+   * a bad database credential throws with a fresh connection id on each
+   * attempt. Twenty an hour total; past that the log is the record.
+   */
+  errorReportTotal: [20, 3600],
 } as const satisfies Record<
   string,
   readonly [limit: number, windowSeconds: number]

@@ -61,6 +61,7 @@
     "audit:emails": "tsx scripts/audit/emails.ts",
     "audit:inbound-email": "tsx scripts/audit/inbound-email.ts",
     "audit:address-book": "tsx scripts/audit/address-book.ts",
+    "audit:error-reporting": "tsx scripts/audit/error-reporting.ts",
     "audit:settings-controls": "tsx scripts/audit/settings-controls.ts"
   },
   "dependencies": {
