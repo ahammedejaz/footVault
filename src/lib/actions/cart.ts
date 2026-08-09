@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { getCurrentUser } from "@/lib/auth";
 import { getOrCreateGuestToken, readGuestToken } from "@/lib/cart/token";
 import { maybeRow, rows } from "@/lib/queries/run";
+import { callerIdentity, consumeRateLimit } from "@/lib/rate-limit";
 import { createClient } from "@/lib/supabase/server";
 import {
   addToBagSchema,
@@ -181,6 +182,42 @@ export type AddedToBag = {
   previousQuantity: number;
 };
 
+/**
+ * A ceiling on how fast one source can write to a bag.
+ *
+ * These four actions are the only unauthenticated endpoints in the shop that
+ * **create rows**, which is the same shape as the anonymous stock drain found
+ * in Phase 5 — and the reason that one mattered was never the individual write,
+ * it was that nothing bounded how many there could be.
+ *
+ * The identity is the caller's IP for a guest, not their guest token. A guest
+ * cart is owned by a cookie the caller holds, so a client that declines to send
+ * one is handed a fresh token and a fresh `carts` row on every request; a limit
+ * bucketed by that token is one the caller resets at will by dropping a cookie.
+ * `callerIdentity(null)` returns `ip:…` precisely so this cannot be got wrong
+ * by accident.
+ *
+ * **Fails open**, like every limiter here: if the counter cannot be read the
+ * write proceeds and the failure is logged. A database blip must not be able to
+ * stop people putting things in their bag. That is also why this can never be
+ * load-bearing for correctness — RLS still scopes every row to its owner and
+ * stock is still decided in the database at checkout.
+ *
+ * The message says "a moment" rather than naming a number. A customer who has
+ * hit this is either on a shared connection or holding a button down; either
+ * way a retry-after in seconds is information they cannot use.
+ */
+async function withinCartWriteLimit(): Promise<boolean> {
+  const user = await getCurrentUser();
+  const verdict = await consumeRateLimit(
+    "cartWrite",
+    await callerIdentity(user?.id ?? null),
+  );
+  return verdict.allowed;
+}
+
+const TOO_FAST = "Give that a moment, then try again.";
+
 export async function addToBag(input: {
   variantId: string;
   quantity?: number;
@@ -192,6 +229,14 @@ export async function addToBag(input: {
       message: parsed.error.issues[0]?.message ?? "That size is not available.",
     };
   }
+
+  /*
+    Before `getOrCreateCartId`, which is the call that mints a `carts` row for a
+    caller who sent no guest cookie. Checking after it would bound the writes
+    and not the rows, which is the wrong half.
+  */
+  if (!(await withinCartWriteLimit()))
+    return { ok: false, message: TOO_FAST };
 
   try {
     const sellable = await readSellable(parsed.data.variantId);
@@ -298,6 +343,9 @@ export async function setQuantity(input: {
   const parsed = setQuantitySchema.safeParse(input);
   if (!parsed.success) return { ok: false, message: GENERIC };
 
+  if (!(await withinCartWriteLimit()))
+    return { ok: false, message: TOO_FAST };
+
   try {
     const supabase = await createClient();
 
@@ -378,6 +426,9 @@ export async function removeLine(input: {
   const parsed = removeLineSchema.safeParse(input);
   if (!parsed.success) return { ok: false, message: GENERIC };
 
+  if (!(await withinCartWriteLimit()))
+    return { ok: false, message: TOO_FAST };
+
   try {
     const supabase = await createClient();
     const line = await maybeRow<{
@@ -437,6 +488,15 @@ export async function acknowledgeCartChanges(): Promise<ActionResult> {
     const user = await getCurrentUser();
     const guestToken = user ? null : await readGuestToken();
     if (!user && !guestToken) return { ok: true, data: undefined };
+
+    /*
+      Shares the bucket, and answers `ok` when it is empty rather than
+      surfacing an error. This is the "you have seen the change" write behind a
+      banner the customer is dismissing, not something they asked for — telling
+      them to slow down would be a message about an action they did not know
+      they took. Skipping it costs a banner that reappears on the next load.
+    */
+    if (!(await withinCartWriteLimit())) return { ok: true, data: undefined };
 
     const supabase = await createClient();
     const cart = await maybeRow<{ id: string }>(
