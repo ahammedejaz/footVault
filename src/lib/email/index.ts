@@ -5,12 +5,10 @@ import { createResendAdapter } from "@/lib/email/resend-adapter";
 import {
   buildDeliveredEmail,
   buildOwnerNewOrderEmail,
-  buildPaymentCapturedEmail,
   buildRefundedEmail,
   buildShippedEmail,
   type DeliveredInput,
   type OwnerNewOrderInput,
-  type PaymentCapturedInput,
   type RefundedInput,
   type ShippedInput,
 } from "@/lib/email/lifecycle";
@@ -29,7 +27,6 @@ export type { OrderConfirmationInput } from "@/lib/email/order-confirmation";
 export type {
   DeliveredInput,
   OwnerNewOrderInput,
-  PaymentCapturedInput,
   RefundedInput,
   ShippedInput,
 } from "@/lib/email/lifecycle";
@@ -116,16 +113,6 @@ export function sendOrderConfirmation(
     "order-confirmation",
     input.orderNumber,
     buildOrderConfirmationEmail(input),
-  );
-}
-
-export function sendPaymentCaptured(
-  input: PaymentCapturedInput,
-): Promise<EmailSendResult> {
-  return dispatch(
-    "payment-captured",
-    input.orderNumber,
-    buildPaymentCapturedEmail(input),
   );
 }
 

@@ -54,6 +54,32 @@ for (const line of readFileSync(".env.local", "utf8").split("\n")) {
   const m = /^([A-Z0-9_]+)=(.*)$/.exec(line.trim());
   if (m && !process.env[m[1]]) process.env[m[1]] = m[2];
 }
+
+/**
+ * Emails, observed rather than delivered.
+ *
+ * `applyPaymentOutcome` now sends the customer confirmation and the owner's
+ * new-order alert on the confirmed transition — which makes this harness the
+ * place that can prove the P0 rule: **an order created but never paid produces
+ * zero confirmation emails, and one captured payment produces exactly one of
+ * each.** The provider keys are removed so the console adapter runs instead of
+ * Resend (this file loads .env.local, and a gate that emailed the real owner a
+ * fake order on every run would be worse than no gate), and its "would send"
+ * lines are collected below.
+ */
+delete process.env.EMAIL_API_KEY;
+delete process.env.EMAIL_FROM;
+process.env.OWNER_EMAIL = "owner-audit@example.com";
+
+const emailLog: string[] = [];
+{
+  const realInfo = console.info.bind(console);
+  console.info = (...args: unknown[]) => {
+    const line = args.map(String).join(" ");
+    if (line.includes("would send")) emailLog.push(line);
+    realInfo(...args);
+  };
+}
 const URL_ = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 const SERVICE = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -548,6 +574,17 @@ async function main() {
   if (!online.ok) throw new Error(`razorpay order: ${online.code}`);
   placedOrders.push(online.order.orderId);
 
+  /**
+   * The P0 rule, first half. Every order this run has placed so far — this one
+   * included — is created and unpaid, and not one email of any kind may exist
+   * yet. The capture hook has been listening since before the first fixture.
+   */
+  check(
+    "orders created but never paid have produced zero emails",
+    emailLog.length === 0,
+    emailLog.join(" | "),
+  );
+
   const providerOrderId = `order_audit_${randomUUID().slice(0, 12)}`;
   const paymentRow = (
     await admin.from("payments").insert({
@@ -594,6 +631,33 @@ async function main() {
       .slice(1)
       .map((d) => (d.applied ? "applied" : d.reason))
       .join(","),
+  );
+
+  /**
+   * The P0 rule, second half: the capture — and only the capture — emails, and
+   * ten deliveries of it email once. One confirmation to the customer, one
+   * new-order alert to the owner, nothing else.
+   */
+  const confirmations = emailLog.filter((line) =>
+    line.includes(`Order ${online.order.orderNumber} confirmed`),
+  );
+  const ownerAlerts = emailLog.filter((line) =>
+    line.includes(`New order ${online.order.orderNumber}`),
+  );
+  check(
+    "ten deliveries produced exactly one customer confirmation",
+    confirmations.length === 1,
+    `${confirmations.length} confirmations`,
+  );
+  check(
+    "and exactly one owner new-order alert",
+    ownerAlerts.length === 1,
+    `${ownerAlerts.length} alerts`,
+  );
+  check(
+    "and nothing else went out",
+    emailLog.length === confirmations.length + ownerAlerts.length,
+    emailLog.join(" | "),
   );
 
   const settled = await maybeRow<{
