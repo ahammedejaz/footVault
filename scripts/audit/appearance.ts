@@ -103,8 +103,12 @@ type SectionRow = {
   is_active: boolean;
 };
 
+/** Where section 6's placeholder clip lives when staging has no real one. */
+const FIXTURE_CLIP_PATH = "qa-appearance-fixture.mp4";
+
 async function main() {
   const admin = adminClient();
+  let fixtureClipInstalled = false;
 
   /* The layout as it stands, for the finally. */
   const { data: originals, error: snapError } = await admin
@@ -335,6 +339,62 @@ async function main() {
     section("6 · the video/still switch does what its label says");
     {
       /*
+        The switch is only meaningful with a clip to keep or lose. Production
+        has one the owner uploaded; a staging database rebuilt from empty has
+        an empty `site-video` bucket and a hero with no `video_url` — the seed
+        cannot carry a binary. Without this block, "switching back restores
+        the clip" is unprovable on exactly the database the suite runs
+        against, which is how this section sat red the first time it ran.
+
+        So: no clip configured → install one. A tiny placeholder object in the
+        real bucket (the assertion greps the served HTML for the URL; nothing
+        plays it), and `video_url` written onto the hero the same way the
+        uploader action would. Removed in the finally; the payload itself is
+        covered by the wholesale row restore.
+      */
+      const heroRow = originalRows.find((row) => row.section_type === "hero");
+      const heroPayload = (heroRow?.payload ?? {}) as Record<string, unknown>;
+      if (
+        heroRow &&
+        !String(heroPayload.video_url ?? "").includes("site-video")
+      ) {
+        const { error: uploadError } = await admin.storage
+          .from("site-video")
+          .upload(FIXTURE_CLIP_PATH, Buffer.from("qa fixture, never played"), {
+            contentType: "video/mp4",
+            upsert: true,
+          });
+        if (uploadError) {
+          check(
+            "a fixture clip could be installed for the switch to operate on",
+            false,
+            uploadError.message,
+          );
+        } else {
+          fixtureClipInstalled = true;
+          const { data: publicUrl } = admin.storage
+            .from("site-video")
+            .getPublicUrl(FIXTURE_CLIP_PATH);
+          const { error: patchError } = await admin
+            .from("homepage_sections")
+            .update({
+              payload: {
+                ...heroPayload,
+                video_url: publicUrl.publicUrl,
+                media_mode: "video",
+              } as Json,
+            })
+            .eq("id", heroRow.id);
+          if (patchError) {
+            check(
+              "the fixture clip could be wired onto the hero",
+              false,
+              patchError.message,
+            );
+          }
+        }
+      }
+      /*
         The rule `audit:settings-controls` is the mechanism for: an owner-facing
         control ships with a test that finds it **by its visible label**,
         changes it, and asserts the stored value changed. `getByRole("radio",
@@ -455,6 +515,12 @@ async function main() {
           "\n  !! rows restored but the served homepage does not show them yet — the cache may lag",
         );
       }
+    }
+    if (fixtureClipInstalled) {
+      await admin.storage
+        .from("site-video")
+        .remove([FIXTURE_CLIP_PATH])
+        .catch(() => {});
     }
     await admin.auth.admin.deleteUser(account.userId).catch(() => {});
     await browser.close();
