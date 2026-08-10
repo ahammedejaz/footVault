@@ -4,7 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Dialog } from "radix-ui";
-import { ChevronDown, Heart, LogOut, X } from "lucide-react";
+import { ChevronDown, Heart, LogOut, MapPin, Package, X } from "lucide-react";
 
 import { Logo } from "@/components/brand/logo";
 import { Button } from "@/components/ui/button";
@@ -92,7 +92,37 @@ export function MobileNavPanel({
               ))}
             </ul>
 
+            {/*
+              The same destinations the desktop account menu offers, because
+              below `lg` this drawer is the only menu there is. "Your orders"
+              was missing from here for two phases — reachable on a laptop,
+              gone on the phone that placed the order. Orders and addresses
+              need a signed-in customer (the pages themselves ask for one);
+              saved items work for guests too and stay unconditional.
+            */}
             <ul className="border-border mt-3 border-t pt-3">
+              {user ? (
+                <>
+                  <li>
+                    <Link
+                      href="/account/orders"
+                      className="hover:bg-muted flex min-h-11 items-center gap-3 rounded-lg px-3 text-sm"
+                    >
+                      <Package className="size-4" aria-hidden />
+                      Your orders
+                    </Link>
+                  </li>
+                  <li>
+                    <Link
+                      href="/account/addresses"
+                      className="hover:bg-muted flex min-h-11 items-center gap-3 rounded-lg px-3 text-sm"
+                    >
+                      <MapPin className="size-4" aria-hidden />
+                      Addresses
+                    </Link>
+                  </li>
+                </>
+              ) : null}
               <li>
                 <Link
                   href="/wishlist"
@@ -119,14 +149,19 @@ export function MobileNavPanel({
                 className="flex items-center justify-between gap-3"
               >
                 <input type="hidden" name="next" value={here} readOnly />
-                <span className="min-w-0">
+                {/* The identity is a door: it opens the account overview,
+                    the same as the desktop menu. */}
+                <Link
+                  href="/account"
+                  className="hover:bg-muted -mx-2 min-w-0 rounded-lg px-2 py-1"
+                >
                   <span className="text-muted-foreground block font-mono text-xs tracking-[0.06em] uppercase">
                     Signed in
                   </span>
                   <span className="block truncate text-sm">
                     {user.name ?? user.email}
                   </span>
-                </span>
+                </Link>
                 <Button
                   type="submit"
                   variant="outline"
