@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { HomeSection } from "@/components/storefront/home-sections";
 import { Button } from "@/components/ui/button";
+import { contentTokens } from "@/lib/content-tokens";
 import { prerenderOrDefer } from "@/lib/prerender";
 import { cachedHomepageSections } from "@/lib/queries/cached";
 
@@ -20,7 +21,19 @@ import { cachedHomepageSections } from "@/lib/queries/cached";
 export const revalidate = 3600;
 
 export default async function HomePage() {
-  const sections = await prerenderOrDefer("homepage", cachedHomepageSections);
+  /**
+   * Tokens are read **once** for the page, not once per section.
+   *
+   * `contentTokens()` reads `site_settings.shipping` and the returns window, so
+   * resolving it inside each renderer would be one round trip per section for a
+   * value that cannot change mid-render. `HomeSection` takes it as a prop for
+   * that reason, and because the admin preview has to resolve it the same way or
+   * the preview shows different copy from what publishing produces.
+   */
+  const [sections, tokens] = await Promise.all([
+    prerenderOrDefer("homepage", cachedHomepageSections),
+    contentTokens(),
+  ]);
 
   if (sections.length === 0) {
     return (
@@ -48,7 +61,7 @@ export default async function HomePage() {
   return (
     <>
       {sections.map((section) => (
-        <HomeSection key={section.id} section={section} />
+        <HomeSection key={section.id} section={section} tokens={tokens} />
       ))}
     </>
   );
