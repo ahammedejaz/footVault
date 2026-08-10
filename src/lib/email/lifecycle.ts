@@ -154,6 +154,18 @@ export type DeliveredInput = {
 export function buildDeliveredEmail(input: DeliveredInput): EmailMessage {
   const url = orderUrl(input.orderNumber);
 
+  /**
+   * The review invitation, after the policy and before the sign-off: the
+   * damage window is time-boxed and actionable, so it keeps first position;
+   * the review can wait until the shoes have been worn once. The link goes
+   * to the order page, where the form lives — only delivered purchasers can
+   * write one, which is worth a clause because it is why the invitation is
+   * being made at all.
+   */
+  const reviewInvitation =
+    "When you have worn them, tell people how they are — you can review " +
+    `this pair from your order page. Only customers whose order arrived can.`;
+
   const text = [
     `${input.customerName}, your order has been delivered.`,
     "",
@@ -161,6 +173,8 @@ export function buildDeliveredEmail(input: DeliveredInput): EmailMessage {
     url,
     "",
     replacementPolicy(),
+    "",
+    reviewInvitation,
     "",
     "If something is not right, reply to this email and we will sort it out.",
     "",
@@ -173,6 +187,7 @@ export function buildDeliveredEmail(input: DeliveredInput): EmailMessage {
     `<p><strong>Order ${escapeHtml(input.orderNumber)}</strong><br>`,
     `<a href="${url}">${url}</a></p>`,
     `<p>${escapeHtml(replacementPolicy())}</p>`,
+    `<p>${escapeHtml(reviewInvitation)}</p>`,
     `<p>If something is not right, reply to this email and we will sort it out.</p>`,
     `<p>${SIGN_OFF}</p>`,
   ].join("");

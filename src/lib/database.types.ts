@@ -1181,6 +1181,8 @@ export type Database = {
           meta_description: string | null
           meta_title: string | null
           name: string
+          rating_sum: number
+          review_count: number
           sale_price: number | null
           search_keywords: string[]
           slug: string
@@ -1207,6 +1209,8 @@ export type Database = {
           meta_description?: string | null
           meta_title?: string | null
           name: string
+          rating_sum?: number
+          review_count?: number
           sale_price?: number | null
           search_keywords?: string[]
           slug: string
@@ -1233,6 +1237,8 @@ export type Database = {
           meta_description?: string | null
           meta_title?: string | null
           name?: string
+          rating_sum?: number
+          review_count?: number
           sale_price?: number | null
           search_keywords?: string[]
           slug?: string
@@ -1390,11 +1396,15 @@ export type Database = {
         Row: {
           body: string | null
           created_at: string
+          display_name: string
           id: string
           is_approved: boolean
           is_verified_purchase: boolean
           product_id: string
           rating: number
+          removed_at: string | null
+          removed_by: string | null
+          removed_reason: string | null
           title: string | null
           updated_at: string
           user_id: string
@@ -1402,11 +1412,15 @@ export type Database = {
         Insert: {
           body?: string | null
           created_at?: string
+          display_name: string
           id?: string
           is_approved?: boolean
           is_verified_purchase?: boolean
           product_id: string
           rating: number
+          removed_at?: string | null
+          removed_by?: string | null
+          removed_reason?: string | null
           title?: string | null
           updated_at?: string
           user_id: string
@@ -1414,11 +1428,15 @@ export type Database = {
         Update: {
           body?: string | null
           created_at?: string
+          display_name?: string
           id?: string
           is_approved?: boolean
           is_verified_purchase?: boolean
           product_id?: string
           rating?: number
+          removed_at?: string | null
+          removed_by?: string | null
+          removed_reason?: string | null
           title?: string | null
           updated_at?: string
           user_id?: string
@@ -1429,6 +1447,13 @@ export type Database = {
             columns: ["product_id"]
             isOneToOne: false
             referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reviews_removed_by_fkey"
+            columns: ["removed_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
           {
@@ -1888,6 +1913,16 @@ export type Database = {
           stock_quantity: number
           unspecified_rows: number
           variant_id: string
+        }[]
+      }
+      reconcile_reviews: {
+        Args: never
+        Returns: {
+          actual_count: number
+          actual_sum: number
+          product_id: string
+          stored_count: number
+          stored_sum: number
         }[]
       }
       release_abandoned_orders: {

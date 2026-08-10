@@ -60,6 +60,7 @@ const GATES = [
   "audit:reconciler",
   "audit:payment-health",
   "audit:delivery-poll",
+  "audit:reviews",
   "audit:images",
   // Browser. Slow, and the reason this file exists.
   "audit:overflow",

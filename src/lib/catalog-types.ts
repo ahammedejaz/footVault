@@ -62,6 +62,14 @@ export type ProductSummary = {
   sizes: SizeAvailability[];
   colors: ProductColor[];
   inStock: boolean;
+  /**
+   * Trigger-maintained on `products`, riding PRODUCT_FIELDS — the listing
+   * pays zero extra round trips for stars. Sum and count, never a stored
+   * average: the average is derived where it is rendered, so the storage
+   * stays exact integer arithmetic (Phase 11).
+   */
+  reviewCount: number;
+  ratingSum: number;
 };
 
 export type ProductDetail = ProductSummary & {

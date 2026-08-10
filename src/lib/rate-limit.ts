@@ -136,6 +136,14 @@ export const RATE_LIMITS = {
    * customer mistyping twice, not a dictionary.
    */
   couponCheck: [10, 60],
+  /**
+   * Writing a review. The delivered-order check inside the action is the real
+   * lock; this bounds how fast an eligible customer can hammer it anyway.
+   * Five a minute is a person fixing a typo and reposting, not a script —
+   * and one customer physically cannot have many delivered products to
+   * review in one minute of sincere use.
+   */
+  reviewWrite: [5, 60],
   errorReport: [3, 3600],
   /**
    * And a ceiling across *all* fingerprints, because the per-fingerprint limit
