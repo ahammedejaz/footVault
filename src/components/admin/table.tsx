@@ -36,7 +36,7 @@ export function TableWrap({
       aria-label={label}
       tabIndex={0}
       className={cn(
-        "border-border overflow-x-auto rounded-md border focus-visible:outline-none",
+        "border-border overflow-x-auto rounded-md border",
         className,
       )}
     >

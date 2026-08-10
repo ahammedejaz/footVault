@@ -519,12 +519,12 @@ async function main() {
       on whatever number was typed first.
     */
     await open();
-    await setValue(page, "courier-price-tolerance", 12);
+    await setValue(page, "courier-price-tolerance", "12");
     await save(page, "shipping");
     await assertStored(page, "courier-price-tolerance", 12);
 
     await open();
-    await setValue(page, "courier-price-tolerance", 0);
+    await setValue(page, "courier-price-tolerance", "");
     await save(page, "shipping");
     await assertStored(page, "courier-price-tolerance", null);
 

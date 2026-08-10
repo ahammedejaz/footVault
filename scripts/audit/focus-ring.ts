@@ -20,6 +20,9 @@
  *
  *   npx tsx scripts/audit/focus-ring.ts
  */
+import { execSync } from "node:child_process";
+import { readFileSync } from "node:fs";
+
 import { chromium, type Page } from "playwright";
 
 import { buildGuestBag } from "./fixtures";
@@ -249,10 +252,97 @@ async function main() {
       "ui/button",
       await tabToRing(checkout, 'button[data-slot="button"]'),
     );
+    /*
+      The two bespoke search inputs.
+
+      These are not built from `ui/input`, which is exactly why the primitives
+      above all passed while the search bar was visibly wrong: the gate proved
+      the components and the search bar was not one of them. `search-panel`
+      carried `outline-none`, which deletes the orange half of the composite
+      indicator and leaves the 4px navy halo alone — a hard dark box, which is
+      how the owner described it. The /search page's input had no indicator at
+      all.
+    */
+    const searchPage = await browser.newPage();
+    await searchPage.goto(`${BASE_URL}/search`, { waitUntil: "load" });
+    assertRing(
+      "the /search input",
+      await tabToRing(searchPage, "input.h-12"),
+    );
+    await searchPage.close();
+
     await shop.close();
   } finally {
     await browser.close();
   }
+
+  /*
+    A source-level rule beside the rendered one.
+
+    The browser checks prove the elements they visit; this stops the next
+    bespoke control being written the same way. `outline-hidden` on a menu item
+    is allowed by name — those show focus through their background, which is a
+    real indicator rather than none — and each exemption says so, because an
+    allowlist without reasons is a list of things somebody found annoying.
+  */
+  const ALLOWED_OUTLINE_OFF = new Map<string, string>([
+    [
+      "src/components/ui/dropdown-menu.tsx",
+      "menu items indicate focus with bg-accent, which is a visible indicator rather than none",
+    ],
+    [
+      "src/components/ui/dialog.tsx",
+      "the dialog panel itself takes focus on open; an outline around the whole sheet reads as an error state",
+    ],
+    [
+      "src/components/checkout/checkout-failure.tsx",
+      "a programmatically focused alert region, announced rather than operated",
+    ],
+  ]);
+
+  /*
+    Comments are stripped before matching, and that is not a nicety.
+
+    `button.tsx`, `input.tsx` and `select.tsx` each carry a comment saying *"no
+    outline-none, and it must stay that way"* — the very reasoning this rule
+    enforces. A naive grep flags all three, which would either fail the gate
+    forever or teach whoever hit it to delete the explanation. The first version
+    of this check did exactly that.
+  */
+  const offenders = execSync("git ls-files 'src/**/*.tsx'", {
+    encoding: "utf8",
+  })
+    .split("\n")
+    .filter(Boolean)
+    .filter((file) => !ALLOWED_OUTLINE_OFF.has(file))
+    .filter((file) => {
+      let inBlock = false;
+      return readFileSync(file, "utf8")
+        .split("\n")
+        .some((line) => {
+          const trimmed = line.trim();
+          if (inBlock) {
+            if (trimmed.includes("*/")) inBlock = false;
+            return false;
+          }
+          if (trimmed.startsWith("/*")) {
+            if (!trimmed.includes("*/")) inBlock = true;
+            return false;
+          }
+          if (trimmed.startsWith("*") || trimmed.startsWith("//")) return false;
+          return /outline-none|outline-hidden/.test(
+            line.replace(/\/\/.*$/, ""),
+          );
+        });
+    });
+
+  check(
+    "no component switches the focus outline off without a reason",
+    offenders.length === 0,
+    offenders.length
+      ? `${offenders.join(", ")} — add to ALLOWED_OUTLINE_OFF with a reason, or drop the class`
+      : `${ALLOWED_OUTLINE_OFF.size} allowed, each with a reason`,
+  );
 
   console.log(
     failures === 0
