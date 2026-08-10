@@ -1015,6 +1015,51 @@ SMS provider, an AI endpoint — means adding a backstop beside it.
 
 ---
 
+## Settings are classified, not inherited
+
+RLS on `site_settings` grants `anon` and `authenticated` `select`
+`using (is_public)`. **The grant is per row, not per field** — a public row
+publishes its entire `value`, including keys added to it long after the flag was
+set.
+
+`shipping` is the worked example. It is public because the storefront prints the
+free-delivery threshold, and it has since accumulated the Pay-on-Delivery
+deposit, the advance cap, the COD minimum, the stacking ceiling and the RTO
+deduction policy. **None of those was a decision to publish.** Each was a field
+added to a row that already happened to be public.
+
+That was reviewed and deliberately left alone. Nothing in the row is
+exploitable: the server is authoritative on every figure in it — checkout
+recomputes prices, `create_order_with_stock` re-derives the discount — and the
+client cannot influence any of them. The cost of publishing it is transparency,
+not security, and splitting the row would be schema plus authorisation work in
+the money path.
+
+What that reasoning does not survive is the *next* key. So the rule:
+
+> **Every `site_settings` key is classified public or private in
+> `src/lib/settings-visibility.ts`, with a reason, at the moment it is added.**
+> An unclassified key is a gate failure, not a default.
+>
+> A genuinely sensitive value — an API identifier, a supplier's terms, an
+> internal margin — **does not go inside `shipping` or any other public row.**
+> It gets its own row, classified private.
+
+`npm run audit:settings-visibility` enforces it: every key in the database must
+appear in the manifest, every classification must match the row's `is_public`,
+every entry must carry a reason, and no classification may refer to a key that
+no longer exists.
+
+The gate then reads the table **a second time through the anonymous client** and
+compares what actually comes back. That is not redundancy. Comparing the
+manifest against `is_public` alone would stay green in a world where RLS had
+stopped consulting `is_public` — every classification would still agree with a
+column that no longer controlled anything, while the whole table was readable.
+The flag is a statement of intent; what an anonymous caller can fetch is the
+fact, and the gate has to assert the fact.
+
+---
+
 ## Audits
 
 Everything in `scripts/audit/` runs against a production build. `npm run audit`

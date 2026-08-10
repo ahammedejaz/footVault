@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import Image from "next/image";
+import { ProductImage as ProductPhoto } from "@/components/storefront/product-image";
 import { Dialog } from "radix-ui";
 import { X, ZoomIn } from "lucide-react";
 
@@ -113,7 +113,7 @@ export function ProductGallery({
               key={image.url}
               className="relative aspect-4/5 w-full shrink-0 snap-start"
             >
-              <Image
+              <ProductPhoto
                 src={image.url}
                 // The first frame names the product; the rest are the same shoe
                 // from another angle, and a screen reader reading four near
@@ -184,7 +184,7 @@ export function ProductGallery({
                       : "border-border hover:border-foreground",
                   )}
                 >
-                  <Image
+                  <ProductPhoto
                     src={image.url}
                     alt=""
                     aria-hidden
@@ -213,7 +213,7 @@ export function ProductGallery({
               {current.alt}
             </Dialog.Description>
             <div className="relative aspect-4/5 h-full max-h-[88vh]">
-              <Image
+              <ProductPhoto
                 src={current.url}
                 alt={current.alt}
                 fill

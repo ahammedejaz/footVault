@@ -105,6 +105,29 @@ export const RATE_LIMITS = {
    * checkout. What it stops is one source turning an afternoon into a million
    * rows.
    */
+  /**
+   * Turning one uploaded photograph into the catalogue's four sizes.
+   *
+   * Its own policy rather than `adminBulk` (20/min), because the two are sized
+   * against different things. `adminBulk` bounds *whole-table writes* — a bulk
+   * activate touches every product and twenty a minute is generous. This bounds
+   * a single admin working through a shoebox: two shots per product across
+   * thirty-five products is seventy calls in one sitting, and the panel is
+   * one-photograph-at-a-time with a description typed for each, so the honest
+   * ceiling is however fast a person can work rather than however fast a script
+   * can loop.
+   *
+   * A hundred and twenty a minute is far above the first and still bounds a
+   * stuck client, which is the actual failure this guards: normalisation is
+   * several seconds of server CPU per call, so a retry loop is expensive in a
+   * way that a misplaced click is not.
+   *
+   * It matters that this is generous because of *how* it fails. A throttled
+   * upload mid-session does not read as "slow down"; it reads as the site
+   * breaking, in the middle of the one task standing between this shop and
+   * opening.
+   */
+  imageProcessing: [120, 60],
   cartWrite: [90, 60],
   /**
    * Trying a coupon code. The refusal messages deliberately collapse "no such

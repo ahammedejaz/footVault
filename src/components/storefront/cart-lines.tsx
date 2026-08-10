@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import Image from "next/image";
+import { ProductImage } from "@/components/storefront/product-image";
 import Link from "next/link";
 import { Trash2 } from "lucide-react";
 
@@ -177,7 +177,7 @@ function CartLineRow({
         aria-hidden
       >
         {line.imageUrl ? (
-          <Image
+          <ProductImage
             src={line.imageUrl}
             alt=""
             fill

@@ -61,7 +61,8 @@ Accept any reasonable upload and produce a canonical asset with `sharp`:
 
 ### What the owner sees while uploading
 
-- **Recommended: 2000 × 2000 px, square, product centred, plain light background.** Accepted: JPEG, PNG, WebP, up to 10 MB.
+- **Recommended: 2000 × 2000 px, square, product centred, plain light background.** Accepted: JPEG, PNG, WebP, up to 5 MB.
+  *(Corrected from 10 MB during Batch A, on the owner's instruction. The bucket's own `file_size_limit` is 5 MB, and raising it is a storage migration; with client-side compression before upload a 2000 × 2000 photograph lands well under it, so the promise was changed to match what the bucket accepts rather than the reverse.)*
 - A **live preview in the actual card frame**, so the owner sees exactly how it will look on the storefront before saving — not a generic thumbnail.
 - A warning below 800px on either side.
 - Client-side compression before upload, a progress bar, and a required alt-text field.
