@@ -23,7 +23,7 @@ const FIELDS: {
     key: "earnRupeesPerCoin",
     label: "Rupees spent to earn 1 coin",
     explanation:
-      "A customer earns 1 coin for every this-many rupees of shoes (never delivery) once the parcel is delivered. Empty: nobody earns anything. Set low (say 10): you are giving away a tenth of every sale as coins. Set high (say 1000): coins arrive so slowly nobody will care. 100 means a 1% programme when a coin is worth ₹1.",
+      "A customer earns 1 coin for every this-many rupees of shoes (never delivery) once the parcel is delivered. Empty: nobody earns anything. Set low (say 10): you are giving away a tenth of every sale as coins. Set high (say 1000): coins arrive so slowly nobody will care. 100 means a one-percent programme when a coin is worth one rupee.",
   },
   {
     key: "coinValuePaise",
@@ -47,7 +47,7 @@ const FIELDS: {
     key: "coinMinimumBalance",
     label: "Coins needed before spending any",
     explanation:
-      "Below this balance the checkout does not offer coins. Too low and the ledger churns ₹3 redemptions; too high and most customers never reach it — a balance they can see but never spend reads as a promise being withheld.",
+      "Below this balance the checkout does not offer coins. Too low and the ledger churns coin-sized redemptions; too high and most customers never reach it — a balance they can see but never spend reads as a promise being withheld.",
   },
   {
     key: "coinExpiryMonths",
