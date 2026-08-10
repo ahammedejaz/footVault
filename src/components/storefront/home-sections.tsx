@@ -1,10 +1,12 @@
-import { contentTokens, fillTokens } from "@/lib/content-tokens";
 import Image from "next/image";
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 
+import type { ContentTokens } from "@/lib/content-tokens";
+import { fillSectionTokens } from "@/lib/content/homepage-sections";
 import { imageSourceProps, type SharedImageProps } from "@/lib/image-layout";
 
+import { ProseBlocks, hasProse } from "@/components/storefront/prose";
 import { ProductCard } from "@/components/storefront/product-card";
 import { Rail } from "@/components/storefront/rail";
 import { Button } from "@/components/ui/button";
@@ -289,7 +291,21 @@ async function ProductRail({ section }: { section: HomepageSection }) {
 
 type PromoItem = { label: string; detail?: string };
 
-async function PromoStrip({ section }: { section: HomepageSection }) {
+/**
+ * The strip is a list of promises, so every number in it has to be the number
+ * the till keeps.
+ *
+ * This carried "Free shipping over ₹2,499" on the homepage of the live shop
+ * while `site_settings.shipping.free_above_paise` said ₹6,499 — the same drift
+ * Phase 7 found in the announcement bar and on `/page/shipping`, in a third
+ * place, and it survived the sweep that fixed those two because it lives in
+ * `homepage_sections.payload` rather than in prose the gate was looking at.
+ *
+ * Substitution no longer happens here. It happens once in `HomeSection` for the
+ * whole section, which is what stopped this being the *only* place on the
+ * homepage where a token worked.
+ */
+function PromoStrip({ section }: { section: HomepageSection }) {
   const raw = section.payload.items;
   const items: PromoItem[] = Array.isArray(raw)
     ? raw.filter(
@@ -301,41 +317,32 @@ async function PromoStrip({ section }: { section: HomepageSection }) {
     : [];
   if (items.length === 0) return null;
 
-  /**
-   * The strip is a list of promises, so every number in it has to be the number
-   * the till keeps.
-   *
-   * This carried "Free shipping over ₹2,499" on the homepage of the live shop
-   * while `site_settings.shipping.free_above_paise` said ₹6,499 — the same
-   * drift Phase 7 found in the announcement bar and on `/page/shipping`, in a
-   * third place, and it survived the sweep that fixed those two because it
-   * lives in `homepage_sections.payload` rather than in prose the gate was
-   * looking at. Tokens resolve here too now, and `audit:literals` reads the
-   * jsonb.
-   */
-  const tokens = await contentTokens();
-
   return (
     <section
       className="bg-fog border-border border-y"
       aria-label="What we promise"
     >
       <ul className="mx-auto grid max-w-7xl gap-x-8 gap-y-6 px-4 py-10 sm:grid-cols-2 sm:px-6 lg:grid-cols-4">
-        {items.map((item) => (
+        {items.map((item, index) => (
           /*
-            Keyed on the **raw** label, before substitution, and deliberately.
-            A key built from the filled text would change the moment the owner
-            nudges the free-delivery threshold, remounting a list item whose
-            identity has not changed. The raw token is stable for exactly as
-            long as the promise is.
+            Keyed by position, which is a change worth explaining. This used to
+            key on the raw label *specifically* so that nudging the
+            free-delivery threshold could not remount a row whose identity had
+            not changed — the filled text moves, the token does not.
+
+            Now that the section arrives already substituted there is no raw
+            label to reach for, and position gives the same guarantee more
+            directly: changing the threshold changes neither an item's index nor
+            the length of the list, so nothing remounts. These rows hold no
+            state, so the usual cost of index keys does not apply.
           */
-          <li key={item.label} className="reveal">
+          <li key={index} className="reveal">
             <p className="font-mono text-xs tracking-[0.06em] uppercase">
-              {fillTokens(item.label, tokens)}
+              {item.label}
             </p>
             {item.detail ? (
               <p className="text-muted-foreground mt-1.5 text-sm">
-                {fillTokens(item.detail, tokens)}
+                {item.detail}
               </p>
             ) : null}
           </li>
@@ -386,6 +393,55 @@ function Banner({ section }: { section: HomepageSection }) {
 }
 
 /* -------------------------------------------------------------------------- */
+/* rich_text                                                                  */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * A block of owner-written prose on the homepage.
+ *
+ * `rich_text` has been in the `section_type` enum since the first migration and
+ * has never had a renderer, so a shopkeeper could create the row and get a blank
+ * gap. This is that renderer, and it is deliberately the *least* capable section
+ * on the page.
+ *
+ * It reuses `ProseBlocks`, the same renderer `pages.body` uses, rather than
+ * introducing a second dialect of owner-typed text — the conventions the returns
+ * policy already relies on (`- ` bullets, `**emphasis**`, blank lines between
+ * blocks) work here for free, and there is still no HTML path from the database
+ * into the page.
+ *
+ * Narrower than the other sections on purpose: prose set to the full 80rem grid
+ * is unreadable, so it sits in the same measure as a policy page.
+ *
+ * An emptied body renders **nothing at all**, heading included. A section
+ * reduced to a floating title over blank space reads as a page that failed to
+ * load rather than as a section the owner cleared.
+ */
+function RichText({ section }: { section: HomepageSection }) {
+  const body = payloadString(section.payload, "body");
+  if (!hasProse(body)) return null;
+
+  return (
+    <section className="mx-auto max-w-2xl px-4 py-14 sm:px-6">
+      {section.title ? (
+        <h2 className="font-display text-2xl font-bold tracking-[-0.02em] text-balance uppercase sm:text-3xl">
+          {section.title}
+        </h2>
+      ) : null}
+      {section.subtitle ? (
+        <p className="text-muted-foreground mt-2 text-base text-pretty">
+          {section.subtitle}
+        </p>
+      ) : null}
+      <ProseBlocks
+        text={body}
+        className={section.title || section.subtitle ? "mt-6 space-y-5" : "space-y-5"}
+      />
+    </section>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
 
 function SectionShell({
   title,
@@ -429,7 +485,28 @@ function SectionShell({
   );
 }
 
-export function HomeSection({ section }: { section: HomepageSection }) {
+/**
+ * One section, with its owner-typed copy already resolved.
+ *
+ * `tokens` is a required prop rather than something this function reads for
+ * itself, and that is the point of the signature. Resolving tokens needs a
+ * database read, and there are two callers — the homepage and the admin preview
+ * — which must agree exactly or the preview lies about what will publish.
+ * Making it a parameter means the type checker asks the question instead of a
+ * reviewer remembering to.
+ *
+ * Substitution happens here, once, before dispatch: see
+ * `fillSectionTokens` for why it is not done inside each renderer.
+ */
+export function HomeSection({
+  section: raw,
+  tokens,
+}: {
+  section: HomepageSection;
+  tokens: ContentTokens;
+}) {
+  const section = fillSectionTokens(raw, tokens);
+
   switch (section.sectionType) {
     case "hero":
       return <Hero section={section} />;
@@ -441,11 +518,13 @@ export function HomeSection({ section }: { section: HomepageSection }) {
       return <PromoStrip section={section} />;
     case "banner":
       return <Banner section={section} />;
+    case "rich_text":
+      return <RichText section={section} />;
     default:
-      // testimonials and rich_text arrive with the homepage builder in Phase 7.
-      // Rendering nothing is the right failure: the rest of the page still
-      // works, and the owner sees the gap where the section they configured
-      // would be rather than a 500.
+      // `testimonials` is the only type left without a renderer. Rendering
+      // nothing is the right failure: the rest of the page still works, and the
+      // owner sees the gap where the section they configured would be rather
+      // than a 500.
       return null;
   }
 }

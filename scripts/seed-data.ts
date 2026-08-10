@@ -1144,4 +1144,32 @@ export const homepageSections = [
     payload: { cta_label: "Shop the rail", cta_href: "/collection/under-2000" },
     sortOrder: 6,
   },
+  /**
+   * A `rich_text` section, seeded so the perceptual gates actually see it.
+   *
+   * `rich_text` had been in the `section_type` enum since the first migration
+   * with no renderer, and got one in Phase 10 Batch C. Leaving it out of the seed
+   * would mean `audit:a11y`, `audit:overflow` and the six-width tap-target pass
+   * never render it — the new section would be checked only by the one gate
+   * written for it, which is how "built but unmeasured" happens.
+   *
+   * It carries a token, a `**bold**` span and a bullet list, because those are
+   * the three things this renderer does and an example that exercises none of
+   * them proves the section draws but not that it works.
+   */
+  {
+    sectionType: "rich_text" as const,
+    title: "How sizing works here",
+    subtitle: null,
+    payload: {
+      body:
+        "Every size on a product page is a size we physically hold. If it is " +
+        "listed, it is on the shelf — we do not show a size run and then " +
+        "cancel your order.\n\n" +
+        "- Sizes are UK, the way Indian shops quote them\n" +
+        "- **Delivery is free over {{free_shipping_threshold}}**\n" +
+        "- Damaged on arrival? Tell us within {{return_window}}",
+    },
+    sortOrder: 7,
+  },
 ];

@@ -4,6 +4,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
 import { Breadcrumbs } from "@/components/storefront/breadcrumbs";
+import { ProseBlocks } from "@/components/storefront/prose";
 import { contentTokens, fillTokens } from "@/lib/content-tokens";
 import { cachedPage } from "@/lib/queries/cached";
 import { listPageSlugs } from "@/lib/queries/content";
@@ -37,34 +38,14 @@ export async function generateMetadata({
  *
  * The body is stored as plain text with blank lines between paragraphs. The
  * owner writes `**emphasis**` and `- ` bullet lines in it — the returns policy
- * has since day one — and until now both rendered literally: a customer-facing
- * policy page showing raw asterisks. `Block` below understands exactly those
- * two forms and nothing more. It builds React elements from split strings, so
- * there is still no HTML path from the database into the page at all.
+ * has since day one — and both used to render literally: a customer-facing
+ * policy page showing raw asterisks.
+ *
+ * `Block` and `emphasise` used to live here. They moved to
+ * `components/storefront/prose.tsx` when the `rich_text` homepage section needed
+ * the same two conventions, because the alternative was a second copy of them
+ * drifting from this one. This page's behaviour is unchanged.
  */
-
-/** `**text**` becomes <strong>. Everything else passes through as text. */
-function emphasise(text: string): React.ReactNode[] {
-  return text
-    .split(/\*\*([^*]+)\*\*/)
-    .map((part, i) => (i % 2 === 1 ? <strong key={i}>{part}</strong> : part));
-}
-
-function Block({ text }: { text: string }) {
-  const lines = text.split("\n").map((line) => line.trim());
-  if (lines.length > 1 && lines.every((line) => line.startsWith("- "))) {
-    return (
-      <ul className="list-disc space-y-2 pl-5 text-base">
-        {lines.map((line, i) => (
-          <li key={i} className="text-pretty">
-            {emphasise(line.slice(2))}
-          </li>
-        ))}
-      </ul>
-    );
-  }
-  return <p className="text-base text-pretty">{emphasise(text)}</p>;
-}
 export default async function CmsPage({
   params,
 }: {
@@ -83,10 +64,7 @@ export default async function CmsPage({
    * right. The owner writes the sentence; the number comes from the setting
    * they change in `/admin/settings`. See `src/lib/content-tokens.ts`.
    */
-  const paragraphs = fillTokens(page.body ?? "", await contentTokens())
-    .split(/\n{2,}/)
-    .map((block) => block.trim())
-    .filter(Boolean);
+  const body = fillTokens(page.body ?? "", await contentTokens());
 
   return (
     <article className="mx-auto max-w-2xl px-4 py-8 sm:px-6 lg:py-12">
@@ -98,11 +76,7 @@ export default async function CmsPage({
         {page.title}
       </h1>
       <div className="tread-rule mt-6 w-24" aria-hidden />
-      <div className="mt-8 space-y-5">
-        {paragraphs.map((paragraph, index) => (
-          <Block key={index} text={paragraph} />
-        ))}
-      </div>
+      <ProseBlocks text={body} className="mt-8 space-y-5" />
       <p className="text-muted-foreground mt-12 font-mono text-xs tracking-[0.06em]">
         Last updated{" "}
         {new Date(page.updatedAt).toLocaleDateString("en-IN", {
