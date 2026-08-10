@@ -52,13 +52,15 @@ export function Totals({
   couponCode?: string | null;
 }) {
   /**
-   * `shippingFee` is the whole delivery charge and `codHandlingFee` says how
-   * much of it is the Pay-on-Delivery extra. Drawing them apart is this
-   * component's job and **this is the only place that subtraction happens** —
-   * every other surface stores and passes the total, so no read site has to
-   * remember to add two columns back together.
+   * Every figure below is a **named field read**, never arithmetic. This file
+   * used to hold the codebase's one blessed subtraction (the forward leg out
+   * of `shippingFee`), and a second, unblessed one — the coupon line derived
+   * as `discountTotal − prepaidDiscount`, which would have silently printed
+   * any third discount part under the coupon's name. Both are fields on
+   * `OrderTotals` now, and `footvault/no-derived-money-line` fails the build
+   * on the next `-` between money fields in a component.
    */
-  const forwardLeg = totals.shippingFee - totals.codHandlingFee;
+  const forwardLeg = totals.forwardShippingFee;
 
   /** Money owed at the door is what makes an order a Pay-on-Delivery order. */
   const paysOnDelivery = totals.balanceDueOnDelivery > 0;
@@ -67,7 +69,7 @@ export function Totals({
   // read site that forgets it fails to compile rather than rendering a silent
   // zero — which is what this row did for the whole of Phase 8.
   const prepaidDiscount = totals.prepaidDiscount;
-  const otherDiscount = Math.max(0, totals.discountTotal - prepaidDiscount);
+  const otherDiscount = totals.couponDiscount;
 
   return (
     <div className={className}>

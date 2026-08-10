@@ -298,8 +298,32 @@ export type OrderTotals = {
    * Now omitting it is a compile error.
    */
   prepaidDiscount: number;
+  /**
+   * The coupon's own figure. `orders.coupon_discount` has stored it since
+   * Phase 9; this field makes every surface *read* it.
+   *
+   * **Required, for the same reason `prepaidDiscount` is.** Until Phase 11 two
+   * surfaces derived the coupon line as `discountTotal − prepaidDiscount` —
+   * correct while those were the only two parts, and silently wrong the day a
+   * third part existed: coins would have been printed as "Coupon SAVE10" on
+   * the receipt and in the confirmation email. A money line that is an
+   * artefact of arithmetic is the exact defect `computeOrderTotals`'s header
+   * describes; a required named field makes the next one a compile error.
+   */
+  couponDiscount: number;
   /** The **total** charged for delivery, including any COD handling. */
   shippingFee: number;
+  /**
+   * The forward leg alone — `shippingFee` without `codHandlingFee`.
+   *
+   * The "Shipping" row on every surface. It used to be the codebase's one
+   * blessed subtraction (`totals.tsx` even said so); it is a named field now
+   * because a no-derived-money-lines rule with one blessed exception is a
+   * rule that acquires a second. Storage is unchanged — `orders.shipping_fee`
+   * is still the total — so read paths populate this beside the columns they
+   * already select.
+   */
+  forwardShippingFee: number;
   /**
    * How much of `shippingFee` is the Pay-on-Delivery extra — the return leg the
    * shop pays when a parcel is refused at the door. Always 0 for prepaid.

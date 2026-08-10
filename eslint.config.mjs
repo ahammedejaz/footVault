@@ -3,6 +3,7 @@ import nextVitals from "eslint-config-next/core-web-vitals";
 import nextTs from "eslint-config-next/typescript";
 
 import adminActionsMustGuard from "./eslint-rules/admin-actions-must-guard.mjs";
+import noDerivedMoneyLine from "./eslint-rules/no-derived-money-line.mjs";
 import noUncheckedSupabaseError from "./eslint-rules/no-unchecked-supabase-error.mjs";
 import noHardcodedFontSize from "./eslint-rules/no-off-scale-type.mjs";
 
@@ -32,6 +33,7 @@ const eslintConfig = defineConfig([
           "no-unchecked-supabase-error": noUncheckedSupabaseError,
           "no-off-scale-type": noHardcodedFontSize,
           "admin-actions-must-guard": adminActionsMustGuard,
+          "no-derived-money-line": noDerivedMoneyLine,
         },
       },
     },
@@ -39,6 +41,7 @@ const eslintConfig = defineConfig([
       "footvault/no-unchecked-supabase-error": "error",
       "footvault/no-off-scale-type": "error",
       "footvault/admin-actions-must-guard": "error",
+      "footvault/no-derived-money-line": "error",
     },
   },
 
@@ -49,6 +52,9 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Agent-created git worktrees hold stale copies of the tree; linting them
+    // reports defects that were already fixed in the real checkout.
+    ".claude/**",
   ]),
 ]);
 

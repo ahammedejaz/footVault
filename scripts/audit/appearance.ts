@@ -517,10 +517,12 @@ async function main() {
       }
     }
     if (fixtureClipInstalled) {
-      await admin.storage
+      const { error: clipError } = await admin.storage
         .from("site-video")
-        .remove([FIXTURE_CLIP_PATH])
-        .catch(() => {});
+        .remove([FIXTURE_CLIP_PATH]);
+      if (clipError) {
+        console.error(`\n  !! fixture clip not removed: ${clipError.message}`);
+      }
     }
     await admin.auth.admin.deleteUser(account.userId).catch(() => {});
     await browser.close();

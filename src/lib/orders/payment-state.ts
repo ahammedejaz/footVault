@@ -399,6 +399,7 @@ async function notifyOrderConfirmed(
       subtotal: number;
       discount_total: number;
       prepaid_discount: number;
+      coupon_discount: number;
       shipping_fee: number;
       cod_handling_fee: number;
       tax_total: number;
@@ -412,8 +413,8 @@ async function notifyOrderConfirmed(
         .from("orders")
         .select(
           "order_number, placed_at, payment_method, contact_email, contact_phone, " +
-            "coupon_code, subtotal, discount_total, prepaid_discount, shipping_fee, " +
-            "cod_handling_fee, tax_total, grand_total, advance_amount, " +
+            "coupon_code, subtotal, discount_total, prepaid_discount, coupon_discount, " +
+            "shipping_fee, cod_handling_fee, tax_total, grand_total, advance_amount, " +
             "balance_due_on_delivery, shipping_address",
         )
         .eq("id", orderId)
@@ -463,7 +464,9 @@ async function notifyOrderConfirmed(
               subtotal: order.subtotal,
               discountTotal: order.discount_total,
               prepaidDiscount: order.prepaid_discount,
+              couponDiscount: order.coupon_discount,
               shippingFee: order.shipping_fee,
+              forwardShippingFee: order.shipping_fee - order.cod_handling_fee,
               codHandlingFee: order.cod_handling_fee,
               taxTotal: order.tax_total,
               grandTotal: order.grand_total,
