@@ -42,6 +42,21 @@ on conflict (id) do update
       allowed_mime_types = excluded.allowed_mime_types;
 
 -- --- object policies ---------------------------------------------------------
+--
+-- Dropped before created, so the whole file is re-runnable and not just the
+-- bucket upsert above. This is the lesson Batch 2 wrote down after
+-- `public.shipment_errors` was created on production out of band and the next
+-- `supabase db push` would have stopped at `relation already exists`: a
+-- migration that can only be applied to a database in one particular state is
+-- a migration that eventually meets a database in the other one.
+--
+-- `if exists` rather than a bare drop, because the first run anywhere has
+-- nothing to drop.
+
+drop policy if exists "site video is publicly readable" on storage.objects;
+drop policy if exists "admins upload site video" on storage.objects;
+drop policy if exists "admins replace site video" on storage.objects;
+drop policy if exists "admins delete site video" on storage.objects;
 
 create policy "site video is publicly readable"
   on storage.objects for select to anon, authenticated
