@@ -40,12 +40,39 @@ const JUST_PLACED = "placed";
 /**
  * The confirmation.
  *
- * **A stranger gets a 404, not a 403.** `getOrderForViewer` returns null unless
- * the caller owns the order, and null becomes `notFound()`. "You are not
- * authorised to view this order" would confirm the order exists, which is the
- * whole prize for someone walking the order-number space — and order numbers
- * are sequential. The page an attacker sees is identical to the page they get
- * for a number nobody has ever used.
+ * **A stranger gets the not-found page, not a 403.** `getOrderForViewer`
+ * returns null unless the caller owns the order, and null becomes
+ * `notFound()`. "You are not authorised to view this order" would confirm the
+ * order exists, which is the whole prize for someone walking the order-number
+ * space — and order numbers are sequential. The page an attacker sees is
+ * identical to the page they get for a number nobody has ever used.
+ *
+ * ## The 200 on that page is known, and is not a bug to fix
+ *
+ * `loading.tsx` in this directory streams a skeleton, so the response commits
+ * `200 OK` before `getOrderForViewer` has answered; `notFound()` then swaps the
+ * body in-stream. A stranger therefore gets **200 carrying the not-found
+ * page**, while `/this-route-does-not-exist` still answers a real 404.
+ * Measured 2026-08-10. `/account/orders/[id]` has the same skeleton and the
+ * same consequence.
+ *
+ * The property that protects the order-number space is the **body**, not the
+ * status line, and the body holds. Fetched side by side: an order that exists
+ * and belongs to somebody else, and a number never issued. The two responses
+ * differ only in Next's own per-request token, the URL echoed back inside the
+ * router payload, and per-render RSC chunk ids — none of which vary with
+ * whether the order exists. Response sizes overlap completely across repeated
+ * requests to the *same* URL, so length is not an oracle either.
+ *
+ * So do not "fix" the status by deleting `loading.tsx` or by hoisting the query
+ * above the stream. That trades the skeleton every real customer sees — on a
+ * page whose query crosses two continents — for a tidier code on a `noindex`
+ * page nothing crawls, and it buys no secrecy the body is not already keeping.
+ *
+ * One consequence to settle elsewhere: `scripts/audit/routes.ts` still declares
+ * 404 for `/order/FV-2026-99999`, so `audit:overflow` reports the mismatch.
+ * That is the gate's expectation to bring up to date, not this route's
+ * behaviour to change back.
  *
  * The same URL is the receipt, the tracking page and the thing linked from a
  * failed payment, so nothing here assumes it is being read seconds after
