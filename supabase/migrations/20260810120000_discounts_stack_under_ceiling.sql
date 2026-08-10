@@ -163,10 +163,17 @@ begin
     v_coupon_code := v_coupon.code;
   end if;
 
-  -- The prepaid part survives a coupon now. Clamped to the subtotal exactly
-  -- as before; its source of truth is still the caller, because "how much for
-  -- paying online" is a settings read the caller already did.
-  v_prepaid := least(greatest(coalesce(p_prepaid_discount, 0), 0), v_subtotal);
+  -- The prepaid part survives a coupon now, and the old defensive bound
+  -- survives the stacking: a caller may never write a prepaid part larger
+  -- than the total discount it claims to be part of (p_discount_total), nor
+  -- larger than the goods. Through the real checkout p_discount_total is
+  -- coupon + prepaid, so the bound is exact with no coupon and conservative
+  -- with one; a hostile caller passing a bare prepaid with no total gets
+  -- zero, same as before this migration.
+  v_prepaid := least(
+    greatest(coalesce(p_prepaid_discount, 0), 0),
+    greatest(coalesce(p_discount_total, 0), 0),
+    v_subtotal);
 
   if v_coupon_discount > 0 and v_prepaid > 0 then
     if p_max_total_discount_bps is null then

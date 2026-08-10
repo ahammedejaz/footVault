@@ -365,6 +365,10 @@ async function main() {
     const stacked = await place({
       ...stackCart,
       coupon: stackCoupon.code,
+      // discountTotal mirrors the real caller: coupon share + prepaid. The
+      // function treats it as the prepaid part's upper bound, so it only has
+      // to be >= the prepaid part here.
+      discountTotal: 500_00,
       prepaidDiscount: 200_00,
       maxTotalDiscountBps: 5000,
     });
@@ -407,6 +411,7 @@ async function main() {
     const tight = await place({
       ...tightCart,
       coupon: stackCoupon.code,
+      discountTotal: 500_000_00,
       prepaidDiscount: 500_000_00,
       maxTotalDiscountBps: 1200,
     });
@@ -438,6 +443,7 @@ async function main() {
     const unset = await place({
       ...unsetCart,
       coupon: stackCoupon.code,
+      discountTotal: 500_00,
       prepaidDiscount: 200_00,
     });
     check(
