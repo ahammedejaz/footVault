@@ -423,6 +423,8 @@ export async function transitionOrder(args: {
           coinVerdict !== "credited" &&
           coinVerdict !== "reversed" &&
           coinVerdict !== "rate_unset" &&
+          coinVerdict !== "programme_off" &&
+          coinVerdict !== "disabled" &&
           coinVerdict !== "no_user" &&
           coinVerdict !== "nothing_to_credit" &&
           coinVerdict !== "nothing_to_reverse" &&

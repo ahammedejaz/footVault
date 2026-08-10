@@ -14,6 +14,7 @@ import { ShiprocketWalletStatus } from "@/components/admin/shipping/wallet-statu
 import { Table, TableWrap, Td, Th } from "@/components/admin/table";
 import { Button } from "@/components/ui/button";
 import { formatPaise } from "@/lib/format";
+import { coinLiability } from "@/lib/queries/admin/loyalty";
 import {
   relativeAge,
   type ModeCheck,
@@ -51,9 +52,10 @@ export default async function AdminDashboard() {
    * rather than as a throw, so `Promise.all` cannot take the page down with it.
    * See `src/lib/shipping/wallet.ts`.
    */
-  const [snapshot, wallet] = await Promise.all([
+  const [snapshot, wallet, liability] = await Promise.all([
     getDashboard(),
     shiprocketWalletStatus(),
+    coinLiability(),
   ]);
 
   return (
@@ -117,6 +119,25 @@ export default async function AdminDashboard() {
             href="/admin/inventory?stock=out"
             hint="Sizes at zero"
             tone={snapshot.outOfStock > 0 ? "warn" : "neutral"}
+          />
+          {/*
+            The coin debt, where the owner cannot not see it: every coin out
+            there is a discount already promised on a sale not yet made. In
+            rupees once a coin is priced; in coins until then.
+          */}
+          <StatTile
+            label="Coins owed"
+            value={
+              liability.rupees !== null
+                ? formatPaise(liability.rupees * 100)
+                : `${liability.coins}`
+            }
+            href="/admin/loyalty"
+            hint={
+              liability.rupees !== null
+                ? `${liability.coins} coins at today's value`
+                : "coins — no value set yet"
+            }
           />
         </div>
 

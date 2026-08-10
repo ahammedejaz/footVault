@@ -35,6 +35,7 @@ export type CoinSpendPlan =
       available: false;
       why:
         | "signed_out"
+        | "off"
         | "unset"
         | "disabled"
         | "no_coins"
@@ -58,6 +59,7 @@ export async function planCoinSpend(input: {
   const [setting, account, ledger] = await Promise.all([
     maybeRow<{
       value: {
+        enabled?: boolean;
         coin_value_paise?: number;
         coin_max_percent_of_order?: number;
         coin_max_coins_per_order?: number;
@@ -84,6 +86,9 @@ export async function planCoinSpend(input: {
     ),
   ]);
 
+  if (setting?.value?.enabled !== true) {
+    return { available: false, why: "off" };
+  }
   const valuePaise = setting?.value?.coin_value_paise;
   const pctCap = setting?.value?.coin_max_percent_of_order;
   const coinCap = setting?.value?.coin_max_coins_per_order;

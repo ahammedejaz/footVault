@@ -86,6 +86,7 @@ const GATES = [
   "audit:admin",
   "audit:admin-pages",
   "audit:settings-controls",
+  "audit:loyalty",
   "audit:appearance",
   "audit:image-upload",
   "audit:security-advance",
