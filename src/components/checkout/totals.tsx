@@ -18,9 +18,12 @@ import { cn } from "@/lib/utils";
  * a zero is a number the customer has to interpret, and the whole point of the
  * free-delivery threshold is that crossing it is legible.
  *
- * The discount row is always drawn, with an em dash. Coupon validation is Phase
- * 8, and a total that grows a new row when the feature lands is a layout that
- * moves under someone mid-checkout.
+ * The discount row exists only when there is a discount. It used to be always
+ * drawn with an em dash, on the argument that a row appearing mid-checkout is
+ * a layout shift — but the owner's reading of the dash is the correct one: an
+ * empty row beside real numbers reads as a number that failed to arrive, not
+ * as the absence of one (2026-08-10). A coupon applying is a real content
+ * change, and the row appearing with it is the honest rendering.
  */
 export function Totals({
   totals,
@@ -125,14 +128,11 @@ export function Totals({
           </Row>
         ) : null}
 
-        <Row
-          label={
-            otherDiscount > 0 && couponCode ? `Coupon ${couponCode}` : "Discount"
-          }
-          muted={otherDiscount === 0}
-        >
-          {otherDiscount > 0 ? `−${formatPaise(otherDiscount)}` : "—"}
-        </Row>
+        {otherDiscount > 0 ? (
+          <Row label={couponCode ? `Coupon ${couponCode}` : "Discount"}>
+            −{formatPaise(otherDiscount)}
+          </Row>
+        ) : null}
       </dl>
 
       <div className="border-border mt-4 flex items-baseline justify-between border-t pt-4">
@@ -177,13 +177,11 @@ export function Totals({
 function Row({
   label,
   hint,
-  muted,
   strong,
   children,
 }: {
   label: string;
   hint?: string;
-  muted?: boolean;
   strong?: boolean;
   children: React.ReactNode;
 }) {
@@ -193,14 +191,7 @@ function Row({
         {label}
         {hint ? <span className="sr-only">{hint}</span> : null}
       </dt>
-      <dd
-        className={cn(
-          "font-mono font-medium",
-          muted && "text-muted-foreground font-normal",
-        )}
-      >
-        {children}
-      </dd>
+      <dd className="font-mono font-medium">{children}</dd>
     </div>
   );
 }
