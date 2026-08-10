@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { useFormStatus } from "react-dom";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Dialog } from "radix-ui";
@@ -162,15 +163,7 @@ export function MobileNavPanel({
                     {user.name ?? user.email}
                   </span>
                 </Link>
-                <Button
-                  type="submit"
-                  variant="outline"
-                  size="sm"
-                  className="shrink-0"
-                >
-                  <LogOut aria-hidden />
-                  Sign out
-                </Button>
+                <SignOutButton />
               </form>
             ) : (
               <GoogleSignInForm />
@@ -179,6 +172,27 @@ export function MobileNavPanel({
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>
+  );
+}
+
+/**
+ * Signing out takes a server round trip and then a redirect, and the drawer
+ * used to give that second nothing — a pressed button that looks exactly like
+ * an unpressed one is how the same press gets made twice.
+ */
+function SignOutButton() {
+  const { pending } = useFormStatus();
+  return (
+    <Button
+      type="submit"
+      variant="outline"
+      size="sm"
+      className="shrink-0"
+      disabled={pending}
+    >
+      <LogOut aria-hidden />
+      {pending ? "Signing out…" : "Sign out"}
+    </Button>
   );
 }
 
