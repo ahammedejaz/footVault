@@ -1,6 +1,10 @@
 "use client";
 
 import * as React from "react";
+import {
+  deliveryEstimate,
+  describeEstimate,
+} from "@/lib/shipping/estimate";
 import { Loader2, Truck } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -97,14 +101,30 @@ function answer(result: DeliveryCheckResult | null): string {
     return "No courier will carry to that pin code from our store. Try another address, or contact us and we will see what we can do.";
   }
 
-  const when =
-    result.estimatedDays === null
-      ? "Usually 3–5 working days."
-      : `Usually about ${result.estimatedDays} ${result.estimatedDays === 1 ? "day" : "days"} after dispatch.`;
+  /**
+   * **No number until Shiprocket has given one.**
+   *
+   * This used to say "Usually 3–5 working days" whenever the lookup came back
+   * without a figure — a guess, printed in the same voice as a real answer, on
+   * the page where a customer decides whether the shoe will arrive in time. The
+   * real spread on this account is 3 days locally and 7 to Delhi, so the guess
+   * was wrong at both ends of the country.
+   *
+   * The pin code is already known here — that is what this control is for — so
+   * a known estimate is a date rather than a count of days, computed through
+   * the same helper the checkout and the confirmation use, cutoff and all.
+   */
+  const when = describeEstimate(
+    deliveryEstimate({ days: result.estimatedDays, placedAt: new Date() }),
+  );
 
   const cod = result.codAvailable
     ? "Pay on Delivery is available there."
     : "Pay on Delivery is not available there — you can pay online instead.";
 
-  return `${when} ${cod}`;
+  // `describeEstimate` ends its uncertain answers with a full stop and its
+  // confident one without, because "Arriving Sat, 15 Aug – Sun, 16 Aug" is a
+  // label rather than a sentence. Joining blindly produced "dispatched.." here.
+  const sentence = /[.!?]$/.test(when) ? when : `${when}.`;
+  return `${sentence} ${cod}`;
 }

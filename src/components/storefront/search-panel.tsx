@@ -130,7 +130,7 @@ export function SearchPanel({
               placeholder="Try a brand, a model, or “running”"
               // 16px minimum: anything smaller and iOS Safari zooms the page
               // the moment this is focused.
-              className="h-12 min-w-0 flex-1 bg-transparent text-base outline-none"
+              className="h-12 min-w-0 flex-1 bg-transparent text-base"
             />
             {pending ? (
               <Loader2

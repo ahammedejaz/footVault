@@ -84,6 +84,8 @@ export default async function AdminOrderDetailPage({
         shipmentId: shipmentRow.shipment_id,
         awbCode: shipmentRow.awb_code,
         courierName: shipmentRow.courier_name,
+        courierSelectionMode: shipmentRow.courier_selection_mode,
+        courierSelectionReason: shipmentRow.courier_selection_reason,
         labelUrl: shipmentRow.label_url,
         manifestUrl: shipmentRow.manifest_url,
         invoiceUrl: shipmentRow.invoice_url,

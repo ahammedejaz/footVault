@@ -346,6 +346,15 @@ export type OrderView = {
   paymentStatus: PaymentStatus;
   paymentMethod: PaymentMethod;
   placedAt: string;
+  /**
+   * The courier's own estimate for this lane at the moment of ordering.
+   *
+   * Null for orders placed before Phase 10, and for any order whose lookup did
+   * not answer. Both render honest vagueness — `deliveryEstimate()` turns null
+   * into a sentence rather than into a guessed date, which is the entire point
+   * of storing the figure rather than re-deriving it later.
+   */
+  quotedEstimatedDays: number | null;
   totals: OrderTotals;
   /** The code that discounted this order, for the named row. Null when none did. */
   couponCode: string | null;

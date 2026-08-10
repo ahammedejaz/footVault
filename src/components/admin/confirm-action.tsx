@@ -127,7 +127,7 @@ export function ConfirmAction({
               value={typed}
               onChange={(event) => setTyped(event.target.value)}
               autoComplete="off"
-              className="border-input focus-visible:ring-ring mt-1.5 h-11 w-full rounded-sm border px-3 text-sm focus-visible:ring-2 focus-visible:outline-none"
+              className="border-input mt-1.5 h-11 w-full rounded-sm border px-3 text-sm"
             />
           </div>
         ) : null}

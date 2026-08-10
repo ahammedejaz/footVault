@@ -53,6 +53,9 @@ export type ShipmentView = {
   shiprocketOrderId: string | null;
   shipmentId: string | null;
   awbCode: string | null;
+  /** Which rule picked the courier, and the sentence the selector produced. */
+  courierSelectionMode: string | null;
+  courierSelectionReason: string | null;
   courierName: string | null;
   labelUrl: string | null;
   manifestUrl: string | null;
@@ -160,11 +163,26 @@ export function ShippingPanel({
         onPress={() => run("create", () => createShipmentForOrder({ orderId }))}
       />
 
+      {/*
+        Why this courier, not just which.
+
+        Shiprocket's recommendation scored worst of the available set on both
+        lanes measured, so the shop now chooses — and a choice whose reasoning
+        is invisible is indistinguishable from the old behaviour. The sentence
+        carries the tolerance and the score that were in force, neither of which
+        can be recovered from the mode alone once the setting changes.
+      */}
       <StepRow
         title="2 · Assign a courier (AWB)"
         state={
           hasAwb
-            ? `${shipment?.awbCode}${shipment?.courierName ? ` · ${shipment.courierName}` : ""}`
+            ? [
+                shipment?.awbCode,
+                shipment?.courierName,
+                shipment?.courierSelectionReason,
+              ]
+                .filter(Boolean)
+                .join(" · ")
             : null
         }
         blocked={created ? null : "Create the shipment first."}

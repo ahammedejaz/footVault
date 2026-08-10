@@ -1,5 +1,10 @@
 import "server-only";
 
+import {
+  COURIER_SELECTION_MODES,
+  type CourierSelectionMode,
+} from "./courier-choice";
+
 import type { AdvanceRule } from "@/lib/payments/advance";
 import { type FlatDepositRule } from "@/lib/payments/advance";
 import { maybeRow } from "@/lib/queries/run";
@@ -57,6 +62,22 @@ export type ShippingSettings = {
   prepaidEstimateFeePaise: number;
   /** Master switch for Pay on Delivery, independent of PIN-code serviceability. */
   codEnabled: boolean;
+  /**
+   * Who chooses the courier at AWB time.
+   *
+   * Defaults to `shiprocket`, which is what the shop did before this existed —
+   * a default that changes nothing is safe; a default that starts spending
+   * differently is not.
+   */
+  courierSelectionMode: CourierSelectionMode;
+  /**
+   * How far above the cheapest rate `best_rated` may go, as a percentage.
+   *
+   * **Null on purpose, and null is not zero.** It is the owner's judgement about
+   * how much more the shop will pay for a courier that actually delivers, and
+   * `chooseCourier` refuses rather than guessing it — see `courier-choice.ts`.
+   */
+  courierPriceTolerancePercent: number | null;
 
   /* --- Phase 7: the round-trip advance ---------------------------------- */
 
@@ -234,6 +255,10 @@ export async function shippingSettings(): Promise<ShippingSettings> {
       legacy(partial, ["fallback_fee_paise", "razorpay"]),
     ),
     codEnabled: partial.cod_enabled !== false,
+    courierSelectionMode: readCourierMode(partial.courier_selection_mode),
+    courierPriceTolerancePercent: readTolerance(
+      partial.courier_price_tolerance_percent,
+    ),
     /**
      * **Optional, and zero means "no minimum".**
      *
@@ -347,6 +372,39 @@ function readPrepaidDiscount(
  * The consumer treats null as "stacking withheld", the same fail-closed
  * direction as `flatCodDeposit`.
  */
+/**
+ * The chosen mode, or the previous behaviour.
+ *
+ * An unrecognised value falls back to `shiprocket` rather than throwing,
+ * because this is a fulfilment preference rather than a price: a settings row
+ * with a typo in it should not stop the owner assigning an AWB. The wrong
+ * courier is recoverable; a shop that cannot ship is not.
+ */
+function readCourierMode(value: unknown): CourierSelectionMode {
+  return (COURIER_SELECTION_MODES as readonly string[]).includes(
+    value as string,
+  )
+    ? (value as CourierSelectionMode)
+    : "shiprocket";
+}
+
+/**
+ * The tolerance, or null.
+ *
+ * Zero is rejected along with the malformed, and that is deliberate: a zero
+ * tolerance means "never pay a rupee more", which is `cheapest` said a longer
+ * way. Treating it as a real setting would give the owner two controls that do
+ * the same thing and disagree about which is in force.
+ */
+function readTolerance(value: unknown): number | null {
+  return typeof value === "number" &&
+    Number.isFinite(value) &&
+    value > 0 &&
+    value <= 100
+    ? value
+    : null;
+}
+
 function readMaxTotalDiscountPercent(value: unknown): number | null {
   return typeof value === "number" &&
     Number.isFinite(value) &&

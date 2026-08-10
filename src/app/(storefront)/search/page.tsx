@@ -73,7 +73,7 @@ async function SearchLanding() {
           type="search"
           autoFocus
           placeholder="Try a brand, a model, or “running”"
-          className="border-input bg-background h-12 min-w-0 flex-1 rounded-lg border px-4 text-base outline-none"
+          className="border-input bg-background h-12 min-w-0 flex-1 rounded-lg border px-4 text-base"
         />
         <button
           type="submit"

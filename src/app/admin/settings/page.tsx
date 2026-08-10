@@ -100,6 +100,15 @@ export default async function AdminSettingsPage() {
               // A percentage as typed, and zero when unset — which the form
               // renders as an empty box, and the save action writes back as
               // null. Nothing here may invent a ceiling.
+              courierSelectionMode:
+                shipping.courier_selection_mode === "cheapest" ||
+                shipping.courier_selection_mode === "best_rated"
+                  ? shipping.courier_selection_mode
+                  : "shiprocket",
+              courierPriceTolerancePercent:
+                typeof shipping.courier_price_tolerance_percent === "number"
+                  ? shipping.courier_price_tolerance_percent
+                  : 0,
               maxTotalDiscountPercent:
                 typeof shipping.max_total_discount_percent === "number"
                   ? shipping.max_total_discount_percent

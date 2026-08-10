@@ -129,7 +129,7 @@ export function StockCell({
             // this is the most-tapped control in the panel and it is on a tablet.
             "relative inline-flex min-h-9 min-w-14 items-center justify-end rounded-sm px-2 font-mono text-sm tabular-nums transition-colors",
             "before:absolute before:top-1/2 before:left-1/2 before:h-11 before:w-full before:min-w-11 before:-translate-x-1/2 before:-translate-y-1/2 before:content-['']",
-            "hover:bg-muted focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none",
+            "hover:bg-muted",
             current === 0 && "text-destructive font-semibold",
             current > 0 &&
               current <= lowThreshold &&
