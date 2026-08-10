@@ -4,8 +4,11 @@
 comes out looking like the rest of the catalogue. Every new control is
 operate-and-asserted through a real browser, and `audit:reachability` is green.
 
-Branch `batch-a/image-pipeline`. No production migration, no production data
-touched.
+Branch `batch-a/image-pipeline`. One production migration —
+`20260810140000_product_images_original_path.sql`, additive and nullable —
+applied after a content-verified snapshot, on the owner's approval. No
+production data was written by it: the column starts null on all 122 existing
+rows, which is the correct value for a seed placeholder.
 
 ---
 
