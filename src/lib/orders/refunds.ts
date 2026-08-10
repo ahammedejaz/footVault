@@ -615,6 +615,27 @@ export async function recordAndApplyRefund(
     );
   }
 
+  /*
+    The other half of the exploit the coins brief names: money back, coins
+    kept. A processed refund on an order that earned coins takes them back —
+    the SAME reverse_order_coins the delivered→returned transition calls
+    (one implementation of "undo this money"), idempotent on
+    unique(order_id, 'reversed') so this hook and the transition hook firing
+    on the same order net one reversal. Orders that never earned answer
+    'nothing_to_reverse', which is the common case and not worth a log line.
+  */
+  if (event.eventType === "refund.processed") {
+    const { error: coinError } = await admin.rpc("reverse_order_coins", {
+      p_order_id: orderId,
+      p_reason: "Refund processed",
+    });
+    if (coinError) {
+      console.error(
+        `[coins] refund reversal failed for order ${orderId}: ${coinError.message}`,
+      );
+    }
+  }
+
   return { status: "applied" };
 }
 

@@ -142,6 +142,13 @@ export type DeliveredInput = {
   orderNumber: string;
   to: string;
   customerName: string;
+  /**
+   * Vault Coins this parcel earned, read from the ledger AFTER the credit
+   * hook ran. Null means "say nothing" — a guest, an unset earn rate, or a
+   * credit that has not landed — never "say zero": an email promising 0
+   * coins reads as a bug to the customer and a support thread to the shop.
+   */
+  coinsEarned?: number | null;
 };
 
 /**
@@ -166,11 +173,27 @@ export function buildDeliveredEmail(input: DeliveredInput): EmailMessage {
     "When you have worn them, tell people how they are — you can review " +
     `this pair from your order page. Only customers whose order arrived can.`;
 
+  /**
+   * The coins, right after the delivery line: it is the one new fact this
+   * email carries, and it belongs with the good news rather than after the
+   * damage policy. One deliberate copy pass ordered the paragraphs —
+   * delivered, coins earned, the 24-hour window, the review invitation,
+   * the reply line — so Batch A's and Batch B's additions read as one
+   * email, not two appendices.
+   */
+  const coinLine =
+    typeof input.coinsEarned === "number" && input.coinsEarned > 0
+      ? `This parcel earned you ${input.coinsEarned} Vault ${
+          input.coinsEarned === 1 ? "Coin" : "Coins"
+        } — they are in your account, to spend on your next order.`
+      : null;
+
   const text = [
     `${input.customerName}, your order has been delivered.`,
     "",
     `Order ${input.orderNumber}`,
     url,
+    ...(coinLine ? ["", coinLine] : []),
     "",
     replacementPolicy(),
     "",
@@ -186,6 +209,7 @@ export function buildDeliveredEmail(input: DeliveredInput): EmailMessage {
     `<p>${escapeHtml(input.customerName)}, your order has been delivered.</p>`,
     `<p><strong>Order ${escapeHtml(input.orderNumber)}</strong><br>`,
     `<a href="${url}">${url}</a></p>`,
+    coinLine ? `<p>${escapeHtml(coinLine)}</p>` : "",
     `<p>${escapeHtml(replacementPolicy())}</p>`,
     `<p>${escapeHtml(reviewInvitation)}</p>`,
     `<p>If something is not right, reply to this email and we will sort it out.</p>`,

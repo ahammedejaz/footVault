@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Heart, MapPin, Package } from "lucide-react";
+import { CircleDollarSign, Heart, MapPin, Package } from "lucide-react";
 
 import { GoogleSignInForm } from "@/components/storefront/sign-in";
 import { getCurrentUser } from "@/lib/auth";
@@ -34,6 +34,12 @@ const SECTIONS = [
     icon: MapPin,
     title: "Addresses",
     body: "The list checkout picks from. The default is preselected.",
+  },
+  {
+    href: "/account/coins",
+    icon: CircleDollarSign,
+    title: "Vault Coins",
+    body: "What you have earned on delivered orders, and what it is worth.",
   },
   {
     href: "/wishlist",
