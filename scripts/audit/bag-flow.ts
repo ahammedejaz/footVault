@@ -208,10 +208,16 @@ async function main() {
     "free shipping progress is shown",
     (await back.getByText(/free shipping/i).count()) > 0,
   );
+  /*
+    Written when the field was a disabled placeholder; coupons went live in
+    Phase 9 and audit:coupons proves them end to end, so the assertion here
+    inverted — a *disabled* coupon field is now the defect. Caught in Phase
+    11, the first suite run since the placeholder era.
+  */
   check(
-    "the coupon field is present and plainly not live",
+    "the coupon field is present and live",
     (await back.locator("#coupon").count()) > 0 &&
-      (await back.locator("#coupon").isDisabled()),
+      !(await back.locator("#coupon").isDisabled()),
   );
   check(
     "checkout is reachable",
@@ -238,6 +244,13 @@ async function main() {
 
   /* 6 ── the wishlist asks for an account ─────────────────────────────────── */
   await back.goto(`${BASE}/wishlist`, { waitUntil: "load" });
+  // The page streams behind loading.tsx; an immediate count() reads the
+  // fallback. Same race audit:signedin had, fixed the same way.
+  await back
+    .getByRole("button", { name: /continue with google/i })
+    .first()
+    .waitFor({ state: "visible", timeout: 15_000 })
+    .catch(() => {});
   check(
     "signed out, saved items offers Google sign-in",
     (await back

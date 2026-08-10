@@ -136,7 +136,17 @@ console.log("\n every harness that can write goes through ./clients:");
   for (const file of readdirSync("scripts/audit").sort()) {
     if (!file.endsWith(".ts") || exempt.has(file)) continue;
     const source = readFileSync(`scripts/audit/${file}`, "utf8");
-    const writes = WRITES.test(source);
+    /*
+      A write only counts when the file can reach a database at all. The
+      WRITES pattern alone false-positived on `createHmac(...).update(...)`
+      in inbound-email.ts — a pure gate with no Supabase anywhere — and the
+      suite sat red on it from the day that gate learned to sign a webhook.
+      Requiring a credential *and* a write keeps the shipping.ts lesson (it
+      reaches production through `createAdminClient` and names no raw env
+      var, which is why CREDENTIAL lists the factories) without flagging
+      method names that merely collide with PostgREST's.
+    */
+    const writes = WRITES.test(source) && CREDENTIAL.test(source);
     if (!writes) {
       if (CREDENTIAL.test(source)) readOnly.push(file);
       continue;

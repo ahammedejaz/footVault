@@ -46,14 +46,19 @@ export const AUDIT_ROUTES: readonly AuditRoute[] = [
   { path: "/account/orders", name: "account-orders-signed-out" },
   { path: "/account/addresses", name: "account-addresses-signed-out" },
 
-  // Both 404 on purpose. An order number that does not exist and an order id
-  // that belongs to somebody else have to render the *same* page, or the 404
-  // becomes an oracle for walking the sequential order-number space.
-  { path: "/order/FV-2026-99999", name: "order-not-found", status: 404 },
+  // Both answer 200 CARRYING the not-found page, and that is deliberate:
+  // loading.tsx streams a skeleton, so the response commits 200 before
+  // getOrderForViewer resolves and notFound() swaps the body in-stream. The
+  // anti-enumeration property lives in the BODY being identical for "never
+  // existed" and "belongs to somebody else" — measured 2026-08-10, recorded
+  // at length in /order/[orderNumber]/page.tsx, which names this file's old
+  // 404 expectation as the thing to bring up to date. Do not "fix" the
+  // status by deleting loading.tsx; that trades every real customer's
+  // skeleton for a tidier code on a noindex page nothing crawls.
+  { path: "/order/FV-2026-99999", name: "order-not-found" },
   {
     path: "/account/orders/33333333-3333-4333-8333-333333333333",
     name: "account-order-not-found",
-    status: 404,
   },
 
   { path: "/this-route-does-not-exist", name: "not-found", status: 404 },

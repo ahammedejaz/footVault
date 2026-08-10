@@ -132,6 +132,27 @@ async function main() {
   const IGNORED = [
     /favicon|404 \(Not Found\)|ERR_ABORTED/,
     /^Unrecognized feature: 'web-share'\.$/,
+    /*
+      Next's dev-only advisory that a lazily-loaded image "was detected as
+      the Largest Contentful Paint". Investigated (Phase 11) before being
+      listed, per this list's own rule, and every instance was a misfire:
+
+        - product pages: the gallery hero IS eager/priority/fetchpriority=high
+          (product-gallery.tsx:124). The warned images are the *other
+          colourway's* heroes, painted after this harness's own swatch click —
+          when LCP is already final, so lazy is correct and the advisory is
+          confused by the interaction.
+        - sparse pages (/order/<unknown>, an empty account order): the only
+          large element is the FOOTER logo, correctly lazy below the fold.
+          Making it eager would preload the footer on every page of the shop
+          to appease a warning about pages with no content.
+
+      Dev-only (production builds do not emit it), advisory (not an error),
+      and the genuinely-lazy-LCP failure it aims at is measured for real by
+      audit:lighthouse against a production build. If a *hero* image ever
+      goes lazy, Lighthouse's LCP number is the gate that reddens.
+    */
+    /was detected as the Largest Contentful Paint \(LCP\)/,
   ];
   const other = messages.filter(
     (message) =>
