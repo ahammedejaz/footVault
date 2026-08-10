@@ -405,13 +405,20 @@ export async function placeOrder(
         p_contact_email: data.contactEmail ?? user?.email ?? undefined,
         p_contact_phone: data.contactPhone ?? address.phone,
         p_customer_note: data.customerNote ?? undefined,
-        // Only when the coupon won the no-stacking decision. The function
+        // Only when the coupon carries a share of the discount. The function
         // re-validates and recomputes under the coupon's row lock; passing a
-        // code that lost to the prepaid discount would redeem it for nothing.
+        // code whose discount is zero would redeem it for nothing. Since
+        // stacking, a code rides along with the prepaid discount rather than
+        // competing with it — unless the ceiling is unset, in which case
+        // `computeOrderTotals` has already zeroed the loser.
         p_coupon_code:
-          totals.discountApplied === "coupon"
-            ? (cart.couponCode ?? undefined)
-            : undefined,
+          totals.couponDiscount > 0 ? (cart.couponCode ?? undefined) : undefined,
+        // The stacking ceiling, re-applied by the function on the subtotal it
+        // computes under the row lock. Null when the owner has not set one —
+        // the function then refuses a stacked pair outright, which cannot
+        // happen through this path because the fallback above already picked
+        // a single winner.
+        p_max_total_discount_bps: totals.maxTotalDiscountBps ?? undefined,
       },
     );
 

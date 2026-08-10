@@ -48,10 +48,17 @@ export type CheckoutTotals = OrderTotals & {
   rateMode: "live" | "flat";
   /** What was passed back for paying online. A named line; zero on Pay on Delivery. */
   prepaidDiscount: number;
-  /** The coupon's part, after the no-stacking rule. Zero when it lost or there is none. */
+  /** The coupon's part of the combined discount. Zero when there is none. */
   couponDiscount: number;
-  /** Which discount is in force, for the surface that has to name it. */
-  discountApplied: "coupon" | "prepaid" | null;
+  /** Which discounts are in force, for the surface that has to name them. */
+  discountApplied: "coupon" | "prepaid" | "both" | null;
+  /**
+   * The stacking ceiling in basis points, for `create_order_with_stock` to
+   * re-apply on the subtotal it computes under the row lock. Null when the
+   * owner has not set one — the function then refuses a stacked pair rather
+   * than inventing a cap.
+   */
+  maxTotalDiscountBps: number | null;
   /** Why Pay on Delivery is not on offer, when it is not. Null when it is. */
   codWithheldReason:
     | "below_minimum"
@@ -110,16 +117,49 @@ export async function computeOrderTotals(input: {
         });
 
   /**
-   * **No stacking** (owner's decision, 2026-08-10, overruling the plan's
-   * recommendation to sum them): the customer gets the larger of the coupon
-   * and the prepaid incentive, never both, and the screen names which one
-   * applied. A tie goes to the coupon — it is the one the customer typed, so
-   * it is the name they expect to see on the receipt. Both candidates are
-   * computed on the original goods subtotal.
+   * **Stacking** (owner's decision, 2026-08-10, reversing the same day's
+   * no-stacking rule): the coupon and the prepaid incentive now **combine**,
+   * additively — both computed on the original goods subtotal, never on each
+   * other — and every surface draws them as two named lines.
+   *
+   * The combination is capped at `max_total_discount_percent` of the goods
+   * total. The coupon keeps its full value first and the prepaid part absorbs
+   * the clamp: the coupon is the promise the customer typed in, the prepaid
+   * incentive is the shop's own gesture, and of the two only one was ever
+   * spelled out to the customer as a number they are owed.
+   *
+   * **With the ceiling unset, stacking is withheld, loudly** — the customer
+   * gets the larger single discount (tie to the coupon, the name they expect
+   * on the receipt) and the log says which setting is missing. Unset-and-loud
+   * rather than a default, per the owner's standing rule: the number is
+   * theirs. `create_order_with_stock` refuses outright if both parts reach it
+   * without a ceiling, so this fallback cannot drift from the database's.
    */
-  const couponWins = couponDiscount > 0 && couponDiscount >= prepaidCandidate;
-  const appliedCoupon = couponWins ? couponDiscount : 0;
-  const prepaidDiscount = couponWins ? 0 : prepaidCandidate;
+  const ceilingPercent = settings.maxTotalDiscountPercent;
+  let appliedCoupon = couponDiscount;
+  let prepaidDiscount = prepaidCandidate;
+  if (couponDiscount > 0 && prepaidCandidate > 0) {
+    if (ceilingPercent === null) {
+      console.error(
+        "[totals] a coupon and the prepaid discount both apply, but " +
+          "max_total_discount_percent is unset — stacking withheld, the " +
+          "larger discount applied alone. Set the ceiling at /admin/settings.",
+      );
+      const couponWins = couponDiscount >= prepaidCandidate;
+      appliedCoupon = couponWins ? couponDiscount : 0;
+      prepaidDiscount = couponWins ? 0 : prepaidCandidate;
+    } else {
+      // Floor, not round: a ceiling that rounds up is a ceiling that leaks.
+      const ceilingPaise = Math.floor(
+        (input.subtotalPaise * ceilingPercent) / 100,
+      );
+      appliedCoupon = Math.min(couponDiscount, ceilingPaise);
+      prepaidDiscount = Math.min(
+        prepaidCandidate,
+        ceilingPaise - appliedCoupon,
+      );
+    }
+  }
   const discountTotal = appliedCoupon + prepaidDiscount;
 
   /**
@@ -235,7 +275,16 @@ export async function computeOrderTotals(input: {
     codWithheldReason,
     prepaidDiscount,
     couponDiscount: appliedCoupon,
-    discountApplied: couponWins ? "coupon" : prepaidDiscount > 0 ? "prepaid" : null,
+    maxTotalDiscountBps:
+      ceilingPercent === null ? null : Math.round(ceilingPercent * 100),
+    discountApplied:
+      appliedCoupon > 0 && prepaidDiscount > 0
+        ? "both"
+        : appliedCoupon > 0
+          ? "coupon"
+          : prepaidDiscount > 0
+            ? "prepaid"
+            : null,
     estimatedDays: quote.estimatedDays,
     courierName: quote.courierName,
     courierId: quote.courierId,

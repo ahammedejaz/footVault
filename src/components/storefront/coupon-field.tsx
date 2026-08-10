@@ -18,7 +18,7 @@ import { formatPaise } from "@/lib/format";
  * copy says "at checkout" rather than promising a number that could move.
  *
  * The saving shown comes from the server's verdict, never computed here: the
- * rounding rule and the no-stacking rule live in one place each, and a second
+ * rounding rule and the stacking ceiling live in one place each, and a second
  * implementation in a client component is how two surfaces disagree.
  */
 export function CouponField({ appliedCode }: { appliedCode: string | null }) {

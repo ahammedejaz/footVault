@@ -161,7 +161,7 @@ export async function quoteShipping(
       discountTotalPaise: totals.discountTotal,
       prepaidDiscountPaise: totals.prepaidDiscount,
       couponDiscountPaise: totals.couponDiscount,
-      couponCode: totals.discountApplied === "coupon" ? cart.couponCode : null,
+      couponCode: totals.couponDiscount > 0 ? cart.couponCode : null,
       deliverable: totals.deliverable,
       codAvailable: totals.codAvailable,
       estimatedDays: totals.estimatedDays,
