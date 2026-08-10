@@ -85,12 +85,20 @@ export type HealthSnapshot = {
   };
   drift: DriftHealth;
   cron: { jobs: CronJobHealth[]; unreadable: string | null };
+  /**
+   * What the delivery poller is watching: shipped orders with an AWB and no
+   * delivery or RTO stamp yet. Zero is the healthy idle state; a number that
+   * only ever grows means parcels are moving without ever arriving, which is
+   * either a courier problem or the poller not running — the `poll-deliveries`
+   * row in the cron table above says which.
+   */
+  parcelsInFlight: number | null;
 };
 
 export async function getHealth(): Promise<HealthSnapshot> {
   const supabase = await createClient();
 
-  const [webhook, wallet, shiprocketAuth, stuck, drift, cron] =
+  const [webhook, wallet, shiprocketAuth, stuck, drift, cron, parcelsInFlight] =
     await Promise.all([
       readWebhookLiveness(supabase),
       shiprocketWalletStatus(),
@@ -98,6 +106,7 @@ export async function getHealth(): Promise<HealthSnapshot> {
       readStuckOrders(supabase),
       readDrift(),
       readCron(),
+      readParcelsInFlight(supabase),
     ]);
 
   return {
@@ -108,7 +117,24 @@ export async function getHealth(): Promise<HealthSnapshot> {
     stuck,
     drift,
     cron,
+    parcelsInFlight,
   };
+}
+
+/** The same filter the poller's selector uses; null when unreadable. */
+async function readParcelsInFlight(supabase: Supabase): Promise<number | null> {
+  const { count, error } = await supabase
+    .from("orders")
+    .select("id, shipments!inner(awb_code)", { count: "exact", head: true })
+    .eq("status", "shipped")
+    .is("delivered_at", null)
+    .is("rto_at", null)
+    .not("shipments.awb_code", "is", null);
+  if (error) {
+    console.error("[health] parcels in flight unreadable:", error.message);
+    return null;
+  }
+  return count;
 }
 
 type Supabase = Awaited<ReturnType<typeof createClient>>;

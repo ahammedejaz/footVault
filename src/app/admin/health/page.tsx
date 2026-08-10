@@ -122,6 +122,23 @@ export default async function AdminHealthPage() {
                 : health.wallet.reading.message
             }
           />
+
+          <Panel
+            label="Parcels in flight"
+            tone={health.parcelsInFlight === null ? "warn" : "good"}
+            headline={
+              health.parcelsInFlight === null
+                ? "Could not read"
+                : String(health.parcelsInFlight)
+            }
+            body={
+              health.parcelsInFlight === null
+                ? "The in-flight count could not be read."
+                : health.parcelsInFlight === 0
+                  ? "Nothing is between the courier and a doorstep. The delivery poller checks every 30 minutes; its last run is in the schedule below."
+                  : "Shipped, with an AWB, not yet delivered or returned. The delivery poller asks the courier about each every 30 minutes — see poll-deliveries below for its last run."
+            }
+          />
         </section>
 
         <section className="space-y-2">

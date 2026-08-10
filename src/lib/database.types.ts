@@ -784,6 +784,7 @@ export type Database = {
           created_at: string
           customer_note: string | null
           delivered_at: string | null
+          delivered_source: string | null
           discount_total: number
           grand_total: number
           guest_token: string | null
@@ -832,6 +833,7 @@ export type Database = {
           created_at?: string
           customer_note?: string | null
           delivered_at?: string | null
+          delivered_source?: string | null
           discount_total?: number
           grand_total: number
           guest_token?: string | null
@@ -880,6 +882,7 @@ export type Database = {
           created_at?: string
           customer_note?: string | null
           delivered_at?: string | null
+          delivered_source?: string | null
           discount_total?: number
           grand_total?: number
           guest_token?: string | null

@@ -144,7 +144,13 @@ export async function transitionOrder(args: {
   orderId: string;
   to: OrderStatus;
   note: string | null;
-  actorId: string;
+  /**
+   * Null when the system is the actor — the delivery poller has no profile
+   * row, and `order_status_history.changed_by = null` already renders as
+   * "Foot Vault" on the customer's timeline. A human's action always carries
+   * their id.
+   */
+  actorId: string | null;
 }): Promise<TransitionResult> {
   const { supabase, elevated, orderId, to, note, actorId } = args;
 
@@ -163,12 +169,13 @@ export async function transitionOrder(args: {
       advance_amount: number | null;
       grand_total: number | null;
       payment_reference: string | null;
+      delivered_at: string | null;
     }>(
       "transitionOrder.read",
       supabase
         .from("orders")
         .select(
-          "id, status, payment_method, advance_amount, grand_total, payment_reference",
+          "id, status, payment_method, advance_amount, grand_total, payment_reference, delivered_at",
         )
         .eq("id", orderId)
         .maybeSingle(),
@@ -204,7 +211,9 @@ export async function transitionOrder(args: {
         {
           p_order_id: orderId,
           p_reason: note?.trim() || "Cancelled by an admin",
-          p_changed_by: actorId,
+          // The RPC's parameter is optional-not-nullable; omitting it and
+          // passing null mean the same thing to the function (system actor).
+          p_changed_by: actorId ?? undefined,
           // A cancellation that would need a refund is refused rather than
           // performed. Moving money back is Phase 8, and quietly restocking a
           // paid order would leave the customer charged for units we have just
@@ -285,13 +294,38 @@ export async function transitionOrder(args: {
      * Compare and swap. `.eq("status", order.status)` is the whole of it: the
      * row has to still be the one this decision was made against, or the update
      * matches zero rows and we go round again against whatever actually won.
+     *
+     * **Entering `delivered` stamps the evidence in the same swap.** The
+     * owner's button used to move the status and leave `delivered_at` null —
+     * which is why the 24-hour damage window never had a clock behind it
+     * (audit 11B.1) and why `recordReplacement` prints "(No delivery
+     * timestamp…)" as a normal outcome. Now: when the CAS read saw no
+     * `delivered_at`, the update writes `now()` and `delivered_source =
+     * 'admin'`, guarded by `.is("delivered_at", null)` so a courier timestamp
+     * landing between the read and the write wins and is never overwritten —
+     * the guard fails the swap, the loop re-reads, and the second pass takes
+     * the status-only branch below. When the read already saw a timestamp
+     * (the poller's path: `fetchTracking` stamped courier evidence first),
+     * the status moves alone and the evidence is untouched.
      */
-    const { data: swapped, error: swapError } = await supabase
+    const stampsDelivery = to === "delivered" && order.delivered_at === null;
+    const swap = supabase
       .from("orders")
-      .update({ status: to })
+      .update(
+        stampsDelivery
+          ? {
+              status: to,
+              delivered_at: new Date().toISOString(),
+              delivered_source: "admin",
+            }
+          : { status: to },
+      )
       .eq("id", orderId)
-      .eq("status", order.status)
-      .select("id");
+      .eq("status", order.status);
+    const { data: swapped, error: swapError } = await (stampsDelivery
+      ? swap.is("delivered_at", null)
+      : swap
+    ).select("id");
 
     if (swapError) {
       throw new Error(
