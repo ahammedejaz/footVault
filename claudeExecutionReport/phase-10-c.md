@@ -237,4 +237,29 @@ data; typecheck and full lint run as the literally last thing before commit.
 
 ## In production
 
-*Appended after the merge below was deployed and verified.*
+Deployed 2026-08-10 as `e237cc4` — which landed as a direct commit on `main`
+rather than a branch merge: after C2's separate merge I never switched back to
+the feature branch, and noticed at push. Content identical; noted for the
+ledger.
+
+**Verified via the API rather than by inference, and the API is the whole of
+it this time:** deployment `dpl_8FLURcj1nFBQfVvLNsy12bRXwGeu`, state READY,
+target production, region bom1, `githubCommitSha` equal to the pushed commit,
+alias list carrying both `www.footvault.in` and `footvault.in`. The C2 deploy
+could additionally be proven by a byte the customer receives; this batch by
+design changes no public byte — the editor is behind the admin guard and the
+announcement bar renders server-side with unchanged output while its window is
+unset. All 19 chunks referenced by the live homepage were scanned for the new
+code and correctly contain none of it (the first scan of those chunks
+iterated an empty list after a PATH failure and printed its conclusion
+vacuously; it was redone counting what it scanned).
+
+Smoke: `/`, `/shop`, a product, `/cart`, `/checkout` **200 on both
+hostnames**; `/admin` and `/admin/appearance` **404 anonymous** on both; all
+four cron jobs `succeeded`.
+
+**What this deploy does not prove:** no admin session exists on production, so
+the editor has not been *operated* there — the production-build gates on
+staging are the evidence for behaviour. The first real use of
+`/admin/appearance` on production is worth a minute of the owner's attention,
+starting with whether "Live now" matches the homepage.
