@@ -396,3 +396,48 @@ The pair (₹2,500) sits well under the 30% ceiling (₹2,999.70 on this basket)
 so both discounts apply whole. The bag's own preview said "about ₹500 off at
 checkout" in both runs and is now the truth on the next page rather than a
 promise the larger discount overrode.
+
+---
+
+# Postscript 2 — the region pin, applied and measured
+
+`vercel.json` pinning functions to `bom1` merged as PR #37 (with the empty
+"Discount —" row removal the owner ordered — it was the live UI, not table
+formatting; the row now renders only when a discount exists). No plan
+restriction: the pin took on the current plan without any workaround.
+
+Every production response now reads `x-vercel-id: bom1::bom1::…`.
+
+## Warm TTFB, production, same method as the before-numbers
+
+| Route | Before (iad1) | After (bom1) |
+| --- | --- | --- |
+| `/` | 0.66–1.20 s | **0.26–0.34 s** |
+| `/shop` | 0.60–0.95 s | **0.21–0.35 s** (one 0.88 s outlier — a fresh instance) |
+| `/product/[slug]` | 0.57–1.03 s | **0.20–0.25 s** |
+| `/cart` | 0.58–0.64 s | **0.19–0.22 s** |
+| First hit after idle | 3.2 s | not reproduced in sampling; the 0.88 s outlier is the worst observed |
+
+Roughly 3–4× faster warm, exactly the shape predicted: the request-path
+detour and the per-query continent crossings are gone.
+
+## Lighthouse, live domain, mobile, devtools throttling
+
+| | Performance | A11y | Best practices | SEO | LCP | TBT | CLS | Server response |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `/` | 91 | 100 | 100 | 66 | 2.8 s | 30 ms | 0 | 50 ms |
+| `/product/[slug]` | 89 | 100 | 100 | 58 | 3.1 s | 50 ms | 0 | 30 ms |
+
+The LCP figures are under Lighthouse's simulated slow-mobile network; the
+server's own contribution is the 30–50 ms line. The SEO scores are one
+audit: "page is blocked from indexing" — the deliberate pre-launch
+`SITE_INDEXABLE` switch, the owner's to flip at launch, not a defect.
+
+## The two loose ends
+
+- **Empty Discount row**: was the live UI. Removed in #37, above.
+- **`site_settings.contact`, live values**: phone `+91 91602 52643`,
+  WhatsApp `+91 98450 22001`, email `inquiry@footvault.in`, address "Classic
+  Vastralayam Complex, Shop No. 2, Near RTC Bus Stand, Cuddapah, Andhra
+  Pradesh 516360". Whether the phone is real only the owner can confirm —
+  flagged because the returns policy makes it the replacement-claim route.
