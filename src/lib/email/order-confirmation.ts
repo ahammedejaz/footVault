@@ -6,12 +6,14 @@ import { SITE_URL } from "@/lib/env";
 import { emailLogo, REPLY_TO } from "@/lib/email/shared";
 
 /**
- * The one email Phase 5 sends.
+ * The order confirmation — sent on payment capture, never on order creation.
  *
- * A narrow input rather than an `OrderView`, because the confirmation is
- * composed from what the checkout action already holds — it must not have to
- * re-read the order it just wrote, and a read-after-write against a replica is
- * exactly the sort of thing that turns "your order is placed" into a 500.
+ * It used to go out from the checkout action the moment the row was written,
+ * which told a customer who closed the Razorpay modal "order confirmed" for an
+ * order the abandonment sweep would cancel. It is now built inside
+ * `applyPaymentOutcome` from the order row and its items, on the one transition
+ * that moves a pending order to confirmed — so every sentence below, including
+ * "we have received your payment", is true at the moment it is read.
  *
  * Both parts are written by hand. The plain-text part is not a stripped copy of
  * the HTML: it is what a text-only client and a screen reader actually receive,
@@ -137,7 +139,7 @@ export function buildOrderConfirmationEmail(
   );
 
   const text = [
-    `Thanks, ${input.customerName}. Your order is placed.`,
+    `Thanks, ${input.customerName}. Your order is confirmed.`,
     "",
     `Order ${input.orderNumber}`,
     orderUrl,
@@ -188,7 +190,7 @@ export function buildOrderConfirmationEmail(
 
   const html = [
     emailLogo(),
-    `<p>Thanks, ${escapeHtml(input.customerName)}. Your order is placed.</p>`,
+    `<p>Thanks, ${escapeHtml(input.customerName)}. Your order is confirmed.</p>`,
     `<p><strong>Order ${escapeHtml(input.orderNumber)}</strong><br>`,
     `<a href="${orderUrl}">${orderUrl}</a></p>`,
     `<table style="border-collapse:collapse">${itemHtml}`,

@@ -10,7 +10,6 @@ import {
   couponRejectionMessage,
   evaluateCoupon,
 } from "@/lib/coupons/validate";
-import { sendOrderConfirmation, sendOwnerNewOrder } from "@/lib/email";
 import {
   CHECKOUT_SQLSTATE,
   describeOutOfStock,
@@ -501,7 +500,10 @@ export async function placeOrder(
      * the courier to collect it a second time.
      */
     const advance = assertPaise("checkout.advance", order.advance_amount);
-    const balanceDue = assertPaise("checkout.balanceDue", order.balance_due);
+    // `balance_due` is no longer read here: the only consumer was the
+    // confirmation email, which now composes itself from the order row at
+    // capture time.
+    assertPaise("checkout.balanceDue", order.balance_due);
 
     // Best-effort, and after the order exists rather than before: a book that
     // fails to save must not cost somebody their checkout.
@@ -564,33 +566,25 @@ export async function placeOrder(
       }
     }
 
-    await confirmByEmail({
-      orderNumber: order.order_number,
-      to: data.contactEmail ?? user?.email ?? null,
-      customerName: address.recipientName,
-      method,
-      lines: cart.lines.map((line) => ({
-        productName: line.productName,
-        sku: line.sku,
-        colour: line.color,
-        size: line.size,
-        quantity: line.quantity,
-        lineTotal: line.lineTotal,
-      })),
-      contactPhone: address.phone,
-      contactEmail: data.contactEmail ?? user?.email ?? null,
-      subtotal: order.subtotal,
-      discountTotal: totals.discountTotal,
-      prepaidDiscount: totals.prepaidDiscount,
-      couponCode:
-        totals.discountApplied === "coupon" ? (cart.couponCode ?? null) : null,
-      shippingFee: order.shipping_fee,
-      codHandlingFee: totals.codHandlingFee,
-      grandTotal,
-      advanceAmount: advance,
-      balanceDueOnDelivery: balanceDue,
-      address,
-    });
+    /**
+     * **No email leaves this function. None.**
+     *
+     * The confirmation and the owner's new-order alert both used to be sent
+     * right here, on the row being written — which meant a customer who opened
+     * the Razorpay modal and closed it was told "order confirmed" for an order
+     * the sweep would cancel twenty minutes later, and the owner was alerted to
+     * a sale that never happened. The webhook is the source of truth for
+     * payment everywhere else in this codebase; the email layer now inherits
+     * that. Both messages are sent by `applyPaymentOutcome` on the one branch
+     * that moves a pending order to confirmed — for Pay on Delivery too, where
+     * the deposit capture is that event.
+     *
+     * An order that is placed but not yet paid deliberately sends *nothing*:
+     * the customer is still in the flow, looking at the payment modal, and the
+     * order page already says "awaiting payment". An email at this moment
+     * either duplicates the screen they are on or — worse — reads as a
+     * confirmation of something that has not happened.
+     */
 
     // The bag is converted, so the header badge and the cart page are both
     // stale everywhere on the site.
@@ -886,136 +880,4 @@ async function rollBackUnpaidOrder(
         "Its stock is still claimed and needs releasing by hand.",
     );
   }
-}
-
-/**
- * Both emails a new order sends, and neither is allowed to matter.
- *
- * **Concurrent, not sequential.** Each adapter call has its own eight-second
- * timeout, so awaiting them one after the other would put sixteen seconds of
- * worst case between a customer's payment and their confirmation screen. They
- * are independent messages to different people; nothing about the owner's copy
- * depends on the customer's having gone out.
- *
- * `allSettled` rather than `all` for the same reason stated everywhere else in
- * this seam: `dispatch` already swallows, but a rejection escaping here would
- * surface as a failed checkout for an order that exists and is paid for.
- */
-async function confirmByEmail(args: {
-  orderNumber: string;
-  to: string | null;
-  customerName: string;
-  method: PaymentMethod;
-  lines: {
-    productName: string;
-    sku: string;
-    colour: string;
-    size: string;
-    quantity: number;
-    lineTotal: number;
-  }[];
-  subtotal: number;
-  discountTotal: number;
-  prepaidDiscount: number;
-  couponCode: string | null;
-  shippingFee: number;
-  codHandlingFee: number;
-  grandTotal: number;
-  advanceAmount: number;
-  balanceDueOnDelivery: number;
-  address: ShippingAddress;
-  contactPhone: string;
-  contactEmail: string | null;
-}): Promise<void> {
-  await Promise.allSettled([
-    confirmToCustomer(args),
-    /*
-      The owner's copy goes out on the order being *placed*, not on payment
-      settling. A Pay-on-Delivery order is real the moment it exists, and a
-      prepaid order whose webhook is slow is still one the owner wants to know
-      about — the alternative is an owner who first hears about an order when
-      the customer chases it.
-    */
-    sendOwnerNewOrder({
-      orderNumber: args.orderNumber,
-      placedAt: new Date().toISOString(),
-      paymentMethod: args.method,
-      lines: args.lines.map((line) => ({
-        productName: line.productName,
-        sku: line.sku,
-        size: line.size,
-        colour: line.colour,
-        quantity: line.quantity,
-      })),
-      shippingAddress: args.address,
-      grandTotal: args.grandTotal,
-      advanceAmount: args.advanceAmount,
-      balanceDueOnDelivery: args.balanceDueOnDelivery,
-      contactPhone: args.contactPhone,
-      contactEmail: args.contactEmail,
-    }),
-  ]);
-}
-
-/** Never allowed to matter. See src/lib/email/index.ts. */
-async function confirmToCustomer(args: {
-  orderNumber: string;
-  to: string | null;
-  customerName: string;
-  method: PaymentMethod;
-  lines: {
-    productName: string;
-    size: string;
-    quantity: number;
-    lineTotal: number;
-  }[];
-  subtotal: number;
-  discountTotal: number;
-  prepaidDiscount: number;
-  couponCode: string | null;
-  shippingFee: number;
-  codHandlingFee: number;
-  grandTotal: number;
-  advanceAmount: number;
-  balanceDueOnDelivery: number;
-  address: ShippingAddress;
-}): Promise<void> {
-  if (!args.to) {
-    // Only possible for a signed-in customer with no email on their claims,
-    // which OAuth and password sign-up both rule out. Worth a line if it ever
-    // happens rather than a silent skip.
-    console.warn(
-      `[checkout] order ${args.orderNumber} has no address to confirm to`,
-    );
-    return;
-  }
-
-  await sendOrderConfirmation({
-    orderNumber: args.orderNumber,
-    to: args.to,
-    customerName: args.customerName,
-    paymentMethod: args.method,
-    lines: args.lines,
-    couponCode: args.couponCode,
-    totals: {
-      subtotal: args.subtotal,
-      /*
-        Passed, not zeroed. This was `discountTotal: 0` with no comment, which
-        is latent today only because nothing is sent yet — `src/lib/email` is
-        console-only until Batch B. The moment a provider is wired in, a
-        discounted order would produce a confirmation whose own lines do not sum
-        to the total printed underneath them, and the customer would be reading
-        it rather than a developer.
-      */
-      discountTotal: args.discountTotal,
-      prepaidDiscount: args.prepaidDiscount,
-      shippingFee: args.shippingFee,
-      codHandlingFee: args.codHandlingFee,
-      taxTotal: 0,
-      grandTotal: args.grandTotal,
-      advanceAmount: args.advanceAmount,
-      balanceDueOnDelivery: args.balanceDueOnDelivery,
-    },
-    shippingAddress: args.address,
-  });
 }

@@ -16,11 +16,11 @@ import type { PaymentMethod } from "@/lib/payments/types";
 /**
  * The emails an order sends after it is placed.
  *
- * The confirmation lives in `order-confirmation.ts` because it is composed from
- * what the checkout action already holds and must not re-read the order it just
- * wrote. Everything here is the opposite case: each is sent from a place that
- * has *just read or written* the order, so each takes the narrow set of fields
- * that place already has rather than an `OrderView` it would have to fetch.
+ * The confirmation lives in `order-confirmation.ts`; it and the owner's
+ * new-order alert below are both sent from `applyPaymentOutcome`, on the one
+ * transition that moves a pending order to confirmed — never at order
+ * creation. Each builder here takes the narrow set of fields its sending site
+ * already holds rather than an `OrderView` it would have to fetch.
  *
  * ## The rule these all follow
  *
@@ -30,78 +30,21 @@ import type { PaymentMethod } from "@/lib/payments/types";
  * one is requested, because "your money is on its way back" is a promise the
  * shop cannot keep on the strength of an API call that has not settled.
  *
- * The other three are safe by construction — shipped, delivered and captured
- * are all facts recorded before the send is attempted.
+ * Shipped and delivered are safe by construction — both are facts recorded
+ * before the send is attempted.
  */
 
 /* --------------------------------------------------------- payment taken -- */
 
-export type PaymentCapturedInput = {
-  orderNumber: string;
-  to: string;
-  customerName: string;
-  amountPaise: number;
-  /** Present only on Pay-on-Delivery; what the courier still collects. */
-  balanceDueOnDelivery: number;
-};
-
-/**
- * Sent when the webhook confirms the money, not when the modal closes.
+/*
+ * There is deliberately no "payment received" template any more.
  *
- * A customer who dismissed the Razorpay modal and a customer whose bank is slow
- * both see "we have not seen your payment settle yet" on the order page. This
- * email is the other half of that sentence arriving — so it only goes out on
- * the authoritative event.
+ * It existed because the order confirmation used to be sent at *creation* and
+ * something still had to arrive when the money settled. Now that the
+ * confirmation itself is sent on the webhook's captured event — the only email
+ * a customer gets about a new order — a second "we have your payment" message
+ * landing in the same minute said the same thing twice.
  */
-export function buildPaymentCapturedEmail(
-  input: PaymentCapturedInput,
-): EmailMessage {
-  const url = orderUrl(input.orderNumber);
-  const owes = input.balanceDueOnDelivery > 0;
-
-  const closing = owes
-    ? `The courier will collect the remaining ${formatPaise(input.balanceDueOnDelivery)} in cash when your order arrives — please have the exact amount ready.`
-    : "Nothing further is due. We will email you again when it ships.";
-
-  const text = [
-    `${input.customerName}, we have your payment.`,
-    "",
-    `Order ${input.orderNumber}`,
-    url,
-    "",
-    `Paid            ${formatPaise(input.amountPaise)}`,
-    ...(owes
-      ? [`Due on delivery ${formatPaise(input.balanceDueOnDelivery)}`]
-      : []),
-    "",
-    closing,
-    "",
-    SIGN_OFF,
-  ].join("\n");
-
-  const html = [
-    emailLogo(),
-    `<p>${escapeHtml(input.customerName)}, we have your payment.</p>`,
-    `<p><strong>Order ${escapeHtml(input.orderNumber)}</strong><br>`,
-    `<a href="${url}">${url}</a></p>`,
-    `<table style="border-collapse:collapse">`,
-    `<tr><td style="padding:4px 12px 4px 0">Paid</td><td style="padding:4px 0;text-align:right">${formatPaise(input.amountPaise)}</td></tr>`,
-    owes
-      ? `<tr><td style="padding:4px 12px 4px 0"><strong>Due on delivery</strong></td><td style="padding:4px 0;text-align:right"><strong>${formatPaise(input.balanceDueOnDelivery)}</strong></td></tr>`
-      : "",
-    `</table>`,
-    `<p>${escapeHtml(closing)}</p>`,
-    `<p>${SIGN_OFF}</p>`,
-  ].join("");
-
-  return {
-    to: input.to,
-    subject: `Payment received for order ${input.orderNumber} — Foot Vault`,
-    text,
-    html,
-    replyTo: REPLY_TO,
-  };
-}
 
 /* ---------------------------------------------------------------- shipped -- */
 

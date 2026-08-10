@@ -1,5 +1,5 @@
 /**
- * The six order emails, and the rule that none of them may fail an order.
+ * The five order emails, and the rule that none of them may fail an order.
  *
  * Pure and fast: no browser, no database, no network. Everything asserted here
  * is a property of the builders and of the seam around them, and all of it is
@@ -12,12 +12,18 @@
  * a receipt whose arithmetic disagrees with itself, a tracking link ending in
  * "null", or a checkout that 500s because a mail server was slow.
  *
+ * Section 8 is the P0 wiring rule: no email that reads as a confirmation may
+ * be sendable from order *creation*. The behavioural half — a captured payment
+ * emails exactly once — lives in scripts/audit/checkout-orders.ts, which runs
+ * the real seam against staging.
+ *
  *   npx tsx scripts/audit/emails.ts
  */
+import { readFileSync } from "node:fs";
+
 import {
   buildDeliveredEmail,
   buildOwnerNewOrderEmail,
-  buildPaymentCapturedEmail,
   buildRefundedEmail,
   buildShippedEmail,
 } from "../../src/lib/email/lifecycle";
@@ -91,16 +97,6 @@ const built: [string, EmailMessage][] = [
       lines: LINES,
       totals: TOTALS,
       shippingAddress: ADDRESS,
-    }),
-  ],
-  [
-    "payment-captured",
-    buildPaymentCapturedEmail({
-      orderNumber: "FV-2026-00660",
-      to: "a@b.c",
-      customerName: ADDRESS.recipientName,
-      amountPaise: 887_600,
-      balanceDueOnDelivery: 0,
     }),
   ],
   [
@@ -213,7 +209,7 @@ for (const [name, message] of built) {
 
 const replyTos = new Set(built.map(([, m]) => m.replyTo ?? "unset"));
 check(
-  "all six agree on one reply-to",
+  "all five agree on one reply-to",
   replyTos.size === 1,
   [...replyTos].join(", "),
 );
@@ -346,7 +342,7 @@ console.log(
   "\n[1m6 · the owner's copy always states the cash figure[0m",
 );
 
-const ownerCod = built[5]![1];
+const ownerCod = built[4]![1];
 check(
   "a Pay-on-Delivery order shouts the amount to collect",
   ownerCod.text.includes("COLLECT") && ownerCod.text.includes("8,595"),
@@ -439,6 +435,59 @@ async function failSoftChecks() {
     refused.ok === false && refused.reason.includes("domain not verified"),
   );
 }
+
+/* ----------------------------------------- 8 · nothing confirms unpaid -- */
+
+console.log(
+  "\n[1m8 · no confirmation email is reachable from order creation[0m",
+);
+
+/*
+ * The P0 wiring rule, asserted against the source itself.
+ *
+ * A customer who closed the Razorpay modal was receiving "order confirmed",
+ * and the owner a new-order alert, for an order the sweep then cancelled —
+ * because both sends hung off `placeOrder` rather than off the webhook. The
+ * fix moved them into `applyPaymentOutcome`, on the branch that moves a
+ * pending order to confirmed. These checks make the old wiring unrepresentable
+ * without failing a gate: the checkout action may not touch the email module
+ * at all, and the two confirmation-flavoured senders may be called from
+ * exactly one file — the payment seam.
+ *
+ * Source-text checks are blunt, and blunt is right here: any import of
+ * `@/lib/email` in the checkout action is wrong *whatever* it is for, because
+ * everything that module can say to a customer at that moment is premature.
+ */
+const checkoutSource = readFileSync("src/lib/actions/checkout.ts", "utf8");
+check(
+  "the checkout action does not import the email module",
+  !checkoutSource.includes("@/lib/email"),
+);
+check(
+  "the checkout action names no email sender",
+  !/send(OrderConfirmation|OwnerNewOrder|PaymentCaptured|Shipped|Delivered|Refunded)/.test(
+    checkoutSource,
+  ),
+);
+
+const paymentStateSource = readFileSync(
+  "src/lib/orders/payment-state.ts",
+  "utf8",
+);
+check(
+  "the payment seam is what sends the confirmation",
+  paymentStateSource.includes("sendOrderConfirmation"),
+);
+check(
+  "and the owner's new-order alert",
+  paymentStateSource.includes("sendOwnerNewOrder"),
+);
+check(
+  "and both are gated on the confirmed transition",
+  /if \(settled\.customerNote\) \{\s*await notifyOrderConfirmed/.test(
+    paymentStateSource,
+  ),
+);
 
 /* ------------------------------------------------------------- summary -- */
 

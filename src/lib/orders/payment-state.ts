@@ -1,15 +1,16 @@
 import "server-only";
 
 import type { Database } from "@/lib/database.types";
-import { sendPaymentCaptured } from "@/lib/email";
+import { sendOrderConfirmation, sendOwnerNewOrder } from "@/lib/email";
 import {
   canTransition,
   isTerminalStatus,
   type ApplyPaymentResult,
   type OrderStatus,
   type PaymentStatus,
+  type ShippingAddress,
 } from "@/lib/orders/types";
-import type { PaymentOutcome } from "@/lib/payments/types";
+import type { PaymentMethod, PaymentOutcome } from "@/lib/payments/types";
 import { maybeRow } from "@/lib/queries/run";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -360,52 +361,134 @@ async function releaseClaim(
 }
 
 /**
- * Tell the customer the payment settled.
+ * Tell the customer their order is confirmed, and tell the owner there is a
+ * parcel to pack. This — not order creation — is where both emails live.
+ *
+ * They used to be sent from the checkout action, on the row being written,
+ * which told a customer who closed the Razorpay modal "order confirmed" for an
+ * order the sweep would cancel, and alerted the owner to a sale that never
+ * happened. The webhook is the source of truth for payment everywhere else in
+ * this codebase; this is the email layer inheriting it. For Pay on Delivery the
+ * trigger is the same by construction: the deposit is a Razorpay capture and
+ * arrives through this exact seam.
  *
  * A second read rather than widening the CAS select: the loop's query is on the
- * hot path of a webhook and re-runs up to three times, and none of these five
+ * hot path of a webhook and re-runs up to three times, and none of these
  * columns has anything to do with the decision. This runs once, after the row
  * has already moved, so its cost is paid on the transition rather than on every
- * attempt.
+ * attempt. The caller gates it on `customerNote`, which `decide()` sets only on
+ * the one branch that moves a pending order to confirmed — so a redelivered
+ * webhook cannot email anybody twice.
  *
  * **Never allowed to matter.** A missing address, a missing email, a dead mail
  * provider — all of them end here with a log line. The customer's money has
  * moved and their order is confirmed; nothing about that may depend on an email.
  */
-async function notifyPaymentCaptured(
+async function notifyOrderConfirmed(
   admin: ReturnType<typeof createAdminClient>,
   orderId: string,
-  amountPaise: number,
 ): Promise<void> {
   try {
     const order = await maybeRow<{
       order_number: string;
+      placed_at: string;
+      payment_method: string;
       contact_email: string | null;
-      balance_due_on_delivery: number | null;
-      shipping_address: { recipientName?: string } | null;
+      contact_phone: string | null;
+      coupon_code: string | null;
+      subtotal: number;
+      discount_total: number;
+      prepaid_discount: number;
+      shipping_fee: number;
+      cod_handling_fee: number;
+      tax_total: number;
+      grand_total: number;
+      advance_amount: number;
+      balance_due_on_delivery: number;
+      shipping_address: ShippingAddress | null;
     }>(
-      "notifyPaymentCaptured.order",
+      "notifyOrderConfirmed.order",
       admin
         .from("orders")
         .select(
-          "order_number, contact_email, balance_due_on_delivery, shipping_address",
+          "order_number, placed_at, payment_method, contact_email, contact_phone, " +
+            "coupon_code, subtotal, discount_total, prepaid_discount, shipping_fee, " +
+            "cod_handling_fee, tax_total, grand_total, advance_amount, " +
+            "balance_due_on_delivery, shipping_address",
         )
         .eq("id", orderId)
         .maybeSingle(),
     );
+    if (!order?.shipping_address) return;
 
-    if (!order?.contact_email) return;
+    const { data: itemRows, error: itemsError } = await admin
+      .from("order_items")
+      .select("product_name, sku, color, size, quantity, line_total")
+      .eq("order_id", orderId);
+    if (itemsError) {
+      console.error(
+        `[email] could not read items for order ${orderId}: ${itemsError.message}`,
+      );
+      return;
+    }
 
-    await sendPaymentCaptured({
-      orderNumber: order.order_number,
-      to: order.contact_email,
-      customerName: order.shipping_address?.recipientName ?? "there",
-      amountPaise,
-      balanceDueOnDelivery: order.balance_due_on_delivery ?? 0,
-    });
+    const method: PaymentMethod =
+      order.payment_method === "cod" ? "cod" : "razorpay";
+    const address = order.shipping_address;
+    const lines = (itemRows ?? []).map((item) => ({
+      productName: item.product_name,
+      sku: item.sku,
+      colour: item.color,
+      size: item.size,
+      quantity: item.quantity,
+      lineTotal: item.line_total,
+    }));
+
+    /**
+     * Concurrent, not sequential: each adapter call has its own timeout, and
+     * they are independent messages to different people. `allSettled` because
+     * a rejection escaping here would surface as a webhook failure — and a
+     * redelivery — for a payment that has already settled.
+     */
+    await Promise.allSettled([
+      order.contact_email
+        ? sendOrderConfirmation({
+            orderNumber: order.order_number,
+            to: order.contact_email,
+            customerName: address.recipientName,
+            paymentMethod: method,
+            lines,
+            couponCode: order.coupon_code,
+            totals: {
+              subtotal: order.subtotal,
+              discountTotal: order.discount_total,
+              prepaidDiscount: order.prepaid_discount,
+              shippingFee: order.shipping_fee,
+              codHandlingFee: order.cod_handling_fee,
+              taxTotal: order.tax_total,
+              grandTotal: order.grand_total,
+              advanceAmount: order.advance_amount,
+              balanceDueOnDelivery: order.balance_due_on_delivery,
+            },
+            shippingAddress: address,
+          })
+        : Promise.resolve(),
+      sendOwnerNewOrder({
+        orderNumber: order.order_number,
+        placedAt: order.placed_at,
+        paymentMethod: method,
+        lines,
+        shippingAddress: address,
+        grandTotal: order.grand_total,
+        advanceAmount: order.advance_amount,
+        balanceDueOnDelivery: order.balance_due_on_delivery,
+        contactPhone: order.contact_phone ?? address.phone,
+        contactEmail: order.contact_email,
+      }),
+    ]);
   } catch (error) {
     console.error(
-      `[email] payment-captured notice failed for order ${orderId}: ` +
+      `[email] order-confirmed notices failed for order ${orderId}: ` +
         (error instanceof Error ? error.message : "unknown"),
     );
   }
@@ -607,23 +690,20 @@ export async function applyPaymentOutcome(input: {
     }
 
     /*
-      The customer's "we have your money" email.
+      The customer's confirmation and the owner's new-order alert — the only
+      moment either is allowed to exist.
 
       Gated on `customerNote`, which `decide()` sets only on the branch that
       actually moved a pending order to confirmed. That is deliberately the
       narrowest possible trigger: a duplicate delivery loses the compare-and-swap
       and re-decides against `confirmed`, which produces no customerNote, so a
-      redelivered webhook cannot email the same customer twice.
+      redelivered webhook cannot email the same customer — or the owner — twice.
 
       It runs after `payment_events` is settled, so a mail failure cannot make us
       return non-2xx to Razorpay and have a delivered payment redelivered.
     */
     if (settled.customerNote) {
-      await notifyPaymentCaptured(
-        admin,
-        payment.order_id,
-        input.outcome.amountPaise,
-      );
+      await notifyOrderConfirmed(admin, payment.order_id);
     }
 
     return {
