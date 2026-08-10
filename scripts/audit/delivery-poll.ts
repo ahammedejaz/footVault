@@ -89,16 +89,36 @@ async function main(): Promise<void> {
   const db = adminClient();
   const run = Date.now().toString(36);
 
+  /**
+   * A real profile for `order_status_history.changed_by`. Inside the suite,
+   * teardown has just swept every QA account, so "borrow an existing
+   * profile" finds nothing — the same situation rto.ts handles, handled the
+   * same way: create one, delete it in the finally.
+   */
   let actorId: string;
+  let createdUserId: string | null = null;
   {
     const { data: profile, error } = await db
       .from("profiles")
       .select("id")
       .limit(1)
       .maybeSingle();
-    if (error || !profile)
-      throw new Error(`no profile for an actor: ${error?.message}`);
-    actorId = profile.id;
+    if (error) throw new Error(`reading profiles failed: ${error.message}`);
+    if (profile) {
+      actorId = profile.id;
+    } else {
+      const { data: created, error: createError } =
+        await db.auth.admin.createUser({
+          email: `fv-qa.delivery-${run}@example.com`,
+          password: `Qa-${run}-Aa1!`,
+          email_confirm: true,
+        });
+      if (createError || !created.user) {
+        throw new Error(`QA user failed: ${createError?.message}`);
+      }
+      createdUserId = created.user.id;
+      actorId = created.user.id;
+    }
   }
 
   const orderIds: string[] = [];
@@ -334,6 +354,9 @@ async function main(): Promise<void> {
       const { error } = await db.from("orders").delete().eq("id", orderId);
       if (error)
         console.error(`  !! fixture order not removed: ${error.message}`);
+    }
+    if (createdUserId) {
+      await db.auth.admin.deleteUser(createdUserId).catch(() => {});
     }
   }
 
