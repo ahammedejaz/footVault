@@ -6,6 +6,10 @@ import { AdminPage, Chip, PageHeader } from "@/components/admin/ui";
 import { formatPaise } from "@/lib/format";
 import { relativeAge } from "@/lib/payments/health";
 import { getHealth, type HealthSnapshot, type StuckOrder } from "@/lib/queries/admin/health";
+import {
+  checkPickupConfiguration,
+  type PickupVerdict,
+} from "@/lib/shipping/pickup";
 
 export const metadata: Metadata = { title: "Health" };
 export const dynamic = "force-dynamic";
@@ -18,7 +22,10 @@ export const dynamic = "force-dynamic";
  * the owner to stop opening the page.
  */
 export default async function AdminHealthPage() {
-  const health = await getHealth();
+  const [health, pickup] = await Promise.all([
+    getHealth(),
+    checkPickupConfiguration(),
+  ]);
 
   const stuckCount =
     health.stuck.capturedNotConfirmed.length +
@@ -66,6 +73,29 @@ export default async function AdminHealthPage() {
             }
             headline={authHeadline(health.shiprocketAuth)}
             body={authBody(health.shiprocketAuth)}
+          />
+
+          {/*
+            The pickup address, which fails in two very different ways.
+
+            A nickname that no longer matches anything in the Shiprocket panel
+            stops shipping loudly, at the counter, on an order somebody has
+            already paid for. A pin code that disagrees with the one every quote
+            is taken from stops nothing at all — it charges every customer the
+            rate for a journey the parcel does not make. The second is the one
+            worth a page like this.
+          */}
+          <Panel
+            label="Pickup address"
+            tone={
+              pickup.state === "ok"
+                ? "good"
+                : pickup.state === "unknown"
+                  ? "warn"
+                  : "bad"
+            }
+            headline={pickupHeadline(pickup)}
+            body={pickupBody(pickup)}
           />
 
           <Panel
@@ -353,5 +383,33 @@ function authBody(auth: HealthSnapshot["shiprocketAuth"]): string {
       return `Sign-in is latched off until ${relativeAge(auth.until)} after repeated failures: ${auth.reason}. Shipping is blocked until the credentials are fixed.`;
     case "unreadable":
       return auth.message;
+  }
+}
+
+function pickupHeadline(verdict: PickupVerdict): string {
+  switch (verdict.state) {
+    case "ok":
+      return `${verdict.nickname} · ${verdict.postcode}`;
+    case "missing":
+      return `"${verdict.nickname}" is not on the account`;
+    case "pin_mismatch":
+      return "Two different pin codes";
+    default:
+      return "Could not check";
+  }
+}
+
+function pickupBody(verdict: PickupVerdict): string {
+  switch (verdict.state) {
+    case "ok":
+      return `${verdict.city ?? "Pickup"} — and the pin code here matches the one every delivery charge is quoted from.`;
+    case "missing":
+      return verdict.available.length
+        ? `Shiprocket has ${verdict.available.map((name) => `"${name}"`).join(", ")}. Shipping will fail until the name matches one of them.`
+        : "Shiprocket lists no pickup addresses at all. Shipping will fail.";
+    case "pin_mismatch":
+      return `Shiprocket says ${verdict.shiprocketPostcode} for "${verdict.nickname}", but delivery charges are quoted from ${verdict.settingsPostcode}. Every order is being priced for the wrong journey. Fix the pickup pin code at Settings, or the address in Shiprocket.`;
+    default:
+      return verdict.detail;
   }
 }
