@@ -103,6 +103,7 @@ Every number below was produced by a run, on staging, against a real browser.
 | `npm run lint` | clean |
 | `npm run rebuild:stage` | **98 migrations, all checks green** — from empty |
 | Production migration `20260810140000` | applied; snapshot content-verified against live counts first; PostgREST confirmed serving `original_path` before any code that writes it was deployed |
+| Merged and deployed | `dpl_9NzjBysYcdo7V3Fog1Uu3WWH9G42`, sha `68b2539`, READY and aliased to `www.footvault.in`; `/`, `/shop`, `/cart`, a product page, `/checkout`, `/wishlist` all 200; threshold still ₹1,599; `bom1::bom1` |
 
 **The reprocessor was exercised, not just dry-run.** The first dry run reported
 "122 seed placeholders skipped, would process 0", which proves nothing about the
@@ -151,6 +152,19 @@ page two of `/shop`, with no card to assert about — and on the product page th
 gallery filters by colourway, so a freshly uploaded image with no colour is not
 rendered there either. It now harvests the slug **from the listing**, so the
 surface is guaranteed by construction.
+
+**And once more on the deploy.** I ran the production smoke check while the
+deployment still read `BUILDING` and its alias list did not yet contain
+`www.footvault.in` — so six green 200s were measured against the *previous*
+build. A 200 proves the site is up, not that the new code is on it. The
+authoritative signal is the alias assignment: Vercel's own record of which
+deployment answers that hostname. Re-run after the alias landed.
+
+The bundle-hash probe I reached for as a second signal came back **identical
+before and after**, and I am recording that rather than quietly dropping it: the
+served HTML lists only a subset of chunks, so it is too weak to distinguish
+builds here. It was inconclusive, not confirmatory — which is the same trap in
+a new costume, and the reason the alias is what this rests on.
 
 I also removed a dead branch from the reprocessor. "Already current, skip the
 write" can never be reached — a processed row points at `derived/` and is caught
