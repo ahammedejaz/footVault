@@ -198,11 +198,69 @@ export type ShippingSettings = {
    * The prepaid free-delivery threshold. There is deliberately no flat fee
    * alongside it — rates come from Shiprocket, per destination. See
    * `src/lib/shipping/settings.ts` for the full, server-side shape.
+   *
+   * This is the **only** field on the public shape, and it is one field rather
+   * than three on purpose. It used to carry `currency` and `regions` beside it,
+   * both of which were read by nothing and both of which therefore existed only
+   * as invented defaults in the two fallback objects this preflight deleted. A
+   * field no caller reads cannot be wrong in a way anyone notices, which makes
+   * it a good hiding place for a guess.
    */
   free_above_paise: number;
-  currency: string;
-  regions: string[];
 };
+
+/**
+ * The public shipping settings, or a loud failure naming the field.
+ *
+ * This is the storefront twin of `shippingSettings()` in
+ * `src/lib/shipping/settings.ts`, and it exists because the two read the same
+ * row through different clients: that one uses the admin client and sees every
+ * key, this one goes through `getSiteSettings`, which returns only rows marked
+ * `is_public`.
+ *
+ * **It throws rather than defaulting, and that is the whole point of it.** Both
+ * callers used to pass `setting()` a fallback object containing
+ * `free_above_paise: 249900`, so a row that was missing, unreadable or no
+ * longer public did not fail — it quietly promised ₹2,499 while checkout went
+ * on charging against whatever the row actually said. The production row says
+ * ₹1,599, so the two numbers had already diverged; nothing surfaced it because
+ * the fallback path is silent by construction.
+ *
+ * That is the same failure the server-side module fixed for itself at
+ * `settings.ts:215-226` — "a hand-edited row that lost `free_above_paise` used
+ * to become ₹2,499 out of a constant; now it becomes a loud failure naming the
+ * field". This closes the half of that lesson which was left on the public
+ * path, and `audit:literals` now fails on any nonzero paise literal in `src/`
+ * so a third copy cannot be typed back in.
+ *
+ * A storefront page that cannot state the delivery threshold correctly should
+ * not render: the alternative is a promise the shop does not keep, printed on
+ * the product page and in the bag.
+ */
+export function publicShippingSettings(
+  settings: SiteSettings,
+): ShippingSettings {
+  const value = settings.shipping;
+  if (!value || typeof value !== "object") {
+    throw new Error(
+      "site_settings.shipping is missing or not an object. The storefront " +
+        "cannot state a delivery threshold without it. Check the row exists " +
+        "and is_public is true.",
+    );
+  }
+
+  const partial = value as Record<string, unknown>;
+  const threshold = partial.free_above_paise;
+  if (typeof threshold !== "number" || !Number.isFinite(threshold)) {
+    throw new Error(
+      "site_settings.shipping.free_above_paise is missing or not a number. " +
+        "It is the free-delivery threshold the storefront promises; there is " +
+        "no safe value to assume for it.",
+    );
+  }
+
+  return { free_above_paise: threshold };
+}
 
 export type AnnouncementSettings = {
   text: string;

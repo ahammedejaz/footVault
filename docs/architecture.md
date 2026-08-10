@@ -916,6 +916,105 @@ dynamic, so the same misconfiguration became a 500 on every request.
 
 ---
 
+## Rate limiting, and the fail-open that is not a bug
+
+`src/lib/rate-limit.ts` **fails open on purpose.** When its counter cannot be
+read, the request is allowed and the failure is logged. That is a design
+decision, it is load-bearing, and it is written down here because it reads like
+an oversight to anyone who meets it in the middle of a stack trace — the kind of
+thing a well-meaning person tightens on a Friday.
+
+### A limiter answers "too fast", never "allowed"
+
+Nothing in this codebase may rely on a limit as the only thing between a caller
+and an action. Every admin mutation calls `is_admin()` in the database, the
+Razorpay webhook verifies its HMAC, and checkout recomputes every price server
+side. The limiter exists so a caller who is *entitled* to do a thing cannot do
+it ten thousand times a minute.
+
+That is the same statement as the fail-open, from the other direction: because
+it fails open it can never be security, and because it is never security it is
+free to fail open. Reversing one half without the other is what breaks it.
+
+### What failing closed would cost
+
+The counters live in Postgres — a `consume_rate_limit` RPC, not a per-instance
+`Map`, because serverless instances are created and discarded constantly and a
+counter that resets on every cold start is not a counter.
+
+So an unreachable counter means an unreachable database. Failing closed there
+would mean a database blip stops orders, and — worse — that we return non-2xx to
+Razorpay until it disables our webhook. That trades a small abuse risk for a
+large availability one, against a database that is already the thing that is
+broken.
+
+There is a general principle underneath, and it is what makes the exception
+below predictable rather than arbitrary: **every policy here bounds work against
+Postgres, using a counter in Postgres.** When Postgres is gone, the guard and
+the thing worth guarding disappear together. The flood cannot do damage because
+its target is already down.
+
+### The `serviceability` exception
+
+One policy does not fit that principle, and it is the only one where the
+fail-open direction genuinely exposes something.
+
+`serviceability` guards the **Shiprocket quota** — an external, paid resource
+with nothing to do with our database — and a public Server Action reaches it
+from both the checkout address step and the product page. A counter outage
+removes the guard and leaves the exposure fully intact.
+
+This is not hypothetical. PostgREST reloads its schema cache on every DDL and
+cannot be told not to, so an RPC can fail transiently on exactly the deploys
+this shop keeps doing.
+
+So it has a second limiter that does not depend on the database, in
+`src/lib/shipping/quote.ts`:
+
+- **600 courier calls per hour, per instance, across every caller**, counted in
+  module memory.
+- **Unconditional**, not "only when the counter looks broken" — knowing the
+  counter is broken requires the counter. A budget consulted only in a state you
+  cannot reliably detect is not a budget.
+- A real shop's delivery checks are bounded by the number of people shopping; a
+  scraper's are not. The line sits far above the first and far below what makes
+  a scrape worth running, which is the only place it can sit while satisfying
+  the rule that **no real customer may ever reach it**.
+
+**What a trip does is the part that matters.** Exhausting the budget returns the
+same verdict a courier outage returns — `source: "unknown"` — so the shop
+degrades to a *labelled estimate* rather than an error. Prepaid still sells at
+the settings figure, marked as an estimate; Pay on Delivery falls to the owner's
+`fallback_behaviour`. A limiter that threw here would take Pay on Delivery off
+the table for a real customer, which is precisely the outcome the size of the
+budget exists to prevent.
+
+Note what this is *not*: it is not a per-caller limit and cannot be one, because
+module memory is per-instance and a determined caller is spread across
+instances. The Postgres counter is still the real control. This is a ceiling on
+total spend when the real control is unavailable.
+
+### The same shape, once more, for error email
+
+`src/lib/errors/report-server-error.ts` carries the other in-memory backstop, for
+the same reason and with the same structure: `errorReport` (3 per fingerprint per
+hour) and `errorReportTotal` (20 per hour) both fail open, and both are counters
+in the database — so neither holds when *the database is the thing that is
+broken*, which is the exact failure most likely to be generating the email.
+`withinProcessBudget` caps it at 5 per instance per hour in memory, and past that
+the log is the record.
+
+### If you are here to fix it
+
+The fail-open is deliberate; the two in-memory ceilings are deliberate; their
+being unconditional is deliberate. What would be a real bug is a policy that
+guards an **external paid resource** getting only the Postgres counter, because
+that is the case the general principle does not cover. There is one such policy
+today and it is `serviceability`. Adding a second — a shipping-label call, an
+SMS provider, an AI endpoint — means adding a backstop beside it.
+
+---
+
 ## Audits
 
 Everything in `scripts/audit/` runs against a production build. `npm run audit`

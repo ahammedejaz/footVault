@@ -309,7 +309,14 @@ owner's rule is that rates always come from the Shiprocket API and never from
 this codebase, and that the *thresholds* are the shop's decision, so what
 replaced it is a set of admin-tunable numbers:
 
-| Key | Live value | What it decides |
+**The values in this table are the ones that were live *then*, not now.** Three
+of its keys were deleted a phase later and the threshold has moved twice since;
+the current shape is the second table below, and the only authority on the
+current *values* is the row itself. A figure copied out of here into code or
+copy is the ₹2,499 mistake starting again — which is why `audit:literals` now
+fails on any nonzero paise literal in `src/`.
+
+| Key | Value then | What it decides |
 |---|---|---|
 | `free_above_paise` | `249900` | Prepaid delivery is free at or above this. `0` disables the free tier |
 | `cod_enabled` | `true` | Master switch for Pay on Delivery, independent of PIN-code serviceability |

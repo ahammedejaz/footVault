@@ -1,0 +1,59 @@
+-- The `shipping` settings row is readable by the storefront after a replay from
+-- empty, as it already is on production.
+--
+-- ## The divergence
+--
+-- `20260809140000_shipping_settings_row_exists.sql` creates the row with
+-- `is_public = false`. Production's row is `is_public = true` and always has
+-- been: it predates that migration, which inserts `where not exists` and so
+-- correctly did nothing there. The admin settings form never touches the column
+-- either — `saveShippingSettings` issues an `update` of `value` alone.
+--
+-- So the two databases disagree, and only on a rebuild. RLS grants anon and
+-- authenticated `select` on `site_settings` `using (is_public)`, and
+-- `getSiteSettings()` filters the same way, which means on a freshly replayed
+-- database the storefront cannot see the shipping row at all.
+--
+-- ## Why that was invisible until now
+--
+-- Both public readers of the threshold — the product page and the bag — passed
+-- `setting()` a fallback object containing `free_above_paise: 249900`. A
+-- rebuilt staging therefore did not fail; it quietly promised ₹2,499 free
+-- delivery while production promised ₹1,599 and checkout charged against
+-- neither of them from that constant. A silent fallback on the one path nobody
+-- watches is the whole reason this preflight exists, and this is a second
+-- instance of it that the brief had not found.
+--
+-- Phase 10's preflight replaced those fallbacks with `publicShippingSettings()`,
+-- which throws. That is the right behaviour and it is what turns this latent
+-- divergence into a visible one: without this migration a rebuilt database now
+-- 500s on every product page and on the bag, which is the failure mode
+-- `src/lib/shipping/settings.ts:238-255` already recorded once.
+--
+-- ## Why an update rather than a fix to the earlier file
+--
+-- `20260809140000` is applied on production. Editing an applied migration
+-- changes what a fresh replay produces while changing nothing about any
+-- database that already ran it, which is how the two drift further apart rather
+-- than closer.
+--
+-- This is a **no-op on production by construction** — the row is already
+-- `true`, so the `is distinct from` guard matches nothing there. It exists to
+-- make a rebuilt database agree with the live one.
+--
+-- ## What this does not decide
+--
+-- `is_public` grants read of the **entire jsonb value**, not of one field, so
+-- an anonymous visitor can read the whole shipping object: the Pay-on-Delivery
+-- deposit and advance cap, the COD minimum, the stacking ceiling and the RTO
+-- deduction policy alongside the free-delivery threshold the page prints.
+--
+-- That is true of production today and this migration neither widens nor
+-- narrows it. Narrowing it means splitting the public threshold out of the
+-- operational settings into its own row, which is a schema change and an
+-- authorisation decision — recorded for the owner in
+-- `claudeExecutionReport/phase-10-preflight.md` rather than taken here.
+update public.site_settings
+   set is_public = true
+ where key = 'shipping'
+   and is_public is distinct from true;
