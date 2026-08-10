@@ -97,6 +97,13 @@ export default async function AdminSettingsPage() {
                 prepaidDiscount.mode === "percent"
                   ? Number(prepaidDiscount.value ?? 0)
                   : paiseToRupees(prepaidDiscount.value, 0),
+              // A percentage as typed, and zero when unset — which the form
+              // renders as an empty box, and the save action writes back as
+              // null. Nothing here may invent a ceiling.
+              maxTotalDiscountPercent:
+                typeof shipping.max_total_discount_percent === "number"
+                  ? shipping.max_total_discount_percent
+                  : 0,
               shippingRateMode:
                 shipping.shipping_rate_mode === "flat" ? "flat" : "live",
               flatShippingFeeRupees: paiseToRupees(

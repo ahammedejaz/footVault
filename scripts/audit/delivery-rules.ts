@@ -109,6 +109,7 @@ function settings(over: Partial<ShippingSettings> = {}): ShippingSettings {
     codAdvanceMaximumPaise: 50_000,
     includeGstInAdvance: false,
     prepaidDiscount: { mode: "flat", value: 0 },
+    maxTotalDiscountPercent: null,
     shippingRateMode: "live",
     flatShippingFeePaise: 0,
     flatCodDeposit: { mode: "unset" },

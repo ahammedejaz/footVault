@@ -120,6 +120,7 @@ async function main() {
     coupon?: string;
     discountTotal?: number;
     prepaidDiscount?: number;
+    maxTotalDiscountBps?: number;
   }): Promise<PlaceOutcome> {
     const { data, error } = await admin.rpc("create_order_with_stock", {
       p_cart_id: input.cartId,
@@ -135,6 +136,7 @@ async function main() {
       p_discount_total: input.discountTotal,
       p_prepaid_discount: input.prepaidDiscount,
       p_coupon_code: input.coupon,
+      p_max_total_discount_bps: input.maxTotalDiscountBps,
     });
     if (error)
       return {
@@ -344,36 +346,118 @@ async function main() {
       );
     }
 
-    /* ── 3 · no stacking, enforced in the row ─────────────────────────────── */
-    console.log("\n3 · a coupon zeroes the prepaid part (no stacking)");
+    /* ── 3 · stacking, additive, under the owner's ceiling ────────────────── */
+    console.log(
+      "\n3 · a coupon and the prepaid discount combine under the ceiling",
+    );
 
-    const noStack = await makeCoupon("SOLO", { type: "percent", value: 10 });
+    /*
+     * The owner's reversal, 2026-08-10: both discounts apply, additively —
+     * each computed on the original goods subtotal — capped together at
+     * `p_max_total_discount_bps` of the subtotal this function computes under
+     * the row lock. The coupon keeps its full value; the prepaid part absorbs
+     * the clamp. And with no ceiling supplied, a stacked pair is *refused*
+     * (DCUNS), never combined uncapped — the number is the owner's to set.
+     */
+    const stackCoupon = await makeCoupon("STACK", { type: "percent", value: 10 });
     const stackCart = await makeCart(vMoney.id, 1);
-    // A hostile-or-buggy caller passes a prepaid discount alongside the code.
+    // A roomy ceiling first: 50% admits both parts whole.
     const stacked = await place({
       ...stackCart,
-      coupon: noStack.code,
-      discountTotal: 200_00,
+      coupon: stackCoupon.code,
       prepaidDiscount: 200_00,
+      maxTotalDiscountBps: 5000,
     });
-    check("the order is placed", stacked.ok);
+    check("the stacked order is placed", stacked.ok);
     if (stacked.ok) {
       const money = await orderMoney(stacked.row.order_id);
+      const tenPercent =
+        Math.ceil((money.subtotal * 10) / 100 / 100) * 100;
       check(
-        "prepaid_discount is written as zero when a coupon applies",
-        money.prepaid_discount === 0,
+        "the coupon's part is written whole",
+        money.coupon_discount === tenPercent,
+        `${money.coupon_discount} vs ${tenPercent}`,
+      );
+      check(
+        "the prepaid part survives alongside it",
+        money.prepaid_discount === 200_00,
         String(money.prepaid_discount),
       );
       check(
-        "the coupon is the whole discount",
-        money.discount_total === money.coupon_discount &&
-          money.coupon_discount > 0,
-        `${money.discount_total} vs ${money.coupon_discount}`,
+        "discount_total is the sum of its parts",
+        money.discount_total === money.coupon_discount + money.prepaid_discount,
+        `${money.discount_total} vs ${money.coupon_discount} + ${money.prepaid_discount}`,
       );
       check(
         "the order remembers which code",
-        money.coupon_code === noStack.code,
+        money.coupon_code === stackCoupon.code,
         money.coupon_code ?? "null",
+      );
+      check(
+        "the grand total reflects both discounts",
+        money.grand_total ===
+          money.subtotal - money.discount_total + money.shipping_fee,
+        `${money.grand_total}`,
+      );
+    }
+
+    // A tight ceiling: the pair is clamped to it, and the prepaid part is
+    // what shrinks — the coupon is the number the customer was promised.
+    const tightCart = await makeCart(vMoney.id, 1);
+    const tight = await place({
+      ...tightCart,
+      coupon: stackCoupon.code,
+      prepaidDiscount: 500_000_00,
+      maxTotalDiscountBps: 1200,
+    });
+    check("the tightly-capped order is placed", tight.ok);
+    if (tight.ok) {
+      const money = await orderMoney(tight.row.order_id);
+      const ceiling = Math.floor((money.subtotal * 1200) / 10000);
+      const tenPercent =
+        Math.ceil((money.subtotal * 10) / 100 / 100) * 100;
+      check(
+        "the coupon keeps its full value under the ceiling",
+        money.coupon_discount === Math.min(tenPercent, ceiling),
+        `${money.coupon_discount}`,
+      );
+      check(
+        "the prepaid part absorbs the clamp",
+        money.prepaid_discount === ceiling - money.coupon_discount,
+        `${money.prepaid_discount} vs ceiling ${ceiling} − coupon ${money.coupon_discount}`,
+      );
+      check(
+        "together they sit exactly on the ceiling",
+        money.discount_total === ceiling,
+        `${money.discount_total} vs ${ceiling}`,
+      );
+    }
+
+    // No ceiling, both parts present: refused outright, not combined uncapped.
+    const unsetCart = await makeCart(vMoney.id, 1);
+    const unset = await place({
+      ...unsetCart,
+      coupon: stackCoupon.code,
+      prepaidDiscount: 200_00,
+    });
+    check(
+      "a stacked pair with no ceiling is refused with DCUNS",
+      !unset.ok && unset.code === "DCUNS",
+      unset.ok ? "placed" : unset.code,
+    );
+
+    // And a coupon alone still needs no ceiling — the cap governs the
+    // combination, not the feature.
+    const soloCart = await makeCart(vMoney.id, 1);
+    const solo = await place({ ...soloCart, coupon: stackCoupon.code });
+    check("a coupon alone still places without a ceiling", solo.ok);
+    if (solo.ok) {
+      const money = await orderMoney(solo.row.order_id);
+      check(
+        "and is the whole discount",
+        money.discount_total === money.coupon_discount &&
+          money.prepaid_discount === 0,
+        `${money.discount_total} / ${money.coupon_discount} / ${money.prepaid_discount}`,
       );
     }
 

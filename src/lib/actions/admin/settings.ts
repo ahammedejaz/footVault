@@ -56,6 +56,10 @@ const shippingSchema = z
     prepaidDiscountValue: z
       .number({ message: "The prepaid discount must be a number." })
       .min(0, "The prepaid discount cannot be negative."),
+    maxTotalDiscountPercent: z
+      .number({ message: "The combined-discount ceiling must be a number." })
+      .min(0, "The combined-discount ceiling cannot be negative.")
+      .max(100, "A ceiling over 100% is not a ceiling."),
     shippingRateMode: z.enum(["live", "flat"]),
     flatShippingFeeRupees: rupees("The flat delivery charge"),
     flatCodDepositMode: z.enum(["unset", "multiplier", "fixed"]),
@@ -245,6 +249,15 @@ export async function saveShippingSettings(
                   ? v.prepaidDiscountValue
                   : Math.round(v.prepaidDiscountValue * 100),
             },
+            /*
+              Null rather than zero when unset, for the same reason as the
+              flat-mode deposit: zero would read as "a ceiling of nothing",
+              which is a rule, and an empty box is the absence of one. Unset
+              withholds stacking — the customer gets the larger single
+              discount until the owner chooses the ceiling.
+            */
+            max_total_discount_percent:
+              v.maxTotalDiscountPercent > 0 ? v.maxTotalDiscountPercent : null,
             shipping_rate_mode: v.shippingRateMode,
             flat_shipping_fee_paise: v.flatShippingFeeRupees,
             /*

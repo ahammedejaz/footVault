@@ -92,6 +92,18 @@ export type ShippingSettings = {
    * silently lower total.
    */
   prepaidDiscount: { mode: "flat" | "percent"; value: number };
+  /**
+   * The ceiling on the coupon and the prepaid discount **combined**, as a
+   * percentage of the goods total. Owner's decision, 2026-08-10, reversing the
+   * same day's no-stacking rule: the two now add, and this is the number that
+   * stops the sum running away.
+   *
+   * **Null means the owner has not set it — and stacking is then withheld**,
+   * not uncapped. The two-discount case falls back to the larger single
+   * discount and the server log says why, loudly. Built unset on purpose: the
+   * number is a business decision and nothing here may invent one.
+   */
+  maxTotalDiscountPercent: number | null;
 
   /* --- Batch 2: the delivery controls ----------------------------------- */
 
@@ -248,6 +260,9 @@ export async function shippingSettings(): Promise<ShippingSettings> {
     codAdvanceMaximumPaise: optionalPaise(partial.cod_advance_maximum_paise, 0),
     includeGstInAdvance: partial.include_gst_in_advance === true,
     prepaidDiscount: readPrepaidDiscount(partial.prepaid_discount),
+    maxTotalDiscountPercent: readMaxTotalDiscountPercent(
+      partial.max_total_discount_percent,
+    ),
     shippingRateMode:
       (partial.shipping_rate_mode ?? partial.customer_delivery_fee_mode) ===
       "flat"
@@ -321,6 +336,24 @@ function readPrepaidDiscount(
     typeof raw === "number" && Number.isFinite(raw) && raw >= 0 ? raw : 0;
   const ceiling = mode === "percent" ? 100 : Number.MAX_SAFE_INTEGER;
   return { mode, value: Math.min(amount, ceiling) };
+}
+
+/**
+ * The stacking ceiling, or null when the owner has not chosen one.
+ *
+ * Null — not zero, not 100 — for anything missing or malformed. Zero would
+ * mean "no discount survives stacking" and 100 would mean "no ceiling at
+ * all", and both are business decisions this reader is not allowed to make.
+ * The consumer treats null as "stacking withheld", the same fail-closed
+ * direction as `flatCodDeposit`.
+ */
+function readMaxTotalDiscountPercent(value: unknown): number | null {
+  return typeof value === "number" &&
+    Number.isFinite(value) &&
+    value > 0 &&
+    value <= 100
+    ? value
+    : null;
 }
 
 /**

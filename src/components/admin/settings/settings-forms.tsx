@@ -60,6 +60,7 @@ export type ShippingFormValues = {
   includeGstInAdvance: boolean;
   prepaidDiscountMode: "flat" | "percent";
   prepaidDiscountValue: number;
+  maxTotalDiscountPercent: number;
   shippingRateMode: "live" | "flat";
   flatShippingFeeRupees: number;
   flatCodDepositMode: "unset" | "multiplier" | "fixed";
@@ -318,6 +319,23 @@ export function ShippingSettingsForm({
             value={v.prepaidDiscountValue}
             onChange={(n) => set("prepaidDiscountValue", n)}
             hint="Zero switches the discount off entirely. A part-rupee discount is rounded up to the next whole rupee, in the customer's favour."
+          />
+        </div>
+
+        <div className="grid gap-5 sm:grid-cols-2">
+          {/*
+            The stacking ceiling. A coupon and the online-payment discount now
+            combine, and this is the number that stops the pair running away —
+            a 20% code on top of a 20% incentive is 40% off unless something
+            says otherwise, and only the owner can say what.
+          */}
+          <Amount
+            id="max-total-discount-percent"
+            label="Most a coupon and this discount can take off together"
+            unit="%"
+            value={v.maxTotalDiscountPercent}
+            onChange={(n) => set("maxTotalDiscountPercent", n)}
+            hint="A coupon and the online-payment discount add up, and together they never exceed this share of the goods total — the coupon keeps its full value and the online-payment part shrinks to fit. Empty means they do not combine at all: a customer gets whichever single discount is larger, until you set a ceiling here."
           />
         </div>
       </Section>

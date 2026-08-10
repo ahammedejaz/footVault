@@ -41,8 +41,10 @@ export function Totals({
   pendingDelivery?: boolean;
   /**
    * The applied code, so the row can say *which* coupon rather than a bare
-   * "Discount" — the no-stacking rule means at most one discount is ever in
-   * force, and the screen names the one that won.
+   * "Discount". A coupon and the prepaid discount combine now (owner's
+   * decision, 2026-08-10), and each is its own named row below — this
+   * component never had to know about the old larger-of-two rule, because it
+   * always drew whatever parts were non-zero.
    */
   couponCode?: string | null;
 }) {

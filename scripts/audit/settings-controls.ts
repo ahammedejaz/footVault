@@ -138,6 +138,7 @@ const CONTROLS: Control[] = [
     options: { flat: "A fixed amount off", percent: "A percentage off" },
     read: (v) => obj(obj(v).prepaid_discount).mode },
   { id: "prepaid-discount-value", label: /Discount amount/, kind: "number", row: "shipping", read: (v) => obj(obj(v).prepaid_discount).value },
+  { id: "max-total-discount-percent", label: /Most a coupon and this discount can take off together/, kind: "number", row: "shipping", read: (v) => obj(v).max_total_discount_percent },
   { id: "rto-policy", label: "What a customer who paid online gets back", kind: "radio", row: "shipping",
     options: { actual_freight: "Everything except what the journey cost", flat: "Everything except a fixed amount", none: "Everything, nothing deducted" },
     read: (v) => obj(v).rto_deduction_policy },
@@ -425,6 +426,18 @@ async function main() {
     await save(page, "shipping");
     await assertStored(page, "prepaid-discount-mode", "percent");
     await assertStored(page, "prepaid-discount-value", 12.5);
+
+    section("5b · the stacking ceiling");
+    await open();
+    await setValue(page, "max-total-discount-percent", "30");
+    await save(page, "shipping");
+    await assertStored(page, "max-total-discount-percent", 30);
+    // And back to unset: an empty box must write null — "no ceiling chosen,
+    // stacking withheld" — never zero, which would read as a rule.
+    await open();
+    await setValue(page, "max-total-discount-percent", "0");
+    await save(page, "shipping");
+    await assertStored(page, "max-total-discount-percent", null);
 
     section("6 · what a returned parcel costs the customer");
     await open();

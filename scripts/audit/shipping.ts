@@ -620,6 +620,7 @@ async function main() {
       codAdvanceMaximumPaise: 0,
       includeGstInAdvance: false,
       prepaidDiscount: { mode: "flat" as const, value: 0 },
+      maxTotalDiscountPercent: null,
       shippingRateMode: "live" as const,
       flatShippingFeePaise: 0,
       flatCodDeposit: { mode: "unset" as const },

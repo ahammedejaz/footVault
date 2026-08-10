@@ -1805,6 +1805,7 @@ export type Database = {
           p_free_shipping_above?: number
           p_guest_token?: string
           p_initial_status: Database["public"]["Enums"]["order_status"]
+          p_max_total_discount_bps?: number
           p_payment_method: string
           p_payment_status: Database["public"]["Enums"]["payment_status"]
           p_prepaid_discount?: number
