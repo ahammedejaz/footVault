@@ -78,6 +78,7 @@ type RawOrder = {
   cod_handling_fee: number;
   advance_amount: number;
   balance_due_on_delivery: number;
+  coin_paid: number;
   delivered_at: string | null;
   shipping_address: unknown;
   contact_email: string | null;
@@ -193,7 +194,7 @@ export async function getOrderForViewer(
   const query = supabase.from("orders").select(
     `id, order_number, status, payment_status, payment_method, placed_at,
        subtotal, discount_total, prepaid_discount, coupon_discount, coupon_code, shipping_fee, tax_total, grand_total,
-       cod_handling_fee, advance_amount, balance_due_on_delivery, delivered_at,
+       cod_handling_fee, advance_amount, balance_due_on_delivery, coin_paid, delivered_at,
        shipping_address, contact_email, contact_phone, customer_note, user_id,
        quoted_estimated_days,
        items:order_items (
@@ -235,6 +236,7 @@ export async function getOrderForViewer(
       grandTotal: row.grand_total,
       advanceAmount: row.advance_amount,
       balanceDueOnDelivery: row.balance_due_on_delivery,
+      coinPaid: row.coin_paid,
     },
     couponCode: row.coupon_code,
     deliveredAt: row.delivered_at,

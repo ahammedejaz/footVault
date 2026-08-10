@@ -163,6 +163,12 @@ export type PlaceOrderInput = {
   customerNote?: string;
   /** Save this address to the book. Signed-in only; a guest has no book. */
   saveAddress?: boolean;
+  /**
+   * "Use my Vault Coins" — a boolean, never an amount. The server plans the
+   * spend from the ledger and the owner's caps; the database decides under
+   * the account lock. Ignored for guests, who hold no coins.
+   */
+  spendCoins?: boolean;
 };
 
 /** One thing that went out of stock, named so the customer knows what to drop. */
@@ -203,6 +209,17 @@ export type PlaceOrderResult =
        */
       ok: false;
       reason: "coupon_rejected";
+      message: string;
+    }
+  | {
+      /**
+       * The coin block refused between the preview and the press — the
+       * balance moved, a cap changed, or the account was disabled. Nothing
+       * was placed or charged; unticking the coins and retrying always
+       * works, and the message says exactly that.
+       */
+      ok: false;
+      reason: "coins_rejected";
       message: string;
     }
   | {
@@ -338,10 +355,20 @@ export type OrderTotals = {
   codHandlingFee: number;
   taxTotal: number;
   grandTotal: number;
-  /** Charged online through Razorpay. Equals `grandTotal` for a prepaid order. */
+  /** Charged online through Razorpay. Equals `grandTotal` for a prepaid order
+      with no coins; 0 for one settled entirely in Vault Coins. */
   advanceAmount: number;
   /** Collected in cash by the courier. This is what Shiprocket is told to collect. */
   balanceDueOnDelivery: number;
+  /**
+   * Paise settled by Vault Coins — the third term of the settlement identity
+   * (`advance + balance + coinPaid = grandTotal`), and NEVER part of
+   * `discountTotal`: a coin is a tender, not a discount (owner's ruling,
+   * Phase 11). Required for the same reason every other named money line is:
+   * a read site that forgets it fails to compile rather than rendering a
+   * receipt whose settlement lines do not add up to its total.
+   */
+  coinPaid: number;
 };
 
 export type OrderTimelineEntry = {

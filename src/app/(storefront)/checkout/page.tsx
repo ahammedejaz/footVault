@@ -76,6 +76,7 @@ export default async function CheckoutPage() {
     // charge to compute an advance from, so it cannot exist before the quote.
     advanceAmount: cart.subtotal,
     balanceDueOnDelivery: 0,
+    coinPaid: 0,
   };
 
   return (

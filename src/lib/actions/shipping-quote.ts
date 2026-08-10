@@ -51,6 +51,8 @@ export type ShippingQuoteResult =
       feePaise: number;
       /** The Pay-on-Delivery extra, as its own named line. 0 for prepaid. */
       codHandlingPaise: number;
+      /** The forward leg alone — the "Shipping" row. Named, never derived. */
+      forwardShippingFeePaise: number;
       /** Charged online now. For prepaid this is the whole order. */
       advancePaise: number;
       /** Collected in cash by the courier. */
@@ -155,6 +157,7 @@ export async function quoteShipping(
       ok: true,
       feePaise: totals.shippingFee,
       codHandlingPaise: totals.codHandlingFee,
+      forwardShippingFeePaise: totals.forwardShippingFee,
       advancePaise: totals.advanceAmount,
       balanceDuePaise: totals.balanceDueOnDelivery,
       grandTotalPaise: totals.grandTotal,

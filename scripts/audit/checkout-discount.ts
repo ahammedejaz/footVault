@@ -137,6 +137,7 @@ function assertNamedLines() {
         grandTotal: 860_600,
         advanceAmount: 30_000,
         balanceDueOnDelivery: 830_600,
+        coinPaid: 0,
       },
     }),
   );

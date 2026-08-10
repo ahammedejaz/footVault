@@ -159,13 +159,19 @@ export function buildOrderConfirmationEmail(
       ? [`Pay-on-delivery fee  ${formatPaise(input.totals.codHandlingFee)}`]
       : []),
     `Order total     ${formatPaise(input.totals.grandTotal)}`,
+    // Settlement below the total: coins change who pays, not what it costs.
+    ...(input.totals.coinPaid > 0
+      ? [`Paid by coins   ${formatPaise(input.totals.coinPaid)}`]
+      : []),
     ...(paysOnDelivery
       ? [
           "",
           `Paid now              ${formatPaise(input.totals.advanceAmount)}`,
           `To pay on delivery    ${formatPaise(input.totals.balanceDueOnDelivery)}`,
         ]
-      : []),
+      : input.totals.coinPaid > 0 && input.totals.advanceAmount > 0
+        ? [`Paid by card    ${formatPaise(input.totals.advanceAmount)}`]
+        : []),
     "Prices include tax.",
     "",
     "Shipping to",
@@ -204,10 +210,15 @@ export function buildOrderConfirmationEmail(
       ? `<tr><td>Pay-on-delivery fee</td><td style="text-align:right">${formatPaise(input.totals.codHandlingFee)}</td></tr>`
       : "",
     `<tr><td><strong>Order total</strong></td><td style="text-align:right"><strong>${formatPaise(input.totals.grandTotal)}</strong></td></tr>`,
+    input.totals.coinPaid > 0
+      ? `<tr><td style="padding-top:12px">Paid by coins</td><td style="padding-top:12px;text-align:right">${formatPaise(input.totals.coinPaid)}</td></tr>`
+      : "",
     paysOnDelivery
       ? `<tr><td style="padding-top:12px">Paid now</td><td style="padding-top:12px;text-align:right">${formatPaise(input.totals.advanceAmount)}</td></tr>` +
         `<tr><td><strong>To pay in cash on delivery</strong></td><td style="text-align:right"><strong>${formatPaise(input.totals.balanceDueOnDelivery)}</strong></td></tr>`
-      : "",
+      : input.totals.coinPaid > 0 && input.totals.advanceAmount > 0
+        ? `<tr><td>Paid by card</td><td style="text-align:right">${formatPaise(input.totals.advanceAmount)}</td></tr>`
+        : "",
     `</table><p style="font-size:12px">Prices include tax.</p>`,
     `<p><strong>Shipping to</strong><br>${address.map(escapeHtml).join("<br>")}</p>`,
     `<p>${escapeHtml(whatHappensNext(input.paymentMethod, input.totals))}</p>`,

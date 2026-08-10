@@ -31,6 +31,7 @@ import {
   waitForRazorpay,
 } from "@/components/checkout/razorpay";
 import type { RazorpaySuccess } from "@/components/checkout/razorpay";
+import { CoinSpendOption } from "@/components/checkout/coin-spend-option";
 import { Totals } from "@/components/checkout/totals";
 import { quoteShipping } from "@/lib/actions/shipping-quote";
 import { EmptyState } from "@/components/storefront/empty-state";
@@ -116,6 +117,7 @@ type StoredQuoteView = {
   key: string;
   feePaise: number;
   codHandlingPaise: number;
+  forwardShippingFeePaise: number;
   advancePaise: number;
   balanceDuePaise: number;
   grandTotalPaise: number;
@@ -202,6 +204,8 @@ export function CheckoutFlow({
   const chosenAddress =
     addresses.find((address) => address.id === addressChoice) ?? null;
   const offersRazorpay = methods.some((entry) => entry.method === "razorpay");
+  /** "Use my Vault Coins" — planned server-side, decided in the database. */
+  const [spendCoins, setSpendCoins] = useState(false);
   const busy = placing || paying || resuming;
 
   /* ------------------------------------------------------------- delivery -- */
@@ -279,6 +283,7 @@ export function CheckoutFlow({
         const answer = {
           key: `${pin}:${method}`,
           feePaise: result.feePaise,
+          forwardShippingFeePaise: result.forwardShippingFeePaise,
           codHandlingPaise: result.codHandlingPaise,
           advancePaise: result.advancePaise,
           balanceDuePaise: result.balanceDuePaise,
@@ -350,6 +355,15 @@ export function CheckoutFlow({
         */
         discountTotal: quote.discountTotalPaise,
         prepaidDiscount: quote.prepaidDiscountPaise,
+        /*
+          The Phase 11 named fields, mapped for the same reason as the two
+          rows above: any field the Totals component draws has to travel with
+          the quote, or the row reads the pre-quote zeros. The forward leg at
+          zero renders as "Free" — the exact silent lie the comment above
+          describes, caught the night couponDiscount became a named field.
+        */
+        couponDiscount: quote.couponDiscountPaise,
+        forwardShippingFee: quote.forwardShippingFeePaise,
       }
     : totals;
 
@@ -625,6 +639,7 @@ export function CheckoutFlow({
       contactPhone: parsed.data.contactPhone,
       customerNote: parsed.data.customerNote ?? undefined,
       saveAddress: parsed.data.saveAddress,
+      spendCoins,
     };
 
     startPlacing(async () => {
@@ -1044,6 +1059,18 @@ export function CheckoutFlow({
                 </div>
               </fieldset>
             )}
+
+            {quote ? (
+              <CoinSpendOption
+                quoteKey={quote.key}
+                grandTotalPaise={quote.grandTotalPaise}
+                advancePaise={quote.advancePaise}
+                balancePaise={quote.balanceDuePaise}
+                paysOnDelivery={quote.balanceDuePaise > 0}
+                checked={spendCoins}
+                onChange={setSpendCoins}
+              />
+            ) : null}
 
             {codMissingNote ? (
               <p className="border-border bg-fog/40 mt-3 rounded-lg border p-3 text-sm text-pretty">

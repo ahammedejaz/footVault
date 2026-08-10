@@ -861,6 +861,8 @@ export type Database = {
           cash_collected_at: string | null
           cash_collected_by: string | null
           cod_handling_fee: number
+          coin_paid: number
+          coin_spent: number
           contact_email: string | null
           contact_phone: string | null
           coupon_code: string | null
@@ -910,6 +912,8 @@ export type Database = {
           cash_collected_at?: string | null
           cash_collected_by?: string | null
           cod_handling_fee?: number
+          coin_paid?: number
+          coin_spent?: number
           contact_email?: string | null
           contact_phone?: string | null
           coupon_code?: string | null
@@ -959,6 +963,8 @@ export type Database = {
           cash_collected_at?: string | null
           cash_collected_by?: string | null
           cod_handling_fee?: number
+          coin_paid?: number
+          coin_spent?: number
           contact_email?: string | null
           contact_phone?: string | null
           coupon_code?: string | null
@@ -1916,45 +1922,86 @@ export type Database = {
           retry_after_seconds: number
         }[]
       }
-      create_order_with_stock: {
-        Args: {
-          p_advance_amount?: number
-          p_cart_id: string
-          p_cod_handling_fee?: number
-          p_contact_email?: string
-          p_contact_phone?: string
-          p_coupon_code?: string
-          p_customer_note?: string
-          p_discount_total?: number
-          p_free_shipping_above?: number
-          p_guest_token?: string
-          p_initial_status: Database["public"]["Enums"]["order_status"]
-          p_max_total_discount_bps?: number
-          p_payment_method: string
-          p_payment_status: Database["public"]["Enums"]["payment_status"]
-          p_prepaid_discount?: number
-          p_quote_source?: string
-          p_quoted_cod_fee_paise?: number
-          p_quoted_courier_id?: number
-          p_quoted_courier_name?: string
-          p_quoted_forward_paise?: number
-          p_quoted_rate_mode?: string
-          p_quoted_rto_paise?: number
-          p_shipping_address: Json
-          p_shipping_flat_fee: number
-          p_user_id?: string
-        }
-        Returns: {
-          advance_amount: number
-          balance_due: number
-          grand_total: number
-          item_count: number
-          order_id: string
-          order_number: string
-          shipping_fee: number
-          subtotal: number
-        }[]
-      }
+      create_order_with_stock:
+        | {
+            Args: {
+              p_advance_amount?: number
+              p_cart_id: string
+              p_cod_handling_fee?: number
+              p_contact_email?: string
+              p_contact_phone?: string
+              p_coupon_code?: string
+              p_customer_note?: string
+              p_discount_total?: number
+              p_free_shipping_above?: number
+              p_guest_token?: string
+              p_initial_status: Database["public"]["Enums"]["order_status"]
+              p_max_total_discount_bps?: number
+              p_payment_method: string
+              p_payment_status: Database["public"]["Enums"]["payment_status"]
+              p_prepaid_discount?: number
+              p_quote_source?: string
+              p_quoted_cod_fee_paise?: number
+              p_quoted_courier_id?: number
+              p_quoted_courier_name?: string
+              p_quoted_forward_paise?: number
+              p_quoted_rate_mode?: string
+              p_quoted_rto_paise?: number
+              p_shipping_address: Json
+              p_shipping_flat_fee: number
+              p_user_id?: string
+            }
+            Returns: {
+              advance_amount: number
+              balance_due: number
+              grand_total: number
+              item_count: number
+              order_id: string
+              order_number: string
+              shipping_fee: number
+              subtotal: number
+            }[]
+          }
+        | {
+            Args: {
+              p_advance_amount?: number
+              p_cart_id: string
+              p_cod_handling_fee?: number
+              p_coin_spend?: number
+              p_contact_email?: string
+              p_contact_phone?: string
+              p_coupon_code?: string
+              p_customer_note?: string
+              p_discount_total?: number
+              p_free_shipping_above?: number
+              p_guest_token?: string
+              p_initial_status: Database["public"]["Enums"]["order_status"]
+              p_max_total_discount_bps?: number
+              p_payment_method: string
+              p_payment_status: Database["public"]["Enums"]["payment_status"]
+              p_prepaid_discount?: number
+              p_quote_source?: string
+              p_quoted_cod_fee_paise?: number
+              p_quoted_courier_id?: number
+              p_quoted_courier_name?: string
+              p_quoted_forward_paise?: number
+              p_quoted_rate_mode?: string
+              p_quoted_rto_paise?: number
+              p_shipping_address: Json
+              p_shipping_flat_fee: number
+              p_user_id?: string
+            }
+            Returns: {
+              advance_amount: number
+              balance_due: number
+              grand_total: number
+              item_count: number
+              order_id: string
+              order_number: string
+              shipping_fee: number
+              subtotal: number
+            }[]
+          }
       credit_order_coins: { Args: { p_order_id: string }; Returns: string }
       cron_health: {
         Args: never
@@ -2029,7 +2076,13 @@ export type Database = {
     }
     Enums: {
       cart_status: "active" | "converted" | "abandoned"
-      coin_reason: "earned" | "redeemed" | "reversed" | "expired" | "adjusted"
+      coin_reason:
+        | "earned"
+        | "redeemed"
+        | "reversed"
+        | "expired"
+        | "adjusted"
+        | "released"
       coupon_type: "percent" | "fixed"
       footwear_type:
         | "sneaker"
@@ -2212,7 +2265,14 @@ export const Constants = {
   public: {
     Enums: {
       cart_status: ["active", "converted", "abandoned"],
-      coin_reason: ["earned", "redeemed", "reversed", "expired", "adjusted"],
+      coin_reason: [
+        "earned",
+        "redeemed",
+        "reversed",
+        "expired",
+        "adjusted",
+        "released",
+      ],
       coupon_type: ["percent", "fixed"],
       footwear_type: [
         "sneaker",

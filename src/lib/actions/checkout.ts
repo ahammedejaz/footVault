@@ -36,6 +36,8 @@ import { maybeRow } from "@/lib/queries/run";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { checkoutSchema } from "@/lib/validations/checkout";
+import { planCoinSpend } from "@/lib/coins/redeem";
+import { applyPaymentOutcome } from "@/lib/orders/payment-state";
 
 /**
  * Placing an order.
@@ -346,6 +348,25 @@ export async function placeOrder(
     const initialStatus: OrderStatus = "pending";
     const paymentStatus: PaymentStatus = "unpaid";
 
+    /**
+     * The coins the customer asked to spend, planned server-side from the
+     * ledger and the owner's caps — the browser sends only a boolean. The
+     * BINDING decision is the function's coin block under the account row
+     * lock; this number is the offer, and if the balance moved in the gap
+     * the function refuses with CNRJT rather than spending coins that are
+     * no longer there.
+     */
+    let coinSpend = 0;
+    if (data.spendCoins && user) {
+      const plan = await planCoinSpend({
+        userId: user.id,
+        grandTotalPaise: totals.grandTotal,
+        advancePaise: totals.advanceAmount,
+        balancePaise: totals.balanceDueOnDelivery,
+      });
+      if (plan.available) coinSpend = plan.coins;
+    }
+
     const admin = createAdminClient();
     const { data: created, error } = await admin.rpc(
       "create_order_with_stock",
@@ -419,6 +440,7 @@ export async function placeOrder(
         // happen through this path because the fallback above already picked
         // a single winner.
         p_max_total_discount_bps: totals.maxTotalDiscountBps ?? undefined,
+        p_coin_spend: coinSpend,
       },
     );
 
@@ -462,6 +484,23 @@ export async function placeOrder(
                   : undefined,
             }) +
             " Remove the code in your bag, or change it, then place the order again.",
+        };
+      }
+      if (error.code === "CNRJT") {
+        /**
+         * The function's coin block refused — the balance moved, the owner
+         * changed a cap, or the account was disabled between the preview
+         * and the press. One honest sentence: nothing was charged, nothing
+         * was spent, untick and retry always works.
+         */
+        return {
+          ok: false,
+          reason: "coins_rejected",
+          message:
+            "Your Vault Coins could not be applied just now — the balance " +
+            "or the rules changed while you were checking out. Nothing was " +
+            "charged. Untick the coins and place the order, or refresh to " +
+            "see the current number.",
         };
       }
       if (error.code === CHECKOUT_SQLSTATE.cartUnavailable) {
@@ -548,6 +587,55 @@ export async function placeOrder(
           "[checkout] could not save the address to the book:",
           saved.message,
         );
+    }
+
+    /**
+     * **Born paid: a prepaid order settled entirely in Vault Coins.**
+     *
+     * There is nothing to charge — and 0 paise is not a chargeable amount:
+     * Razorpay throws under 100 paise and `initiatePayment` would roll the
+     * whole order back, cancelling an order that is genuinely, fully paid.
+     * The function has already refused the 1–99 paise sliver, so advance is
+     * exactly 0 here only when coins settled everything.
+     *
+     * It confirms through the SAME seam as every other confirmation —
+     * `applyPaymentOutcome`, a captured outcome of exactly the ₹0 owed —
+     * not around it. That is what fires the pending→confirmed transition,
+     * the history row, and both the customer's confirmation email and the
+     * owner's new-order alert, exactly as a webhook capture would. A
+     * born-paid order that silently emailed nobody is the failure this
+     * shape exists to prevent.
+     */
+    if (advance === 0 && coinSpend > 0) {
+      const settled = await settleCoinOnlyOrder(order.order_id);
+      if (!settled) {
+        await rollBackUnpaidOrder(
+          order.order_id,
+          "Coin settlement could not be recorded",
+        );
+        revalidatePath("/", "layout");
+        return {
+          ok: false,
+          reason: "payment_init_failed",
+          message:
+            "We could not complete the order safely, so it was cancelled and " +
+            "your coins were not spent. Your bag is exactly as you left it — " +
+            "please try again.",
+        };
+      }
+      revalidatePath("/", "layout");
+      return {
+        ok: true,
+        order: {
+          id: order.order_id,
+          orderNumber: order.order_number,
+          grandTotal,
+          paymentMethod: method,
+          status: "confirmed",
+          paymentStatus: "paid",
+          initiation: { kind: "none", method: "cod" },
+        },
+      };
     }
 
     const initiation = await initiatePayment({
@@ -813,6 +901,61 @@ async function initiatePayment(args: {
     console.error("[checkout] payment initiation failed:", thrown);
     return null;
   }
+}
+
+/**
+ * Settle a fully-coin-paid order through the payment seam.
+ *
+ * A `payments` row of exactly the ₹0 owed online, then
+ * `applyPaymentOutcome` with a captured outcome — the identical shape a
+ * Razorpay capture takes, so idempotency (`payment_events` unique per
+ * provider+event), the compare-and-swap on the order, the history row and
+ * both confirmation emails all come from the one existing implementation.
+ * The event id is derived from the order id, so a double submit collapses
+ * to one application the same way a redelivered webhook does.
+ */
+async function settleCoinOnlyOrder(orderId: string): Promise<boolean> {
+  const admin = createAdminClient();
+  const reference = `coins:${orderId}`;
+
+  const { error } = await admin.from("payments").insert({
+    order_id: orderId,
+    provider: "cod",
+    provider_order_id: reference,
+    amount: 0,
+    currency: "INR",
+    status: "created",
+  });
+  // 23505 means a retry of this same order's settlement — the outcome
+  // application below is idempotent, so adopt rather than refuse.
+  if (error && error.code !== "23505") {
+    console.error(
+      "[checkout] could not record the coin settlement:",
+      error.message,
+      error.code,
+    );
+    return false;
+  }
+
+  const applied = await applyPaymentOutcome({
+    eventId: reference,
+    provider: "cod",
+    providerOrderId: reference,
+    eventType: "coins.settled",
+    outcome: {
+      status: "captured",
+      providerPaymentId: null,
+      providerOrderId: reference,
+      amountPaise: 0,
+      rawStatus: "coin_settled",
+      message: "Settled in full with Vault Coins",
+    },
+  });
+  if (!applied.applied && applied.reason !== "duplicate") {
+    console.error("[checkout] coin settlement did not apply:", applied);
+    return false;
+  }
+  return true;
 }
 
 /**

@@ -23,6 +23,7 @@ const REASON_COPY: Record<string, (n: number) => string> = {
   expired: (n) => `${Math.abs(n)} ${Math.abs(n) === 1 ? "coin" : "coins"} expired`,
   adjusted: (n) =>
     n > 0 ? `${n} ${n === 1 ? "coin" : "coins"} added by Foot Vault` : `${Math.abs(n)} ${Math.abs(n) === 1 ? "coin" : "coins"} removed by Foot Vault`,
+  released: (n) => `${n} ${n === 1 ? "coin" : "coins"} returned — order cancelled`,
 };
 
 export default async function CoinsPage() {

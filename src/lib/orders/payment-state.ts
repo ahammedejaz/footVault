@@ -187,7 +187,16 @@ function decide(
    * future change that let them drift could not silently point the mismatch
    * check at the wrong number.
    */
-  const expected = order.advance_amount || order.grand_total || recordedAmount;
+  /*
+    `??`, not `||`, and the difference became load-bearing in Phase 11: a
+    prepaid order settled ENTIRELY in Vault Coins carries a genuine
+    advance_amount of 0, and `||` would skip past it to grand_total —
+    stranding every born-paid order 'pending' with an illegal-shortfall note
+    until the sweep cancelled it. Null still falls through for rows written
+    before the column existed, which is all the old `||` was for.
+  */
+  const expected =
+    order.advance_amount ?? order.grand_total ?? recordedAmount;
   const captured = outcome.status === "captured";
   const shortfall = captured ? expected - outcome.amountPaise : 0;
 
@@ -406,6 +415,7 @@ async function notifyOrderConfirmed(
       grand_total: number;
       advance_amount: number;
       balance_due_on_delivery: number;
+      coin_paid: number;
       shipping_address: ShippingAddress | null;
     }>(
       "notifyOrderConfirmed.order",
@@ -415,7 +425,7 @@ async function notifyOrderConfirmed(
           "order_number, placed_at, payment_method, contact_email, contact_phone, " +
             "coupon_code, subtotal, discount_total, prepaid_discount, coupon_discount, " +
             "shipping_fee, cod_handling_fee, tax_total, grand_total, advance_amount, " +
-            "balance_due_on_delivery, shipping_address",
+            "balance_due_on_delivery, coin_paid, shipping_address",
         )
         .eq("id", orderId)
         .maybeSingle(),
@@ -472,6 +482,7 @@ async function notifyOrderConfirmed(
               grandTotal: order.grand_total,
               advanceAmount: order.advance_amount,
               balanceDueOnDelivery: order.balance_due_on_delivery,
+              coinPaid: order.coin_paid,
             },
             shippingAddress: address,
           })

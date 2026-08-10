@@ -220,6 +220,19 @@ function ServerCopy({
         </>
       );
 
+    case "coins_rejected":
+      return (
+        <>
+          <Heading>Your coins could not be applied</Heading>
+          <Body>{failure.message}</Body>
+          <NotCharged>
+            Nothing has been placed, nothing has been charged, and your coins
+            were not spent. Untick the coins to place the order without them,
+            or refresh to see your current balance.
+          </NotCharged>
+        </>
+      );
+
     case "payment_init_failed":
       return (
         <>

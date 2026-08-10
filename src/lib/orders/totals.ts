@@ -270,6 +270,10 @@ export async function computeOrderTotals(input: {
     grandTotal,
     advanceAmount: split.advancePaise,
     balanceDueOnDelivery: split.balanceDuePaise,
+    // Zero at quote time, always: coins are settled by create_order_with_stock
+    // under the account lock, and the checkout's coin preview adjusts the
+    // settlement lines client-side from the server's own preview answer.
+    coinPaid: 0,
     deliverable: quote.deliverable,
     codAvailable: codWithheldReason === null,
     codWithheldReason,
