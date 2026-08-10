@@ -13,7 +13,7 @@ import {
   cachedSiteSettings,
 } from "@/lib/queries/cached";
 import { getSavedProductIds } from "@/lib/queries/wishlist";
-import { setting, type ShippingSettings } from "@/lib/queries/content";
+import { publicShippingSettings } from "@/lib/queries/content";
 import { DeliveryCheck } from "@/components/storefront/delivery-check";
 import { formatPaise } from "@/lib/format";
 import { SITE_URL } from "@/lib/env";
@@ -78,11 +78,7 @@ export default async function ProductPage({
     getSavedProductIds(),
   ]);
   const saved = savedIds.has(product.id);
-  const shipping = setting<ShippingSettings>(settings, "shipping", {
-    free_above_paise: 249900,
-    currency: "INR",
-    regions: ["IN"],
-  });
+  const shipping = publicShippingSettings(settings);
   const price = product.salePrice ?? product.basePrice;
 
   /**

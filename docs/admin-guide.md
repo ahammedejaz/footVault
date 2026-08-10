@@ -68,8 +68,12 @@ The charge is not a penalty and it is not profit. It is the round trip.
 - *"You pay only the delivery charge now. The rest is cash to the delivery man."*
 - *"Please keep exactly ₹6,495 ready. That is the amount without the delivery,
   because you have already paid that part."*
-- *"Paying the whole amount online is cheaper, and above ₹2,499 the delivery is
-  free."*
+- *"Paying the whole amount online is cheaper, and above the free-delivery
+  threshold the delivery costs nothing."* — say the actual figure, and read it
+  off **Delivery & rates** at `/admin/settings` rather than from memory. This
+  line used to print ₹2,499 here; the live threshold was ₹1,599 by then, so
+  anyone reading this page aloud was quoting a customer a number the shop does
+  not honour.
 - *"The delivery charge is not returned if you refuse the parcel. It pays the
   courier to bring it to you and to take it back."*
 

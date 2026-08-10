@@ -163,10 +163,159 @@ console.log(
     : `  ${scanned} files scanned`,
 );
 
-/* ------------------------------------------------------------ 2 · content -- */
+/* -------------------------------------------------------------- 2 · paise -- */
+
+/**
+ * The other half of the same mistake, and the half that got past section 1
+ * twice.
+ *
+ * A rupee figure typed as `₹2,499` is caught above. The same figure typed as
+ * `free_above_paise: 249900` is not: there is no rupee sign in it, so the
+ * currency rule cannot see it, and it reads as configuration rather than as
+ * copy. Both of the fallbacks removed in this preflight were that shape, and
+ * both had been sitting in the tree while the gate above passed:
+ *
+ *   - `src/app/(storefront)/product/[slug]/page.tsx:82`
+ *   - `src/lib/queries/cart.ts:109`
+ *
+ * They mattered because the production row says **₹1,599**, not ₹2,499. The two
+ * numbers had already diverged and nothing surfaced it, because a fallback only
+ * runs when the real value is unavailable — the one moment nobody is watching.
+ *
+ * ## What counts as an offence
+ *
+ * A **nonzero numeric literal assigned to a paise-named identifier**. That is
+ * the whole rule, and each half of it is doing work:
+ *
+ *   - *Assigned*, so `capturedPaise === 0` and `refundPaise <= 0` are untouched.
+ *     A comparison reads a number, it does not invent one.
+ *   - *Numeric literal*, so `optionalPaise(partial.x, 0)` and
+ *     `minOrderPaise: Math.round(Number(minOrder) * 100)` are untouched. A value
+ *     computed from an input came from somewhere.
+ *   - *Nonzero*, because zero is not a price. `balanceDuePaise: 0` is an empty
+ *     accumulator or an explicit absence — "no cap", "deduct nothing" — and the
+ *     server-side settings module already reasons about that distinction
+ *     carefully at `src/lib/shipping/settings.ts:222-226`.
+ *
+ * ## Why all of `src/` rather than `src/` outside `lib/`
+ *
+ * The brief scoped this to "outside `lib/`". That scope does not hold, and the
+ * reason is worth keeping: **one of the two offenders it was written to catch
+ * lives in `src/lib/queries/cart.ts`**. A gate that misses half the thing it was
+ * commissioned for is the failure mode this file's own header describes — "a
+ * gate that checks the two places you already fixed is a gate that proves you
+ * fixed them".
+ *
+ * The scope was presumably drawn to protect the genuine paise constants that do
+ * live in `lib/`. Those are handled by name below instead, which is stricter:
+ * they stay visible, each carries a reason, and a fourth one cannot appear
+ * without somebody writing down why.
+ */
+
+console.log("\n\x1b[1m2 · no paise literal in code\x1b[0m");
+
+/**
+ * A paise-named identifier assigned a bare number.
+ *
+ * `[:=]` matches a single character, so `===`, `!==`, `<=` and `>=` fall out for
+ * free: after the operator the pattern needs whitespace then a digit, and the
+ * second `=` is neither.
+ *
+ * The value must be the *entire* right-hand side — digits, optional `_`
+ * separators, then the end of the statement — so a literal buried in an
+ * expression is deliberately not matched. `x * 100` is arithmetic; `x: 100` is a
+ * decision.
+ */
+const PAISE_ASSIGNMENT =
+  /\b([A-Za-z_$][A-Za-z0-9_$]*(?:_paise|Paise|_PAISE))\s*[:=]\s*([0-9][0-9_]*)\s*[,;)]*\s*$/;
+
+/**
+ * Paise constants that are **definitions rather than policy**, by identifier.
+ *
+ * Keyed on the name and not the line, so moving one does not silently drop its
+ * justification. Each entry says why the number is not a thing the owner would
+ * ever want to change from the admin panel, because that is the actual test: if
+ * a shopkeeper could reasonably want it different, it belongs in `site_settings`
+ * and not in a `const`.
+ */
+const ALLOWED_PAISE = new Map<string, string>([
+  [
+    "RUPEE_IN_PAISE",
+    "the definition of the unit — one rupee is a hundred paise, and no owner setting can change that",
+  ],
+  [
+    "MIN_CHARGEABLE_PAISE",
+    "Razorpay's own floor on a charge, an external constraint the shop does not get a say in",
+  ],
+  [
+    "ROUND_UP_TO_PAISE",
+    "the granularity delivery fees round to, a presentation rule rather than a price",
+  ],
+]);
+
+const paiseFiles = execSync("git ls-files 'src/**/*.ts' 'src/**/*.tsx'", {
+  encoding: "utf8",
+})
+  .split("\n")
+  .filter(Boolean);
+
+let paiseScanned = 0;
+let paiseAllowed = 0;
+const paiseFailedBefore = failed;
+for (const file of paiseFiles) {
+  const lines = readFileSync(file, "utf8").split("\n");
+
+  let inBlockComment = false;
+  lines.forEach((line, index) => {
+    const trimmed = line.trim();
+
+    // Same comment handling as section 1, and for the same reason: the
+    // reasoning in this codebase quotes real figures from real orders.
+    if (inBlockComment) {
+      if (trimmed.includes("*/")) inBlockComment = false;
+      return;
+    }
+    if (trimmed.startsWith("/*")) {
+      if (!trimmed.includes("*/")) inBlockComment = true;
+      return;
+    }
+    if (trimmed.startsWith("*") || trimmed.startsWith("//")) return;
+
+    const code = line.replace(/\/\/.*$/, "");
+    const match = PAISE_ASSIGNMENT.exec(code);
+    if (!match) return;
+
+    const [, identifier, rawValue] = match;
+    if (Number(rawValue.replace(/_/g, "")) === 0) return;
+
+    if (ALLOWED_PAISE.has(identifier)) {
+      paiseAllowed += 1;
+      console.log(
+        `  \x1b[90m·\x1b[0m ${file}:${index + 1}: ${identifier} — ` +
+          `allowed: ${ALLOWED_PAISE.get(identifier)}`,
+      );
+      return;
+    }
+
+    report(
+      `${file}:${index + 1}`,
+      `${trimmed.slice(0, 90)}  ← resolve ${identifier} from site_settings`,
+    );
+  });
+  paiseScanned += 1;
+}
 
 console.log(
-  "\n\x1b[1m2 · no currency literal in owner-edited content\x1b[0m",
+  failed === paiseFailedBefore
+    ? `  \x1b[32m✓\x1b[0m ${paiseScanned} files, no typed paise figure` +
+        (paiseAllowed > 0 ? ` (${paiseAllowed} named constants allowed)` : "")
+    : `  ${paiseScanned} files scanned`,
+);
+
+/* ------------------------------------------------------------ 3 · content -- */
+
+console.log(
+  "\n\x1b[1m3 · no currency literal in owner-edited content\x1b[0m",
 );
 
 async function checkContent(): Promise<void> {

@@ -4,7 +4,10 @@ import { getCurrentUser } from "@/lib/auth";
 import { readGuestToken } from "@/lib/cart/token";
 import { maybeRow, rows } from "@/lib/queries/run";
 import { cachedSiteSettings } from "@/lib/queries/cached";
-import { setting, type ShippingSettings } from "@/lib/queries/content";
+import {
+  publicShippingSettings,
+  type ShippingSettings,
+} from "@/lib/queries/content";
 import { createClient } from "@/lib/supabase/server";
 import type {
   Cart,
@@ -105,11 +108,7 @@ async function activeCartRow(): Promise<{
 
 export async function getCart(): Promise<Cart> {
   const settings = await cachedSiteSettings();
-  const shipping = setting<ShippingSettings>(settings, "shipping", {
-    free_above_paise: 249900,
-    currency: "INR",
-    regions: ["IN"],
-  });
+  const shipping = publicShippingSettings(settings);
 
   const cartRow = await activeCartRow();
   if (!cartRow) return emptyCart(null, shipping);

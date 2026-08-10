@@ -208,9 +208,16 @@ export async function saveShippingSettings(
       /**
        * Merged over what is already stored rather than replacing it.
        *
-       * `shipping` also carries `currency` and `regions`, which this form does
-       * not edit. Writing a whole object here would silently drop them, and the
-       * loss would only surface somewhere far away.
+       * The `shipping` object holds a good deal this form does not edit — the
+       * flat-mode deposit fields, the wallet threshold, the RTO deduction
+       * policy, the rate mode. Writing a whole object here would silently drop
+       * whichever of them the form does not name, and the loss would only
+       * surface somewhere far away.
+       *
+       * This comment used to cite `currency` and `regions` as the examples.
+       * Neither is on the production row and neither was read by anything, so
+       * they were removed from the public shape in Phase 10's preflight along
+       * with the two fallback objects that were the only place they existed.
        */
       const { data: existing, error: readError } = await supabase
         .from("site_settings")
