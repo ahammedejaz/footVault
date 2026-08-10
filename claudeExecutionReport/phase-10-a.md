@@ -1,175 +1,204 @@
-# Phase 10 · Batch A — the image pipeline (in progress)
+# Phase 10 · Batch A — the image pipeline
 
-**Status: the pipeline and its gate are built and proven. The admin panel, the
-bulk reprocessor and the storefront wiring are not.** This report covers what
-exists on `batch-a/image-pipeline` so far; it is not a completion report and
-Batch A should not be merged on the strength of it.
+**Complete.** The owner can upload a crooked phone photograph of a sandal and it
+comes out looking like the rest of the catalogue. Every new control is
+operate-and-asserted through a real browser, and `audit:reachability` is green.
+
+Branch `batch-a/image-pipeline`. No production migration, no production data
+touched.
 
 ---
 
 ## What was built
 
-### `src/lib/images/pipeline.ts` — the normalisation itself
+### `src/lib/images/pipeline.ts` — the normalisation
 
-One original in, four canonical variants out. Pure: it touches no storage and no
-database, which is what lets the gate run it over awkward fixtures with no
-network and lets the reprocessor run it over an original it fetched.
+One original in, four canonical variants out. Pure: no storage, no database,
+which is what lets the gate run it over awkward fixtures with no network and
+lets the reprocessor run it over an original it fetched.
 
-- **Contain, never crop.** A shoe is the subject and the subject is the whole
-  object; `cover` would take the toe off a low-cut sandal to satisfy a ratio.
-- **Padded in `#eef1f5`**, the card's own `--fv-fog`.
-- **EXIF orientation applied, then stripped.** `.rotate()` first, no
-  `withMetadata()` after. Also drops the GPS tag, which on a phone photograph is
-  the coordinates of the room the shoes were photographed in.
-- **WebP at 400 / 800 / 1200 / 1600**, quality 82, effort 6.
-- **Deterministic**, so reprocessing is idempotent.
-
-### Two decisions worth defending
-
-**The output is square, though the card is `aspect-4/5`.** The brief asks for
-"the card's aspect ratio" in one sentence and for a square asset in its gate.
-The card already contains over `bg-fog` so it never crops — what it cannot do is
-make two differently-shaped photographs occupy the *same proportion* of the
-frame, which is the actual complaint. A square padded in the frame's own colour,
-letterboxed into 4:5, is invisible at the seam and identical for every product.
-Square is the reading that produces what both sentences are after.
-
-**Enlargement is allowed.** `withoutEnlargement: true` is the instinctive
-setting and it defeats the module: it caps the *subject* at its original size
-while `contain` still pads the canvas to 1600, so a 900px photograph becomes a
-small shoe adrift in a large fog square — the exact inconsistency the pipeline
-exists to remove, reintroduced by the pipeline. A small source is scaled up like
-every other one, and the cost is paid where it is honest: `belowRecommended`
-drives a warning under 800px at the point of choosing the file.
+Contain never crop; padded in the card's own `#eef1f5`; EXIF orientation applied
+and then stripped; WebP at 400/800/1200/1600 at quality 82; deterministic.
 
 ### `src/lib/images/constants.ts`
 
 Every tunable, in a file that imports nothing so the browser can read it too.
-`pipeline.ts` is `server-only` and pulls in `sharp`, a native module, but the
-upload panel must state the same recommendation the server enforces. A panel
-carrying its own copy of those numbers is the ₹2,499 shape in a different
-costume.
+The panel has to state the same recommendation the server enforces, and a panel
+with its own copy of those numbers is the ₹2,499 shape in a different costume.
+
+### `src/lib/images/srcset.ts` — the loader
+
+A `next/image` loader resolving to the pre-made variants, and `loaderFor`
+returning **the loader or undefined** so a caller cannot decide a URL is a
+derivative and then forget to pass the loader.
+
+### `src/components/storefront/product-image.tsx`
+
+The client boundary the loader needs, adopted by the card, the gallery, the
+wishlist row and the cart lines.
 
 ### `src/lib/actions/admin/image-pipeline.ts` — `normaliseUpload()`
 
-Runs the pipeline over an original already in Storage, writes the derivatives
-back, returns the canonical path plus the warnings.
+Runs the pipeline over an original already in storage. `upsert` is safe by
+construction rather than by hope: paths are a function of the content hash, so
+an overwrite can only replace bytes with identical bytes.
 
-A second step rather than part of the upload. The bytes deliberately do not
-travel through a Server Action (`requestUploadSlot` explains why: Next caps an
-action body at 1MB and a phone photograph is several times that), and that split
-is what makes reprocessing possible at all — re-running over a six-month-old
-photograph is this same call with no upload attached.
+### `src/components/admin/products/image-upload-panel.tsx`
 
-`upsert: true` is safe **by construction rather than by hope**: paths are a
-function of the content hash, so an overwrite can only ever replace bytes with
-byte-identical bytes. Two admins processing the same photograph concurrently
-cannot corrupt each other.
+The staged upload. Choose → see it in the real card frame → describe it →
+commit. Live preview at `aspect-4/5` over `bg-fog` with `object-contain` — the
+same three the storefront card uses. Sub-800px warning, client-side compression,
+phase-by-phase progress, required description, unconditional two-shot guidance.
 
-### `scripts/audit/images.ts` — `npm run audit:images`
+### `scripts/reprocess-images.ts` — `npm run images:reprocess`
 
-**41 checks, all green.** The brief named the test and each clause is a section:
+Dry-run, real run, `--stage`. Re-runs the pipeline over anything with an
+original in the bucket; reports and skips the seed placeholders rather than
+guessing at them.
 
-| Section | What it proves |
+---
+
+## The decision you asked me to make: direct srcset
+
+**Chosen: serve the four emitted variants directly; do not route through the
+Next optimiser.**
+
+The pipeline already produces exactly the widths the card asks for, at a fixed
+quality, on a flat background, at content-hashed immutable paths stored with a
+one-year `cacheControl`. Passing that through the optimiser is a second lossy
+pass over pixels that were made for the purpose, billed per transformation, with
+a cold first request in front of the page this phase is trying to keep fast.
+
+The argument that decided it is not performance. Under the optimiser,
+`VARIANT_BUDGET_BYTES` and the byte assertions in `audit:images` would describe
+**a file no customer ever downloads.** A budget on an intermediate is a budget on
+nothing, and the gate would be measuring something that does not ship.
+
+A `loader` rather than `unoptimized`, because `unoptimized` turns the srcset off
+entirely and every screen would fetch the 1600. The loader keeps `fill`, `sizes`,
+`priority`, lazy loading and the reserved box; only the URL changes. Anything
+that is not a derivative — every seed SVG, every pre-Phase-10 upload — falls
+back to the optimiser untouched, so this needed no catalogue migration to be
+safe.
+
+---
+
+## Verification
+
+Every number below was produced by a run, on staging, against a real browser.
+
+| Gate | Result |
 |---|---|
-| 1 | `CARD_SURFACE` still equals `--fv-fog`, and the card still uses `bg-fog` + `object-contain` |
-| 2 | Portrait 3000×4000, 4:3, huge 5000×5000, square 2000×2000, tiny 400×400 and a 4000×600 panorama all come out square, fog-padded, all four widths, within budget |
-| 3 | EXIF orientation applied then stripped |
-| 4 | Reprocessing is idempotent — same hash, byte-identical variants, same paths |
-| 5 | The frame reserves its box before the image loads |
+| `audit:images` | **41 checks, all green** |
+| `audit:image-upload` | **23 checks, all green** |
+| `audit:settings-visibility` | **14 checks, all green** |
+| `audit:reachability` | **PASS** — every customer-facing page, both widths |
+| `audit:admin-pages` | **62 passed, 0 failed** |
+| `audit:settings-controls` | **36 passed, 0 failed** |
+| `audit:literals` | green |
+| `npx tsc --noEmit` | clean |
+| `npm run lint` | clean |
 
-Fixtures are generated, not checked in: a generated file states its awkwardness
-in the code that makes it, and it is the only way to *construct* an EXIF case
-with a known tag.
+**The reprocessor was exercised, not just dry-run.** The first dry run reported
+"122 seed placeholders skipped, would process 0", which proves nothing about the
+processing path. A row was pointed at a real original: first run processed 1 and
+repointed the row; second run reported `1 already-derivative rows skipped`,
+which is idempotence observed rather than argued.
 
 ---
 
 ## What I got wrong and caught in self-review
 
-**The EXIF test was vacuous and passing.** The first version built its fixture
-with `withExifMerge({ IFD0: { Orientation: "6" } })`, which silently writes
-nothing — `inspect()` reported orientation `1`. So "the pipeline handles the tag
-correctly" was being asserted against a file that had no tag to handle. It was
-only visible because a *different* assertion in the same section failed and made
-me read the reported dimensions.
-
-Three things changed as a result: the fixture uses `withMetadata({ orientation })`,
-which works; the gate now asserts the fixture **really carries orientation 6**,
-so a fixture that stops carrying it fails loudly rather than passing quietly;
-and it runs the same pixels **untagged** and asserts the mark lands somewhere
-else. Tagged puts the mark at centroid (0.17, 0.06), untagged at (0.06, 0.83).
-Without that counter-case the assertion would be satisfied by a pipeline that
-ignores orientation entirely.
+**The EXIF assertion was vacuous and passing.** `withExifMerge` silently writes
+no tag, so the pipeline was being tested against a file with nothing to handle.
+The gate now asserts the fixture *really carries* orientation 6, and runs the
+same pixels untagged to prove the check discriminates — tagged (0.17, 0.06),
+untagged (0.06, 0.83).
 
 **A comment claimed something the code did not do.** I wrote that
-`.toFormat("png")` padded a small source out to a full square under
-`withoutEnlargement`. It does not — `toFormat` has nothing to say about
-geometry. Probing sharp's actual behaviour showed the canvas is always padded to
-the requested size, which then exposed the *real* problem: the subject was being
-left small inside it. That is what produced the "enlargement is allowed"
-decision above. A comment I could not verify turned out to be hiding a design
-error rather than a documentation error.
+`.toFormat("png")` padded a small source to a square. It does not. Probing
+sharp's real behaviour exposed the actual problem underneath:
+`withoutEnlargement` was leaving a small subject adrift in a large fog square —
+the exact inconsistency the pipeline exists to remove.
 
-**A build failure neither tsc nor eslint reports.** The action file originally
-ended `export { MIN_RECOMMENDED_EDGE };` so the uploader could import it from
-one place. Every export of a `"use server"` module is treated as a callable
-endpoint and must be an async function, so that is a build error. Both gates
-passed on it. It is what prompted the constants split, which is the better
-structure anyway.
+**A build failure neither tsc nor eslint reports.** The action file re-exported a
+constant; every export of a `"use server"` module must be an async function.
+
+**Client-side compression was about to destroy orientation.** `shrink()` decodes
+to a canvas, which has no EXIF, so whatever comes out has lost the tag
+permanently. If the bitmap were decoded without applying the tag first, a
+portrait phone photograph would be baked sideways *and* stripped of the only
+record of which way was up — and the careful server-side rotation would have
+nothing left to work with. The historical default for `imageOrientation` was
+`"none"`; the spec later moved to `"from-image"`. It is now passed explicitly.
+
+**Two gate checks failed for reasons unrelated to what they named** — the
+failure mode you asked me to watch for, twice in one file:
+
+*The two-shot guidance* only appeared when a shot was missing, so it was
+invisible on precisely the products that already satisfied it. The gate was
+right to fail; the copy was wrong. A rule you cannot read once you have followed
+it is a rule nobody learns.
+
+*The storefront check* reported "the loader is not wired" while the loader was
+working perfectly. It picked its product from Postgres and got one that sits on
+page two of `/shop`, with no card to assert about — and on the product page the
+gallery filters by colourway, so a freshly uploaded image with no colour is not
+rendered there either. It now harvests the slug **from the listing**, so the
+surface is guaranteed by construction.
+
+I also removed a dead branch from the reprocessor. "Already current, skip the
+write" can never be reached — a processed row points at `derived/` and is caught
+by the already-derivative skip far above. Running it twice is what proved it. A
+counter that can only ever report zero reads as coverage.
 
 ---
 
 ## Known imperfections
 
-**The pipeline is not yet reachable by the owner.** `normaliseUpload` exists and
-is guarded, but nothing in `MediaUploader` calls it — an upload today still
-lands as an unprocessed original. This is precisely the "built but unreachable"
-failure the brief says has cost this project twice, and it is why Batch A is
-reported as in progress rather than done.
+**Byte budgets remain unproven.** The fixtures are flat-background synthetics
+that compress to 1–5KB against budgets of 60–320KB, so the budgets are asserted
+but never stressed. A real photograph on a real background is the only test that
+matters, and it needs real photography. **Open item, recorded as you asked
+rather than synthesised.**
 
-**The emitted widths are recorded and unused.** `normaliseUpload` returns all
-four paths, but `product_images.url` is a single column and the storefront still
-goes through the Next optimiser. Until the storefront reads them, three of the
-four widths are dead weight — the same "field no caller reads" criticism this
-phase's preflight levelled at `currency` and `regions`. Either the storefront
-gets a direct srcset or the extra widths should stop being emitted.
+**The media library uploader is unchanged.** `src/components/admin/media/` still
+uploads unprocessed originals. It is the general asset library rather than the
+product-photograph path, and Batch A's brief is about product photography — but
+a photograph attached to a product *from* the library would bypass the pipeline.
+Named so it does not read as coverage.
 
-**Byte budgets are unproven against real photographs.** The gate's fixtures are
-flat-background synthetics that compress to 1–5KB against budgets of 60–320KB,
-so the budgets are asserted but never *stressed*. A real photograph on a real
-background is the test that matters and it needs real photography, which is the
-owner's outstanding blocker.
+**A failed normalisation leaves an orphaned original.** Deliberate: the
+alternative order attaches the row first and can put an unprocessed file on the
+shop. A stray original costs a few hundred kilobytes and can be reprocessed;
+nothing sweeps them yet.
 
-**The bucket accepts 5MB, the brief specifies 10MB.** `MAX_UPLOAD_BYTES` is
-`5 * 1024 * 1024` and matches the bucket's own `file_size_limit`, set in a
-migration. Raising it to 10MB is a storage-config migration and has not been
-written.
+**The reprocessor cannot re-run over an already-processed row.** Once
+`product_images.url` points at a derivative, the original it came from is not
+recorded anywhere on the row, so a `PIPELINE_VERSION` bump would skip exactly the
+images it is meant to rebuild. Feeding a derivative back through would compound
+the compression, so skipping is right and the missing piece is a column — or a
+convention — linking a row to its original. **This is the one real gap in the
+reprocessing story and it should be closed before the first version bump.**
 
-**No `originals/` separation.** Originals are retained — they are simply left
-where the media library already puts them, and derivatives go under
-`derived/v1/<hash>/`. That keeps the existing media browser working unchanged,
-but it means the library lists originals and derivatives together, which will be
-confusing once there are many.
+**`normaliseUpload` is `adminBulk` rate-limited** (20/min). An owner adding many
+photographs quickly could hit it. Generous for two shots per product; worth
+watching during the first real photography session.
 
 ---
 
-## Not yet built
+## Not in Batch A, by scope
 
-- The admin upload panel: live preview **in the actual card frame**, the
-  sub-800px warning, client-side compression, a progress bar, the required
-  alt-text field, and the two-shots-per-product guidance.
-- The bulk reprocessor.
-- Attaching a processed image to a product, and the storefront reading the
-  emitted widths.
-- The `audit:reachability` and operate-and-assert coverage that standing rule 7
-  requires for every owner-facing control.
+The `originals/` separation is done for the product path only. Existing
+pre-Phase-10 uploads stay where they are — they are still reprocessable, since
+the reprocessor works from whatever the row points at.
 
-## Verification
+---
 
-| Check | Result |
-|---|---|
-| `npm run audit:images` | **41 checks, all green** |
-| `npx tsc --noEmit` | clean |
-| `npm run lint` | clean |
+## Blocked on the owner
 
-No production migration; no production data touched. Nothing here is on `main`.
+Nothing. Batch A needs no decision and no dashboard change.
+
+Real product photography remains the outstanding blocker to opening the shop,
+and it is now the only thing standing between this pipeline and a finished
+catalogue.
