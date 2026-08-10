@@ -65,6 +65,7 @@ type RawOrder = {
   payment_status: PaymentStatus;
   payment_method: string;
   placed_at: string;
+  quoted_estimated_days: number | null;
   subtotal: number;
   discount_total: number;
   prepaid_discount: number;
@@ -191,6 +192,7 @@ export async function getOrderForViewer(
        subtotal, discount_total, prepaid_discount, coupon_code, shipping_fee, tax_total, grand_total,
        cod_handling_fee, advance_amount, balance_due_on_delivery, delivered_at,
        shipping_address, contact_email, contact_phone, customer_note, user_id,
+       quoted_estimated_days,
        items:order_items (
          id, product_name, product_slug, size, color, sku,
          unit_price, quantity, line_total, image_url
@@ -215,6 +217,7 @@ export async function getOrderForViewer(
     paymentStatus: row.payment_status,
     paymentMethod: toPaymentMethod(row.payment_method),
     placedAt: row.placed_at,
+    quotedEstimatedDays: row.quoted_estimated_days,
     totals: {
       subtotal: row.subtotal,
       discountTotal: row.discount_total,

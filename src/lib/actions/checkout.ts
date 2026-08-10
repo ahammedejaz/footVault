@@ -512,6 +512,29 @@ export async function placeOrder(
     // capture time.
     assertPaise("checkout.balanceDue", order.balance_due);
 
+    /**
+     * The courier's own estimate for this lane, frozen onto the order.
+     *
+     * Best-effort and deliberately not a parameter of `create_order_with_stock`
+     * — see the migration. It is a display field, and the cost of restating the
+     * function that decrements stock and redeems coupons is not worth paying
+     * for one. A failure here leaves the column null, which
+     * `deliveryEstimate()` already renders as honest vagueness rather than as a
+     * wrong date.
+     */
+    if (totals.estimatedDays !== null && totals.estimatedDays > 0) {
+      const { error: estimateError } = await admin
+        .from("orders")
+        .update({ quoted_estimated_days: totals.estimatedDays })
+        .eq("id", order.order_id);
+      if (estimateError) {
+        console.warn(
+          "[checkout] could not record the delivery estimate:",
+          estimateError.message,
+        );
+      }
+    }
+
     // Best-effort, and after the order exists rather than before: a book that
     // fails to save must not cost somebody their checkout.
     if (data.saveAddress && user) {

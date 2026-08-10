@@ -1,6 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
+import {
+  deliveryEstimate,
+  describeCutoff,
+  describeEstimate,
+} from "@/lib/shipping/estimate";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -1191,15 +1196,22 @@ export function CheckoutFlow({
                 No courier will carry to {pin} from our store. Try a different
                 delivery address — everything else in your bag is fine.
               </p>
-            ) : quote && quote.estimatedDays !== null ? (
-              <p className="text-muted-foreground mt-3 text-center text-sm text-pretty">
-                Usually arrives in about{" "}
-                <span className="text-foreground font-medium">
-                  {quote.estimatedDays}{" "}
-                  {quote.estimatedDays === 1 ? "day" : "days"}
-                </span>{" "}
-                after dispatch.
-              </p>
+            ) : quote ? (
+              /*
+                Real dates rather than "about N days after dispatch".
+
+                The old copy said "after dispatch" while the number under it
+                counted from the moment of ordering, so an order placed at 14:00
+                was quietly a day optimistic — pickup is at 11:00 and it does
+                not go out until tomorrow. `deliveryEstimate` owns that
+                arithmetic for every surface; see src/lib/shipping/estimate.ts.
+
+                A quote whose lookup did not answer renders honest vagueness
+                rather than falling through to nothing, which is what it used to
+                do: silence reads as "no information", and the customer's next
+                move is to ring and ask.
+              */
+              <DeliveryWhen days={quote.estimatedDays} />
             ) : blockedReason ? (
               <p
                 id="checkout-submit-status"
@@ -1246,4 +1258,28 @@ function safeDetail(description: string | undefined): string | undefined {
   const trimmed = description.trim();
   if (!trimmed) return undefined;
   return trimmed.length > 200 ? `${trimmed.slice(0, 200)}…` : trimmed;
+}
+
+/**
+ * When the parcel arrives, on the step where the customer has just given a pin
+ * code.
+ *
+ * A client component reading `new Date()` at render: the estimate depends on
+ * *now* relative to the 11:00 cutoff, and a server-rendered value cached even
+ * briefly would tell an 11:05 customer they had made the morning pickup. It is
+ * inside `CheckoutFlow`, which is already client-side and already re-renders on
+ * every quote.
+ */
+function DeliveryWhen({ days }: { days: number | null }) {
+  const estimate = deliveryEstimate({ days, placedAt: new Date() });
+  const cutoff = describeCutoff(estimate);
+
+  return (
+    <p className="text-muted-foreground mt-3 text-center text-sm text-pretty">
+      <span className={estimate.known ? "text-foreground font-medium" : ""}>
+        {describeEstimate(estimate)}
+      </span>
+      {cutoff ? <span className="block">{cutoff}</span> : null}
+    </p>
+  );
 }

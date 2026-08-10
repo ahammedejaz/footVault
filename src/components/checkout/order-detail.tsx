@@ -1,4 +1,8 @@
 import { AddressCard } from "@/components/checkout/address-card";
+import {
+  deliveryEstimate,
+  describeEstimate,
+} from "@/lib/shipping/estimate";
 import { OrderLines } from "@/components/checkout/order-lines";
 import { OrderTimeline } from "@/components/checkout/order-timeline";
 import {
@@ -42,6 +46,24 @@ export function OrderDetail({
             What happens next
           </h2>
           <p className="mt-2 text-base text-pretty">{whatHappensNext(order)}</p>
+
+          {/*
+            When it arrives, computed from the courier's own figure for this
+            lane and the order's own placement time — so an order placed at
+            14:00 counts from tomorrow's pickup, exactly as the checkout said it
+            would.
+
+            Deliberately not shown once the parcel is delivered or the order is
+            cancelled: an arrival estimate on a delivered order is at best noise
+            and at worst contradicts the timeline directly above it.
+          */}
+          {order.status !== "delivered" && order.status !== "cancelled" ? (
+            <DeliveryEstimateLine
+              days={order.quotedEstimatedDays}
+              placedAt={order.placedAt}
+            />
+          ) : null}
+
           <OrderTimeline timeline={order.timeline} />
 
           {/*
@@ -187,3 +209,26 @@ const METHOD_LABEL: Readonly<Record<PaymentMethod, string>> = {
   cod: "Cash on delivery",
   razorpay: "Card, UPI or netbanking",
 };
+
+/**
+ * The arrival window on an order that already exists.
+ *
+ * Anchored to `placedAt` rather than to *now*, which is the difference between
+ * this and the checkout's version: the promise was made when the order was
+ * placed, and a customer opening the page three days later must read the same
+ * dates they were shown then, not a window that has quietly slid forward.
+ */
+function DeliveryEstimateLine({
+  days,
+  placedAt,
+}: {
+  days: number | null;
+  placedAt: string;
+}) {
+  const estimate = deliveryEstimate({ days, placedAt: new Date(placedAt) });
+  return (
+    <p className="text-muted-foreground mt-2 text-sm text-pretty">
+      {describeEstimate(estimate)}
+    </p>
+  );
+}

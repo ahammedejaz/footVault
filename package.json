@@ -48,6 +48,8 @@
     "audit:security-advance": "tsx scripts/audit/security-advance.ts",
     "audit:literals": "tsx scripts/audit/literals.ts",
     "images:reprocess": "NODE_OPTIONS=--conditions=react-server tsx scripts/reprocess-images.ts",
+    "audit:courier-choice": "tsx scripts/audit/courier-choice.ts",
+    "audit:delivery-estimate": "tsx scripts/audit/delivery-estimate.ts",
     "audit:image-upload": "NODE_OPTIONS=--conditions=react-server tsx scripts/audit/image-upload.ts",
     "audit:settings-visibility": "tsx scripts/audit/settings-visibility.ts",
     "audit:images": "NODE_OPTIONS=--conditions=react-server tsx scripts/audit/images.ts",

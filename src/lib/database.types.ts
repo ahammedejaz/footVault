@@ -799,6 +799,7 @@ export type Database = {
           quoted_cod_fee_paise: number | null
           quoted_courier_id: number | null
           quoted_courier_name: string | null
+          quoted_estimated_days: number | null
           quoted_forward_paise: number | null
           quoted_rate_mode: string | null
           quoted_rto_paise: number | null
@@ -846,6 +847,7 @@ export type Database = {
           quoted_cod_fee_paise?: number | null
           quoted_courier_id?: number | null
           quoted_courier_name?: string | null
+          quoted_estimated_days?: number | null
           quoted_forward_paise?: number | null
           quoted_rate_mode?: string | null
           quoted_rto_paise?: number | null
@@ -893,6 +895,7 @@ export type Database = {
           quoted_cod_fee_paise?: number | null
           quoted_courier_id?: number | null
           quoted_courier_name?: string | null
+          quoted_estimated_days?: number | null
           quoted_forward_paise?: number | null
           quoted_rate_mode?: string | null
           quoted_rto_paise?: number | null
