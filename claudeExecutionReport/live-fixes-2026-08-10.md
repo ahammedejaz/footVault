@@ -332,3 +332,67 @@ config-only deploy, reversible by reverting the commit. Loading states
 3. **The region fix go-ahead** (issue 5). One config deploy.
 4. Optional: whether FV-2026-00661's customer deserves a follow-up note;
    the order page already told them it was cancelled with nothing charged.
+
+---
+
+# Postscript — the merges, executed and verified (2026-08-10, morning)
+
+The owner returned with three PRs unmerged and one correction: FV-2026-00662's
+emails had fired at creation. Correct — #32 had been held for approval, so the
+old wiring was still live. The wrong-email count therefore rose before the fix
+landed: **one customer (neftlix100@gmail.com), two wrong confirmations**
+(FV-2026-00661 and FV-2026-00662, both later swept cancelled-unpaid), plus the
+two matching wrong owner alerts. Nothing was charged on either.
+
+## Merge order, as executed
+
+**1. PR #32 (P0 emails) — merged first.** No migration; stops the live harm.
+Deployment `dpl_5ET9fTkzTVctxZyM7kY3mqgWY5yb` verified via the Vercel API:
+READY, target production, aliased to www.footvault.in, commit = the merge SHA.
+Smoke check green (storefront 200s, /admin 404 anonymous).
+
+*Verified on production, as instructed:* a real guest order was placed through
+the live UI — product page, size chip, checkout form, Razorpay window opened —
+and abandoned. FV-2026-00663 existed `pending/unpaid` at 04:14:26 IST and
+**Resend's send log did not move**: zero emails for an order that was created
+and never paid. Under the old code both emails left within one second of
+creation. The probe order was then cancelled through
+`cancel_order_with_restock` (stock restored, verdict `cancelled`).
+
+**2. PR #34 (discount stacking) — second, migration before code.**
+- Snapshot first: `backup-20260810-0947-schema.sql` (157 KB, contains the
+  function) and `backup-20260810-0947-data.sql` (532 KB), content-verified.
+- `supabase db push --dry-run` named exactly one pending migration,
+  `20260810120000_discounts_stack_under_ceiling.sql`; pushed; production's
+  migration history now records it.
+- PostgREST gate: the RPC called over REST **with** `p_max_total_discount_bps`
+  answered with the function's own `CNVRT cart_unavailable` — schema cache
+  reloaded, new signature live, old code unaffected (the parameter defaults).
+- Then the code merged. Deployment `dpl_JDHTxc3z4PZVbB3FxS7YhM5rAAWg` verified
+  via the API (READY, production, merge SHA 648f7da) and smoke-checked.
+- One process stumble, recorded honestly: the first dry-run reported "up to
+  date" because it ran from `main`, which did not yet contain the unmerged
+  migration file. Caught by checking the production migration history and the
+  live function signature directly before believing it.
+
+**3. PR #36 (this report) — last.** Docs only.
+
+## The ceiling, set, and the before/after the owner asked for
+
+`max_total_discount_percent` was set to **30** after #34 deployed. The demo
+basket, driven through the real production checkout both times — Samba OG
+(`adidas-samba-og-mens`, ₹9,999), code NEW10 (a 5% coupon), prepaid discount
+20%, delivery free above ₹1,599, PIN 560001, paying online:
+
+| | Before #34 | After #34 + ceiling 30% |
+| --- | --- | --- |
+| Subtotal | ₹9,999 | ₹9,999 |
+| Shipping | Free | Free |
+| Paying online | **−₹2,000** | **−₹2,000** |
+| Coupon NEW10 | — (lost to the larger discount) | **−₹500** |
+| **Total / button** | **₹7,999** | **₹7,499** |
+
+The pair (₹2,500) sits well under the 30% ceiling (₹2,999.70 on this basket),
+so both discounts apply whole. The bag's own preview said "about ₹500 off at
+checkout" in both runs and is now the truth on the next page rather than a
+promise the larger discount overrode.
