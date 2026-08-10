@@ -16,7 +16,12 @@
 import AxeBuilder from "@axe-core/playwright";
 import { chromium, type Browser, type Page } from "playwright";
 
-import { buildFixture, type QaFixture } from "./fixtures";
+import {
+  addToBag,
+  buildFixture,
+  FIXTURE_SLUGS,
+  type QaFixture,
+} from "./fixtures";
 import { AUDIT_ROUTES, BASE_URL } from "./routes";
 import { auditStates, jarFor, type AuditState } from "./states";
 
@@ -224,6 +229,121 @@ async function scanStates(
   return violations;
 }
 
+/**
+ * The toast, under both OS colour schemes — because a toast is the one surface
+ * axe never sees. It exists for 3.5 seconds after an interaction no scanner
+ * performs, which is exactly how "Added to bag" shipped with its product name
+ * in white on paper: the toaster followed `prefers-color-scheme` (a `useTheme`
+ * with no provider behind it) while its background was pinned to the light
+ * token, and sonner's dark stylesheet painted the description near-white. No
+ * gate raised a toast, so no gate could have caught it.
+ *
+ * This one raises the real add-to-bag toast — through the product page, the
+ * size chip and the button, same as a customer — in an OS-light context and an
+ * OS-dark one, and measures the *rendered* contrast of every text node inside
+ * it. The site has one design; the toast must survive both settings.
+ */
+async function scanToastContrast(browser: Browser): Promise<number> {
+  let violations = 0;
+
+  for (const scheme of ["light", "dark"] as const) {
+    const context = await browser.newContext({
+      viewport: { width: 390, height: 900 },
+      isMobile: true,
+      hasTouch: true,
+      deviceScaleFactor: 1,
+      colorScheme: scheme,
+    });
+    const page = await context.newPage();
+    page.setDefaultNavigationTimeout(60_000);
+
+    try {
+      const added = await addToBag(page, FIXTURE_SLUGS[0]);
+      if (!added) {
+        console.log(
+          `\n[toast/${scheme}] could not add ${FIXTURE_SLUGS[0]} to the bag — no in-stock size`,
+        );
+        violations++;
+        continue;
+      }
+      await page.locator("[data-sonner-toast]").first().waitFor({
+        timeout: 5_000,
+      });
+      await settleAnimations(page);
+
+      /*
+        A string, not a closure. tsx keeps function names by injecting a
+        `__name` helper into transpiled arrow-function consts, and that helper
+        does not exist inside the page — every audit that ships a closure with
+        named inner functions to `evaluate` dies with "__name is not defined".
+        Source passed as text goes to the browser untranspiled.
+      */
+      const readings = (await page.evaluate(`(() => {
+        const parse = (color) => {
+          const m = /rgba?\\(([\\d.]+)[, ]+([\\d.]+)[, ]+([\\d.]+)(?:[,/ ]+([\\d.]+))?\\)/.exec(color);
+          return m ? [Number(m[1]), Number(m[2]), Number(m[3]), m[4] === undefined ? 1 : Number(m[4])] : [255, 255, 255, 1];
+        };
+        const luminance = ([r, g, b]) => {
+          const channel = (v) => {
+            const s = v / 255;
+            return s <= 0.04045 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+          };
+          return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
+        };
+        const backgroundOf = (start) => {
+          let node = start;
+          while (node) {
+            const bg = parse(getComputedStyle(node).backgroundColor);
+            if (bg[3] > 0.99) return bg;
+            node = node.parentElement;
+          }
+          return [255, 255, 255, 1];
+        };
+        const contrast = (element) => {
+          const pair = [luminance(parse(getComputedStyle(element).color)), luminance(backgroundOf(element))].sort((a, b) => b - a);
+          return (pair[0] + 0.05) / (pair[1] + 0.05);
+        };
+        const toast = document.querySelector("[data-sonner-toast]");
+        if (!toast) return null;
+        const parts = [];
+        for (const [part, selector] of [["title", "[data-title]"], ["description", "[data-description]"], ["action", "[data-button]"]]) {
+          const element = toast.querySelector(selector);
+          if (element) {
+            parts.push({ part, ratio: Math.round(contrast(element) * 100) / 100, text: (element.textContent ?? "").slice(0, 40) });
+          }
+        }
+        return parts;
+      })()`)) as { part: string; ratio: number; text: string }[] | null;
+
+      if (!readings || readings.length < 2) {
+        console.log(
+          `\n[toast/${scheme}] the toast rendered without measurable parts`,
+        );
+        violations++;
+        continue;
+      }
+      for (const { part, ratio, text } of readings) {
+        // 4.5:1, the AA floor for normal-size text. The description is the
+        // line that carried the invisible product name.
+        if (ratio < 4.5) {
+          console.log(
+            `\n[toast/${scheme}] ${part} "${text}" contrast ${ratio}:1 — below 4.5:1`,
+          );
+          violations++;
+        }
+      }
+      console.log(
+        `  toast/${scheme}: ${readings
+          .map(({ part, ratio }) => `${part} ${ratio}:1`)
+          .join(", ")}`,
+      );
+    } finally {
+      await context.close();
+    }
+  }
+  return violations;
+}
+
 async function main() {
   const browser = await chromium.launch();
   let violations = 0;
@@ -271,6 +391,8 @@ async function main() {
 
       violations += await scanStates(browser, fixture, width);
     }
+
+    violations += await scanToastContrast(browser);
   } finally {
     await browser.close();
   }

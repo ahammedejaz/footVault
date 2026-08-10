@@ -1,6 +1,5 @@
 "use client";
 
-import { useTheme } from "next-themes";
 import { Toaster as Sonner, type ToasterProps } from "sonner";
 import {
   CircleCheckIcon,
@@ -11,11 +10,20 @@ import {
 } from "lucide-react";
 
 const Toaster = ({ ...props }: ToasterProps) => {
-  const { theme = "system" } = useTheme();
-
   return (
     <Sonner
-      theme={theme as ToasterProps["theme"]}
+      /**
+       * Pinned, not "system". This site has exactly one design — paper
+       * surfaces, ink text — and no dark variant, so the toast must not follow
+       * the customer's OS. It used to: `useTheme()` with no ThemeProvider
+       * mounted falls back to "system", sonner stamped itself
+       * `data-sonner-theme="dark"` on any phone in OS dark mode, and its own
+       * stylesheet painted the *description* line near-white — while the
+       * `--normal-bg` override below kept the background light paper. Title
+       * readable, product name invisible. Add-to-bag was where it was noticed,
+       * but every toast with a description had it.
+       */
+      theme="light"
       className="toaster group"
       icons={{
         success: <CircleCheckIcon className="size-4" />,

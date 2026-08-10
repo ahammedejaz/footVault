@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import Link from "next/link";
-import { Heart, LogOut, Package, User } from "lucide-react";
+import { Heart, LogOut, MapPin, Package, User } from "lucide-react";
 
 import { SignInDialog } from "@/components/storefront/sign-in";
 import { Button } from "@/components/ui/button";
@@ -10,7 +10,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -74,17 +73,40 @@ export function AccountMenu({ user }: { user: AccountUser | null }) {
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-56">
-        <DropdownMenuLabel className="truncate font-normal">
-          <span className="text-muted-foreground block font-mono text-xs tracking-[0.06em] uppercase">
-            Signed in
-          </span>
-          <span className="mt-0.5 block truncate">{label}</span>
-        </DropdownMenuLabel>
+        {/*
+          The identity is a door, not a caption. "Signed in as X" that goes
+          nowhere leaves /account — the page that introduces orders and
+          addresses — reachable from nothing, which audit:reachability now
+          fails a build over.
+        */}
+        <DropdownMenuItem asChild>
+          <Link href="/account" className="block">
+            <span className="min-w-0">
+              <span className="text-muted-foreground block font-mono text-xs tracking-[0.06em] uppercase">
+                Signed in
+              </span>
+              <span className="mt-0.5 block truncate">{label}</span>
+            </span>
+          </Link>
+        </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem asChild>
           <Link href="/account/orders">
             <Package aria-hidden />
             Your orders
+          </Link>
+        </DropdownMenuItem>
+        {/*
+          The address book was reachable from nowhere: /account/addresses
+          existed, its overview page linked to it, and no menu linked to
+          either. A page with no inbound link does not exist for a customer —
+          which is how "address editing is missing" got reported against a
+          feature that was built.
+        */}
+        <DropdownMenuItem asChild>
+          <Link href="/account/addresses">
+            <MapPin aria-hidden />
+            Addresses
           </Link>
         </DropdownMenuItem>
         <DropdownMenuItem asChild>
