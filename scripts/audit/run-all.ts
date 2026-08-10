@@ -63,6 +63,7 @@ const GATES = [
   "audit:keyboard-checkout",
   "audit:focus",
   "audit:gallery",
+  "audit:hero-media",
   "audit:hydration",
   "audit:interactions",
   "audit:links",
