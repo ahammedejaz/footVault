@@ -13,7 +13,11 @@
  *
  * **It mutates as little as it can, and restores what it touches.** The
  * settings round-trip writes a real value and puts the original back in a
- * `finally`; the order it drives is one the checkout suite already abandoned.
+ * `finally`; the Pay-on-Delivery order it inspects is one it places itself and
+ * then cancels, restocking through the function that owns stock.
+ *
+ * It used to read someone else's leftover order instead, which made its verdict
+ * a function of whichever suite ran before it — see `buildCodOrder`.
  */
 
 // clients first, before any other import and before anything reads
@@ -35,7 +39,14 @@ for (const line of readFileSync(".env.local", "utf8").split("\n")) {
 }
 
 import { ADMIN_NAV } from "../../src/components/admin/nav";
-import { adminClient, createAccount, sessionCookies } from "./fixtures";
+import {
+  addToBag,
+  adminClient,
+  createAccount,
+  FIXTURE_SLUGS,
+  placeCodOrder,
+  sessionCookies,
+} from "./fixtures";
 import { BASE_URL } from "./routes";
 
 let passed = 0;
@@ -70,24 +81,42 @@ async function main() {
     if (error) throw new Error(`could not promote the probe: ${error.message}`);
   }
 
-  /** A Pay-on-Delivery order to look at. Any will do; the split is what matters. */
-  const { data: orders, error: orderError } = await admin
-    .from("orders")
-    .select(
-      "id, order_number, status, grand_total, advance_amount, balance_due_on_delivery, cod_handling_fee",
-    )
-    .gt("balance_due_on_delivery", 0)
-    .order("created_at", { ascending: false })
-    .limit(1);
-  if (orderError) throw new Error(`could not read an order: ${orderError.message}`);
-  const order = orders?.[0];
-
   const browser = await chromium.launch();
   const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
   await context.addCookies(await sessionCookies(account.session));
   const page = await context.newPage();
   const pageErrors: string[] = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));
+
+  /**
+   * A Pay-on-Delivery order to look at — **built here, not found here.**
+   *
+   * This used to read the newest order with a balance out of the database and
+   * inspect whatever came back. That made the result of this suite a function of
+   * *other* suites: `audit:checkout` cleans up after itself, so on a freshly
+   * rebuilt staging the query returned nothing and the run reported "a
+   * Pay-on-Delivery order exists to inspect — none found" while the admin pages
+   * were perfectly healthy. Run the same command after a suite that happened to
+   * leave a COD order behind and it passed. A gate whose verdict depends on
+   * residue is not measuring the code, and both of its answers are worthless:
+   * the failure is a false alarm and the pass is luck.
+   *
+   * It is also the reason this check could never have caught a regression in the
+   * advance split — the order it read was built by whatever code was live when
+   * that other suite ran, not by the code under test.
+   *
+   * So the fixture is made here, through the same function checkout calls, and
+   * torn down in the `finally`. `placeCodOrder` sets the advance to the whole
+   * delivery charge and a real Pay-on-Delivery handling fee on top, so
+   * `balance_due_on_delivery` is non-zero by construction rather than by hope —
+   * which is the property every check in section 1 actually depends on.
+   */
+  const order = await buildCodOrder(page, account.userId);
+  check(
+    "a Pay-on-Delivery order could be built to inspect",
+    order !== null,
+    "no in-stock fixture product, or the order did not place",
+  );
 
   /** The original, restored in the finally below whatever happens. */
   const { data: originalRow, error: originalError } = await admin
@@ -383,6 +412,9 @@ async function main() {
         console.log("\n  restored site_settings.shipping to its original value");
       }
     }
+    // Before the account goes: the order is the account's, and deleting the user
+    // first would leave an order whose owner no longer exists.
+    await releaseCodOrder(order);
     await admin.auth.admin.deleteUser(account.userId).catch(() => {});
     await browser.close();
   }
@@ -399,6 +431,112 @@ async function main() {
 void main();
 
 /* ------------------------------------------------------------------ parts -- */
+
+/** The order this suite inspects, and the columns section 1 asserts against. */
+type CodOrder = {
+  id: string;
+  order_number: string;
+  status: string;
+  grand_total: number;
+  advance_amount: number;
+  balance_due_on_delivery: number;
+  cod_handling_fee: number;
+};
+
+/**
+ * Place a Pay-on-Delivery order for this account and read it back.
+ *
+ * The bag is filled through the product page — the same clicks a customer
+ * makes — because the size chips are the only thing that knows which variants
+ * are actually in stock, and a hand-written variant id goes stale the first time
+ * the seed changes. `FIXTURE_SLUGS` is tried in order rather than assuming the
+ * first one has a size run left after an earlier suite bought into it.
+ *
+ * Returns null rather than throwing so a missing fixture is one named failure
+ * instead of a stack trace that takes the other twenty-odd checks with it.
+ */
+async function buildCodOrder(
+  page: Page,
+  userId: string,
+): Promise<CodOrder | null> {
+  let added = false;
+  for (const slug of FIXTURE_SLUGS) {
+    if (await addToBag(page, slug)) {
+      added = true;
+      break;
+    }
+  }
+  if (!added) return null;
+
+  const orderNumber = await placeCodOrder(page, { guest: false, userId });
+  const admin = adminClient();
+  const { data, error } = await admin
+    .from("orders")
+    .select(
+      "id, order_number, status, grand_total, advance_amount, balance_due_on_delivery, cod_handling_fee",
+    )
+    .eq("order_number", orderNumber)
+    .maybeSingle();
+  if (error || !data) {
+    console.error(
+      `  !! placed ${orderNumber} but could not read it back: ${error?.message ?? "no row"}`,
+    );
+    return null;
+  }
+
+  /**
+   * The property every check in section 1 leans on, asserted at the source.
+   *
+   * If this is ever zero the section's failures would read as "the balance is
+   * not on the page" — a defect in the page — when the truth is a fixture that
+   * did not produce a split. Better to say so here.
+   */
+  if (data.balance_due_on_delivery <= 0) {
+    console.error(
+      `  !! ${orderNumber} has no balance due on delivery; the fixture did not split`,
+    );
+    return null;
+  }
+  return data as CodOrder;
+}
+
+/**
+ * Cancel and delete the fixture order, putting its stock back first.
+ *
+ * `p_require_unpaid` is deliberately **false**. The fixture is written with
+ * `payment_status = 'paid'` and no `payments` row — which is the state a real
+ * Pay-on-Delivery order reaches once its advance captures — and the guard reads
+ * exactly that combination as `already_paid` and refuses to restock. Passing
+ * `true` here would return quietly, delete the order anyway, and leave its units
+ * held with `order_items` cascaded away, so nothing could reconstruct the count.
+ * That is the failure `audit:teardown` exists to reconcile after the fact; not
+ * causing it is better than reconciling it.
+ */
+async function releaseCodOrder(order: CodOrder | null): Promise<void> {
+  if (!order) return;
+  const admin = adminClient();
+  const { data, error } = await admin.rpc("cancel_order_with_restock", {
+    p_order_id: order.id,
+    p_reason: "audit:admin-pages cleanup: releasing the fixture order",
+  });
+  if (error || (data !== "cancelled" && data !== "already_cancelled")) {
+    console.error(
+      `\n  !! ${order.order_number} may still hold its stock: ${error?.message ?? String(data)}`,
+    );
+    return;
+  }
+  const { error: deleteError } = await admin
+    .from("orders")
+    .delete()
+    .eq("id", order.id);
+  if (deleteError) {
+    console.error(
+      `\n  !! could not delete ${order.order_number}: ${deleteError.message}`,
+    );
+  } else {
+    console.log(`  released and removed the fixture order ${order.order_number}`);
+  }
+}
 
 /** The rendered form of an amount, for a substring match against the page. */
 function rupees(paise: number): string {
