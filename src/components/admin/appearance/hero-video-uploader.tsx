@@ -83,7 +83,7 @@ export function HeroVideoUploader({
     setNote({
       tone: heavy ? "warn" : "plain",
       text: heavy
-        ? `${size} — over the ${formatBytes(WARN_BYTES)} we aim for. It will work. On mobile data it is about ${mobileCost(file.size)} of a shopper's pack, spent before they have decided to buy anything.`
+        ? `${size} — over the ${formatBytes(WARN_BYTES)} we aim for. It will work, and it will not slow the page down: the video loads last, after everything else. But on a weak connection it takes about ${slowWait(file.size)} to arrive, and a shopper who leaves before then never sees it.`
         : `${size}. Comfortably under the ${formatBytes(WARN_BYTES)} we aim for.`,
     });
 
@@ -166,14 +166,24 @@ export function HeroVideoUploader({
 }
 
 /**
- * What the file costs a shopper, in the units they buy data in.
+ * How long the file takes to arrive on a weak connection.
  *
- * ₹9 per GB is the going rate for a topped-up prepaid pack in India at the time
- * of writing, which is the shop's market. It is deliberately a rough number
- * shown to one decimal — the point is the order of magnitude, and a figure like
- * "₹0.0237" would read as precision this cannot honestly claim.
+ * This started out as a rupee figure, on the theory that a shop selling in
+ * India should price a download in the units its customers buy data in. The
+ * arithmetic killed it: at roughly ₹9 a gigabyte, **every** file this bucket
+ * can accept costs between two and nine paise, so the warning would have
+ * printed "under ₹0.10" for a 4MB file and for a 10MB one alike. A number that
+ * cannot change is not information, and a warning built on one teaches the
+ * owner to ignore warnings.
+ *
+ * Seconds do change: 13 at 2.6MB, 21 at 4MB, 52 at the bucket's ceiling. 1.6
+ * Mbps is Lighthouse's Slow-4G profile, which is the same basis the rest of
+ * this project's performance numbers are measured on, so the figure here and
+ * the figures in the reports mean the same thing.
  */
-function mobileCost(bytes: number): string {
-  const rupees = (bytes / (1024 * 1024 * 1024)) * 9;
-  return rupees < 0.1 ? "under ₹0.10" : `about ₹${rupees.toFixed(2)}`;
+function slowWait(bytes: number): string {
+  const seconds = (bytes * 8) / 1_600_000;
+  return seconds < 60
+    ? `${Math.round(seconds)} seconds`
+    : `${Math.round(seconds / 60)} minutes`;
 }
