@@ -42,12 +42,21 @@ jobs:
       # Placeholder values only. The build must not require live Supabase
       # credentials — if it does, something is reaching the database at build
       # time that should be reaching it at request time.
+      #
+      # STATIC_PARAMS_ALLOW_EMPTY is this build declaring that its artifact
+      # never serves traffic. Since 2026-08-10, staticParamsOr fails the build
+      # when it cannot collect slugs — a slug route built from an empty list is
+      # classified SSG with zero pages rendered, never discovers it reads
+      # cookies(), and 500s on every request. CI's placeholder credentials make
+      # every collection fail by design, so CI alone opts back into the empty
+      # fallback. Vercel builds must never set this variable.
       - name: Build
         run: npm run build
         env:
           NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
           NEXT_PUBLIC_SUPABASE_ANON_KEY: placeholder-anon-key
           NEXT_PUBLIC_SITE_URL: https://footvault.example
+          STATIC_PARAMS_ALLOW_EMPTY: "1"
 
       # A "use server" module may only export async functions. Exporting a plain
       # object from one type-checks, builds clean, and then throws the first

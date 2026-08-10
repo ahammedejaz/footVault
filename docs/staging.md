@@ -208,6 +208,39 @@ which sweeps staging, because staging is now the default target.
 
 ---
 
+## 4.4 · The deploy gate: a production build, against production data
+
+Everything in §4 drives `next dev` against staging, and the 2026-08-10 incident
+lived in exactly the gap that leaves. A production build bakes route
+classification into its manifest, and what it bakes depends on what the
+database returned during that one build: a Supabase 522 during a Vercel build
+emptied `generateStaticParams` for `/product/[slug]`, the route shipped as SSG
+with zero pages rendered, and every product page 500ed with
+`DYNAMIC_SERVER_USAGE` — from a build that passed. No dev-driven gate can fail
+that way.
+
+So, before anything is merged to main (which is to say, before anything
+deploys):
+
+```
+npm run audit:build-smoke
+```
+
+It runs four proofs: the outage drill (`STATIC_PARAMS_SIMULATE_OUTAGE=all` must
+*fail* the build — see `src/lib/static-params.ts`), a real production build
+against live data, a manifest assertion that no slug route is SSG with zero
+prerendered paths, and a served smoke — one real URL per slug-route family read
+from the artifact's own sitemap, fetched as a document and as an RSC request.
+
+The half it cannot see — a network failure during the build on Vercel's own
+machines — is covered by `staticParamsOr` itself, which since the incident
+retries and then fails the build rather than shipping the landmine. CI is the
+one deliberate exception (`STATIC_PARAMS_ALLOW_EMPTY=1` in ci.yml): its
+placeholder credentials make every collection fail by design, and its artifact
+never serves a request.
+
+---
+
 ## 4.5 · The guard only covers the files that ask it
 
 `clients.ts` refuses production and repoints the process at staging — **for the
