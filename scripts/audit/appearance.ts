@@ -331,8 +331,71 @@ async function main() {
       );
     }
 
-    /* ═══ 6 · the page is clean ═══════════════════════════════════════════ */
-    section("6 · axe, with the editor open");
+    /* ═══ 6 · the hero's media mode, operated by its visible label ═══════ */
+    section("6 · the video/still switch does what its label says");
+    {
+      /*
+        The rule `audit:settings-controls` is the mechanism for: an owner-facing
+        control ships with a test that finds it **by its visible label**,
+        changes it, and asserts the stored value changed. `getByRole("radio",
+        { name })` resolves through the accessible name, so a switch a screen
+        reader cannot name fails here.
+
+        And then one step further, because a stored value is not a feature: the
+        live homepage is re-fetched and asserted to contain no `<video>` at all.
+        That is the property the mode exists to produce — no element, no bytes —
+        and asserting the payload alone would pass in a world where the renderer
+        ignored the field entirely.
+      */
+      await open();
+      await page.getByRole("button", { name: `Edit ${heroTitle}` }).click();
+
+      const stillOnly = page.getByRole("radio", { name: /Still image only/ });
+      const videoMode = page.getByRole("radio", { name: /^Video/ });
+      check(
+        "both modes are on the page and reachable by their visible names",
+        (await stillOnly.count()) === 1 && (await videoMode.count()) === 1,
+        `${await stillOnly.count()} still, ${await videoMode.count()} video`,
+      );
+
+      const heroId = originalRows.find((row) => row.section_type === "hero")?.id;
+      const modeNow = async () => {
+        const { data, error } = await admin
+          .from("homepage_sections")
+          .select("payload")
+          .eq("id", heroId!)
+          .single();
+        // A dropped error here would read as "the field is absent", which is
+        // indistinguishable from "the switch did nothing" — the exact result
+        // this section is trying to tell apart.
+        if (error) throw new Error(`could not re-read the hero: ${error.message}`);
+        return (data?.payload as Record<string, unknown> | null)?.media_mode;
+      };
+
+      await stillOnly.check();
+      await publish(page);
+      check("choosing “Still image only” stores it", (await modeNow()) === "poster");
+      const stillHtml = await liveHomepage();
+      check(
+        "and the live homepage then has no <video> element at all",
+        !/<video[\s>]/i.test(stillHtml) && !stillHtml.includes("site-video"),
+        "poster mode must cost zero video bytes, not hide a loaded one",
+      );
+
+      await open();
+      await page.getByRole("button", { name: `Edit ${heroTitle}` }).click();
+      await page.getByRole("radio", { name: /^Video/ }).check();
+      await publish(page);
+      check("choosing “Video” stores it", (await modeNow()) === "video");
+      check(
+        "and the live homepage carries the video again",
+        (await liveHomepage()).includes("site-video"),
+        "switching back must restore the clip, not lose it",
+      );
+    }
+
+    /* ═══ 7 · the page is clean ═══════════════════════════════════════════ */
+    section("7 · axe, with the editor open");
     {
       await open();
       await page.getByRole("button", { name: `Edit ${heroTitle}` }).click();

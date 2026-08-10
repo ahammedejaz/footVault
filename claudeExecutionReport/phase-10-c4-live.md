@@ -89,6 +89,11 @@ so it is recorded as transient rather than a pathology — but it is recorded,
 because a median quietly absorbing a 22-second sample is how a real problem gets
 buried. Worth a second look if it recurs.
 
+> **It did not recur.** Eleven more runs against the same live URL with the same
+> method returned 2.64–3.22s, the 3.22s being run 1 cold. Median 2.67s, CLS
+> 0.000 throughout. One 22.58s sample now stands against 27 clean ones across
+> three passes. See [phase-10-c5.md](phase-10-c5.md) §5.
+
 ---
 
 ## 3 · The cache header — a correction to the previous report
@@ -194,12 +199,30 @@ wide screens — ink margins either side. A composition change, not a quality on
 
 **B · A higher-resolution source.** 1920×1080 makes 2560 a 1.33× upscale;
 2560×1440 makes it 1.00×.
-*Cost:* **an estimated 4.5–5.6MB at 1080p** — over the 4MB warning, under the
-10MB ceiling, and the panel will say so and quote ~30 seconds on slow 4G — and
-**7.5–10MB at 1440p**, at or past the bucket's hard limit. These are scaled from
-the current file's 2.15 Mbps and are **estimates, not measurements**: there is
-no ffmpeg on this machine, and dark single-object footage compresses better than
-the naive scaling suggests, so the true figures likely sit at the low end.
+*Cost:* **4.90MB at 1080p** and **7.12MB at 1440p** — the first over the 4MB
+warning and under the 10MB ceiling, so the panel would say so and quote ~30
+seconds on slow 4G; the second inside the bucket's hard limit but with almost
+nothing to spare.
+
+**These are measured, not scaled.** ffmpeg was installed after this report was
+first written and the encodes were run (see
+[phase-10-c5.md](phase-10-c5.md) §2 for the method and the full ladder). What
+replaced the estimate:
+
+| | estimated here | measured |
+|---|---|---|
+| 1080p | 4.5–5.6MB | **4.90MB** — 5,135,257 bytes |
+| 1440p | 7.5–10MB | **7.12MB** — 7,465,192 bytes |
+
+The 1080p estimate was right; the 1440p one was half a megabyte too pessimistic
+at its low end and three too pessimistic at its high end. Neither changes the
+decision — 1080p still crosses the 4MB warning, which was the question.
+
+One thing the measurement found that the estimate could not: **the current file
+carries an AAC audio track worth 174KB** on a hero that is `muted` and
+`aria-hidden`. Stream-copying it out takes 2,687,542 bytes to 2,513,555 with no
+re-encode and no visible change. All the figures above are audio-free; add
+~174KB back if a future export keeps a track that cannot be heard.
 
 **C · Art-directed crops per breakpoint.** A tall crop for phones, a wide crop
 for desktop, each encoded at the resolution its breakpoint needs.
@@ -224,6 +247,12 @@ headline to be removed. Three treatments:
 
 Held rather than applied because the choice interacts with which of A/B/C is
 taken.
+
+> **Chosen: A, and scrim 3.** Applied and verified in
+> [phase-10-c5.md](phase-10-c5.md). Scrim 3 turned out to cost one thing this
+> list did not anticipate — a much lighter scrim cannot hold the hero paragraph
+> at 4.5:1 while that paragraph is `--muted-foreground`, so the colour moved to
+> paper. The measurement that established it is in §3 of that report.
 
 ---
 
