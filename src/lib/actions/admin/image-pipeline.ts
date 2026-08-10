@@ -52,6 +52,15 @@ const schema = z.object({
 export type NormalisedUpload = {
   /** What `product_images.url` should point at. The largest variant. */
   canonicalPath: string;
+  /**
+   * The untouched upload this came from, echoed back so the caller can record
+   * it on the row.
+   *
+   * Returned rather than left for the caller to remember: the caller does know
+   * the path it just uploaded, but a second copy of that knowledge is a second
+   * place it can be wrong, and the row is useless if it names the wrong file.
+   */
+  originalPath: string;
   /** Every emitted width, smallest first, for a future direct srcset. */
   widths: { width: number; path: string; bytes: number }[];
   source: { width: number; height: number; format: string };
@@ -72,11 +81,12 @@ export async function normaliseUpload(
   return adminAction<NormalisedUpload>(
     "normaliseUpload",
     /**
-     * `adminBulk` rather than `adminMutation`: this is several seconds of CPU
-     * per call, so the limit that matters is the one that stops a stuck client
-     * looping over it, not the one sized for a busy owner clicking around.
+     * Its own policy. `adminBulk` (20/min) is sized for whole-table writes and
+     * would be reached partway through a real photography session — see
+     * `RATE_LIMITS.imageProcessing` for why that failure is worse than it
+     * sounds.
      */
-    "adminBulk",
+    "imageProcessing",
     async ({ elevated }) => {
       const parsed = schema.safeParse(input);
       if (!parsed.success) {
@@ -163,6 +173,7 @@ export async function normaliseUpload(
           result.contentHash,
           CANONICAL_EDGE,
         ),
+        originalPath: parsed.data.path,
         widths,
         source: {
           width: result.source.width,

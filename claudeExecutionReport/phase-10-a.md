@@ -89,7 +89,7 @@ Every number below was produced by a run, on staging, against a real browser.
 
 | Gate | Result |
 |---|---|
-| `audit:images` | **41 checks, all green** |
+| `audit:images` | **47 checks, all green** |
 | `audit:image-upload` | **23 checks, all green** |
 | `audit:settings-visibility` | **14 checks, all green** |
 | `audit:reachability` | **PASS** — every customer-facing page, both widths |
@@ -98,6 +98,8 @@ Every number below was produced by a run, on staging, against a real browser.
 | `audit:literals` | green |
 | `npx tsc --noEmit` | clean |
 | `npm run lint` | clean |
+| `npm run rebuild:stage` | **98 migrations, all checks green** — from empty |
+| Production migration `20260810140000` | applied; snapshot content-verified against live counts first; PostgREST confirmed serving `original_path` before any code that writes it was deployed |
 
 **The reprocessor was exercised, not just dry-run.** The first dry run reported
 "122 seed placeholders skipped, would process 0", which proves nothing about the
@@ -162,28 +164,81 @@ but never stressed. A real photograph on a real background is the only test that
 matters, and it needs real photography. **Open item, recorded as you asked
 rather than synthesised.**
 
-**The media library uploader is unchanged.** `src/components/admin/media/` still
-uploads unprocessed originals. It is the general asset library rather than the
-product-photograph path, and Batch A's brief is about product photography — but
-a photograph attached to a product *from* the library would bypass the pipeline.
-Named so it does not read as coverage.
+**The media library uploader is still unchanged**, and now that is safe rather
+than merely unexamined: it uploads raw originals, and `addProductImage` refuses
+them, so the worst it can produce is a file in the bucket that no product uses.
+It has no attach-to-product affordance today; if one is ever built it must route
+through the pipeline.
 
-**A failed normalisation leaves an orphaned original.** Deliberate: the
-alternative order attaches the row first and can put an unprocessed file on the
-shop. A stray original costs a few hundred kilobytes and can be reprocessed;
-nothing sweeps them yet.
+**Nothing sweeps orphaned originals.** A normalisation that fails after the
+upload succeeds leaves an original in the bucket attached to nothing. The
+direction is deliberate — attaching the row first could put an unprocessed file
+on the shop — and a retry now reuses the same original rather than minting a
+second, so the only source of orphans is an outright failure.
 
-**The reprocessor cannot re-run over an already-processed row.** Once
-`product_images.url` points at a derivative, the original it came from is not
-recorded anywhere on the row, so a `PIPELINE_VERSION` bump would skip exactly the
-images it is meant to rebuild. Feeding a derivative back through would compound
-the compression, so skipping is right and the missing piece is a column — or a
-convention — linking a row to its original. **This is the one real gap in the
-reprocessing story and it should be closed before the first version bump.**
+*When it becomes worth sweeping:* not at this size. Each orphan is a few hundred
+kilobytes and they are trivially identifiable — anything under `originals/` with
+no `product_images` row naming it in `original_path`. That query is only
+meaningful now that the column exists, which is the point at which a sweep
+becomes a ten-line script rather than a guess. The trigger to write it is either
+a bucket bill that shows up, or the first time somebody browsing `originals/`
+cannot tell which files are live. Both are far off; a sweep written today would
+be a scheduled job whose failure mode is deleting a photograph.
 
-**`normaliseUpload` is `adminBulk` rate-limited** (20/min). An owner adding many
-photographs quickly could hit it. Generous for two shots per product; worth
-watching during the first real photography session.
+---
+
+---
+
+## Closed after approval, before Batch B
+
+**1 · The original link.** `product_images.original_path` (migration
+`20260810140000`) records the storage path of the untouched upload each
+derivative came from — a path, not a URL, because a URL carries the project host
+and would be a dead link the moment a project moved.
+
+Written by `addProductImage` from a value **echoed back by `normaliseUpload`**
+rather than reused from the caller's own variable: the caller does know the path
+it just uploaded, but a second copy of that knowledge is a second place it can be
+wrong, and the row is useless if it names the wrong file.
+
+The reprocessor now uses it. **Proven, not argued:** a row was pointed at a
+fabricated derivative `deadbeefcafe0001/vbprobe-1600.webp` carrying an
+`original_path`, and a reprocess rebuilt it from the original to the real hash
+`3472b3c4c2d29be2/…` — logged as `(from original_path)`. That is precisely the
+`PIPELINE_VERSION`-bump scenario, executed.
+
+Rows written before the column exists still return null and are still skipped —
+but now with a reason a human can act on rather than as an unexplained no-op.
+
+**2 · The upload rate limit.** A dedicated `imageProcessing` policy at 120/min
+replaces `adminBulk`'s 20. `adminBulk` is sized for whole-table writes; this is
+sized for one admin working through a shoebox.
+
+The limit is only half of it. The panel now treats a throttle as a **phase, not
+a failure**: it waits out `retryAfterSeconds` with a visible countdown —
+*"The shop is pacing itself — trying again in 4s. Nothing has been lost."* —
+keeps the file staged and the description typed, and retries **against the same
+original** rather than uploading a second copy. A red failure toast partway
+through a photography session reads as the shop breaking, which is the outcome
+that was asked to be avoided.
+
+**3 · Unprocessed photographs cannot be attached.** `addProductImage` refuses any
+URL that is not a pipeline output, with `/seed/` allowed because the drawn
+placeholders are first-party and predate the bucket.
+
+The rule is in the **action**, not the panel, because a rule that lives in one
+screen holds only for people who used that screen — and the media library
+uploads raw originals.
+
+**Stated plainly, because a green tick could imply more than is true:** the
+database has no such constraint. The seed writes `product_images` in raw SQL, and
+a check constraint would have to encode the URL shape of a storage bucket. So the
+guarantee is exactly as strong as *"every application write goes through
+`addProductImage`"*. `audit:images` §5 asserts the predicate — including that a
+derivative wrapped in `/_next/image?url=…` is **not** mistaken for one, since the
+optimiser path contains the same substring.
+
+**4 · Orphaned originals** — see *Known imperfections*.
 
 ---
 

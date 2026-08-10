@@ -77,8 +77,18 @@ type Staged = {
 type Phase =
   | { step: "idle" }
   | { step: "reading" }
-  | { step: "uploading"; percent: number }
+  | { step: "uploading" }
   | { step: "processing" }
+  /**
+   * Throttled, waiting, and about to try again on its own.
+   *
+   * A distinct phase rather than a failure toast. The limiter exists to stop a
+   * stuck client, not to stop the owner, and a red "that did not work" partway
+   * through a photography session reads as the shop breaking rather than as
+   * "wait four seconds". The file stays staged, the description stays typed,
+   * and the retry happens without anyone pressing anything.
+   */
+  | { step: "waiting"; seconds: number }
   | { step: "attaching" };
 
 export function ImageUploadPanel({
@@ -149,31 +159,50 @@ export function ImageUploadPanel({
     if (inputRef.current) inputRef.current.value = "";
   }
 
-  async function commit() {
+  async function commit(alreadyUploadedAt?: string) {
     if (!staged || altText.trim().length === 0) return;
 
-    const extension = staged.blob.type === "image/webp" ? "webp" : "jpg";
-    const path = `originals/${productId}/${crypto.randomUUID()}.${extension}`;
-
-    setPhase({ step: "uploading", percent: 0 });
     const supabase = createClient();
-    const { error } = await supabase.storage
-      .from(BUCKET)
-      .upload(path, staged.blob, {
-        contentType: staged.blob.type,
-        cacheControl: "31536000",
-        upsert: false,
-      });
 
-    if (error) {
-      setPhase({ step: "idle" });
-      toast.failed(`That did not upload. ${error.message}`);
-      return;
+    /**
+     * On a retry the bytes are already in storage. Re-uploading them would mint
+     * a second original for one photograph — an orphan by construction, since
+     * only one of them can end up on the row.
+     */
+    let path = alreadyUploadedAt ?? "";
+    if (!path) {
+      const extension = staged.blob.type === "image/webp" ? "webp" : "jpg";
+      path = `originals/${productId}/${crypto.randomUUID()}.${extension}`;
+
+      setPhase({ step: "uploading" });
+      const { error } = await supabase.storage
+        .from(BUCKET)
+        .upload(path, staged.blob, {
+          contentType: staged.blob.type,
+          cacheControl: "31536000",
+          upsert: false,
+        });
+
+      if (error) {
+        setPhase({ step: "idle" });
+        toast.failed(`That did not upload. ${error.message}`);
+        return;
+      }
     }
 
     setPhase({ step: "processing" });
     const processed = await normaliseUpload({ path });
+
     if (!processed.ok) {
+      if (processed.reason === "throttled") {
+        const wait = Math.max(1, processed.retryAfterSeconds);
+        for (let left = wait; left > 0; left -= 1) {
+          setPhase({ step: "waiting", seconds: left });
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+        }
+        // The same original, not a new one.
+        return commit(path);
+      }
       setPhase({ step: "idle" });
       toast.failed(processed.message);
       return;
@@ -187,6 +216,9 @@ export function ImageUploadPanel({
     const added = await addProductImage({
       productId,
       url: data.publicUrl,
+      // Echoed back by the server rather than reused from `path` above, so the
+      // row can only ever name the file that was actually processed.
+      originalPath: processed.originalPath,
       altText: altText.trim(),
     });
     setPhase({ step: "idle" });
@@ -377,6 +409,8 @@ function phaseLabel(phase: Phase): string {
       return "Reading the file…";
     case "uploading":
       return "Uploading…";
+    case "waiting":
+      return `The shop is pacing itself — trying again in ${phase.seconds}s. Nothing has been lost.`;
     case "processing":
       return "Squaring it up and making the sizes the shop needs…";
     case "attaching":

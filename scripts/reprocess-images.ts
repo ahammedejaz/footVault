@@ -92,18 +92,34 @@ function storagePathOf(publicUrl: string): string | null {
   return at === -1 ? null : publicUrl.slice(at + marker.length);
 }
 
-/**
- * The original a derivative came from, if the derivative is what is stored.
- *
- * After the first reprocess `product_images.url` points at
- * `derived/v1/<hash>/…`, which is an output rather than an input — feeding it
- * back through the pipeline would compound the compression a little more on
- * every run. So a row already pointing at a derivative is matched back to its
- * original by the `originals/` copy recorded alongside it, and skipped when
- * there is none.
- */
 function isDerivativePath(path: string): boolean {
   return path.startsWith("derived/");
+}
+
+/**
+ * What to actually feed the pipeline for this row.
+ *
+ * After a first pass, `url` points at `derived/v1/<hash>/…`, which is an
+ * **output**. Re-running the pipeline over it would compound the compression a
+ * little further on every version bump, so the row's `original_path` is used
+ * instead — that column exists for precisely this moment.
+ *
+ * Before it existed, a bumped `PIPELINE_VERSION` skipped every already-processed
+ * row and reported a confident zero: the reprocessor silently declined to
+ * rebuild exactly the images it is for. Rows written before the column was added
+ * still return null here and are still skipped, but now they are skipped with a
+ * reason a human can act on rather than as an unexplained no-op.
+ */
+function sourceFor(row: {
+  url: string;
+  original_path: string | null;
+}): { path: string; fromColumn: boolean } | null {
+  const stored = storagePathOf(row.url);
+  if (stored && !isDerivativePath(stored)) {
+    return { path: stored, fromColumn: false };
+  }
+  if (row.original_path) return { path: row.original_path, fromColumn: true };
+  return null;
 }
 
 async function main() {
@@ -116,8 +132,15 @@ async function main() {
 
   const { data: rows, error } = await supabase
     .from("product_images")
-    .select("id, url, product_id")
-    .overrideTypes<{ id: string; url: string; product_id: string }[]>();
+    .select("id, url, product_id, original_path")
+    .overrideTypes<
+      {
+        id: string;
+        url: string;
+        product_id: string;
+        original_path: string | null;
+      }[]
+    >();
 
   if (error || !rows) {
     console.error(`Could not read product_images: ${error?.message}`);
@@ -130,9 +153,9 @@ async function main() {
   let failures = 0;
 
   for (const row of rows) {
-    const path = storagePathOf(row.url);
+    const stored = storagePathOf(row.url);
 
-    if (!path) {
+    if (!stored && !row.original_path) {
       skippedPlaceholder += 1;
       console.log(
         `  \x1b[90m·\x1b[0m skip ${row.url.slice(0, 60)} — not in the bucket ` +
@@ -141,14 +164,19 @@ async function main() {
       continue;
     }
 
-    if (isDerivativePath(path)) {
+    const source = sourceFor(row);
+    if (!source) {
       skippedDerivative += 1;
       console.log(
-        `  \x1b[90m·\x1b[0m skip ${path.slice(0, 60)} — already a derivative, ` +
-          `and its original is not recorded on the row`,
+        `  \x1b[33m!\x1b[0m skip ${stored?.slice(0, 60) ?? row.url.slice(0, 60)} — ` +
+          `already a derivative and no original_path on the row. It predates ` +
+          `that column, so its original cannot be identified; re-upload it to ` +
+          `bring it back under the pipeline.`,
       );
       continue;
     }
+
+    const path = source.path;
 
     const { data: file, error: downloadError } = await supabase.storage
       .from(BUCKET)
@@ -228,7 +256,7 @@ async function main() {
 
     const { error: updateError } = await supabase
       .from("product_images")
-      .update({ url: publicUrl.publicUrl })
+      .update({ url: publicUrl.publicUrl, original_path: path })
       .eq("id", row.id);
 
     if (updateError) {
@@ -239,7 +267,7 @@ async function main() {
 
     processed += 1;
     console.log(
-      `  \x1b[32m✓\x1b[0m ${path}\n      → ${canonical}` +
+      `  \x1b[32m✓\x1b[0m ${path}${source.fromColumn ? " (from original_path)" : ""}\n      → ${canonical}` +
         `  ${result.variants.map((v) => `${v.width}:${(v.bytes / 1024).toFixed(0)}KB`).join(" ")}`,
     );
   }

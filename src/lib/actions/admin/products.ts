@@ -5,6 +5,7 @@ import { z } from "zod";
 
 import { FOOTWEAR_TYPES, GENDERS } from "@/components/admin/products/types";
 import { adminAction, type AdminResult } from "@/lib/admin/guard";
+import { isDerivative } from "@/lib/images/srcset";
 import { CATALOG_CACHE_TAG } from "@/lib/queries/cached";
 import type { createClient } from "@/lib/supabase/server";
 
@@ -757,7 +758,34 @@ const addImageSchema = z.object({
    * `is_admin()` — so the write is authorized by the database either way, and
    * this action records the row rather than carrying the bytes.
    */
-  url: z.url("That is not a web address.").max(1000),
+  url: z
+    .url("That is not a web address.")
+    .max(1000)
+    /**
+     * **Only an output of the pipeline may be attached to a product.**
+     *
+     * This is the enforcement point for the consistency guarantee, and it is
+     * here rather than in the upload panel on purpose: a rule that lives in one
+     * screen holds only for people who used that screen. The media library
+     * uploads unprocessed originals, and a photograph attached to a product
+     * from there — today by hand, tomorrow by a feature nobody has written yet
+     * — would be a raw phone photograph in a grid of squared, padded ones. The
+     * whole point of Batch A is that the catalogue looks like a catalogue no
+     * matter which door the photograph came through.
+     *
+     * `/seed/` is allowed because the drawn placeholders are first-party assets
+     * that predate the pipeline and are not in the bucket at all; the
+     * reprocessor reports and skips them for the same reason.
+     */
+    .refine(
+      (value) => isDerivative(value) || value.includes("/seed/"),
+      "That photograph has not been through the image pipeline. Upload it from the product's own Photographs panel, which squares it up and makes the sizes the shop needs.",
+    ),
+  /**
+   * Where the untouched upload lives, so a `PIPELINE_VERSION` bump can rebuild
+   * this image later. A path inside the bucket, never a URL — see the migration.
+   */
+  originalPath: z.string().trim().max(400).optional().nullable(),
   altText: z
     .string()
     .trim()
@@ -786,6 +814,7 @@ export async function addProductImage(
         .insert({
           product_id: parsed.data.productId,
           url: parsed.data.url,
+          original_path: parsed.data.originalPath ?? null,
           alt_text: parsed.data.altText,
           sort_order: gallery.images.length,
           is_primary: gallery.images.length === 0,

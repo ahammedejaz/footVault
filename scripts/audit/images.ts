@@ -32,6 +32,7 @@ import {
   inspect,
   normaliseProductImage,
 } from "../../src/lib/images/pipeline";
+import { isDerivative, snapWidth } from "../../src/lib/images/srcset";
 
 let failed = 0;
 let passed = 0;
@@ -362,9 +363,66 @@ async function main() {
     different.contentHash !== runA.contentHash,
   );
 
-  /* ------------------------------------------------------- 5 · layout ---- */
+  /* ------------------------------------- 5 · only outputs may be attached -- */
 
-  console.log("\n\x1b[1m5 · the card cannot shift when these render\x1b[0m");
+  console.log(
+    "\n\x1b[1m5 · the rule that keeps unprocessed photographs off products\x1b[0m",
+  );
+
+  /**
+   * `addProductImage` refuses any URL that is not a pipeline output (or a
+   * first-party `/seed/` placeholder). That is the enforcement point for the
+   * whole consistency guarantee, and it is in the **action** rather than in the
+   * upload panel on purpose: a rule that lives in one screen holds only for
+   * people who used that screen, and the media library uploads raw originals.
+   *
+   * What is asserted here is the predicate the action refines on. The action
+   * itself needs a request context and an admin session, so driving it from a
+   * plain script would test the harness rather than the rule; `audit:image-upload`
+   * covers the live path end to end.
+   *
+   * The database has **no** such constraint, deliberately — the seed writes
+   * `product_images` in raw SQL and a check constraint would have to encode the
+   * URL shape of a storage bucket. So the guarantee is exactly as strong as
+   * "every application write goes through addProductImage", and that sentence
+   * belongs in the report rather than being implied by a green tick.
+   */
+  const derivedUrl =
+    "https://x.supabase.co/storage/v1/object/public/product-images/derived/v1/abc123/shoe-1600.webp";
+  const originalUrl =
+    "https://x.supabase.co/storage/v1/object/public/product-images/originals/p1/raw.jpg";
+
+  check("a derivative URL is recognised", isDerivative(derivedUrl));
+  check(
+    "an untouched original is not",
+    !isDerivative(originalUrl),
+    "this is what stops a raw phone photograph reaching a product",
+  );
+  check(
+    "an arbitrary URL is not",
+    !isDerivative("https://example.com/shoe.jpg"),
+  );
+  check(
+    "a derivative wrapped in the Next optimiser is not mistaken for one",
+    !isDerivative("/_next/image?url=%2Fderived%2Fv1%2Fabc%2Fshoe-1600.webp&w=800"),
+    "the optimiser path contains the same substring",
+  );
+
+  const snapped = [1, 399, 400, 401, 900, 1600, 3840].map((w) => snapWidth(w));
+  check(
+    "every requested width snaps up to a real variant",
+    snapped.every((w) => (CANONICAL_WIDTHS as readonly number[]).includes(w)),
+    snapped.join(", "),
+  );
+  check(
+    "and never snaps down, which would serve a blurry photograph",
+    snapWidth(401) === 800 && snapWidth(1201) === 1600,
+    "401 → 800, 1201 → 1600",
+  );
+
+  /* ------------------------------------------------------- 6 · layout ---- */
+
+  console.log("\n\x1b[1m6 · the card cannot shift when these render\x1b[0m");
 
   /**
    * Layout stability here is structural rather than measured. The frame is
