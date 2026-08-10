@@ -4,6 +4,11 @@ Built, proved on staging, deployed. **Production is still on the still hero, by
 instruction and by construction** — the live hero payload has no `video_url`, so
 nothing about the live homepage changed.
 
+> **Superseded in two places by [phase-10-c4-live.md](phase-10-c4-live.md).**
+> The owner has since applied the migration and switched the live hero to video.
+> Two claims below were wrong and are corrected inline, marked `CORRECTION`:
+> the cache-control finding, and the migration's status.
+
 ---
 
 ## The file
@@ -163,6 +168,15 @@ object — so the fix is to re-upload the same file through the new panel, which
 sets a year and `immutable`-equivalent by construction. Left for the owner
 because re-uploading is a production write.
 
+> **CORRECTION.** Two thirds of that is wrong. Re-uploading through the panel
+> does set the metadata correctly — the live file's is `max-age=31536000` —
+> but **every object in this project returns `cache-control: no-cache`
+> regardless**, product images included. It is the storage layer, not the
+> upload, and no upload route changes it. More importantly, "revalidates" is
+> not "re-downloads": a conditional request returns **304 with 0 bytes**, so a
+> repeat visitor pays one round trip and not 2.56MB. Nothing needs doing.
+> Measured in [phase-10-c4-live.md](phase-10-c4-live.md) §3.
+
 **The poster and hero images still route through Media, not an upload control
 here.** They take a pasted address, which is the flow C2 established and which
 this matches. Only the video gets an uploader, because without one there is no
@@ -198,6 +212,12 @@ the button was present, named, and clickable, just in the wrong place.
 
 The migration is applied to **staging** and verified. It is **not** applied to
 production, per the standing rule that production DDL is an owner action.
+
+> **CORRECTION — done.** The owner authorised it and it is applied. It went via
+> `supabase db push` rather than the raw `psql -f` below, because that records
+> the migration in `supabase_migrations.schema_migrations` and a raw apply does
+> not — the Batch 2 trap. The file was also made re-runnable first. See
+> [phase-10-c4-live.md](phase-10-c4-live.md) §1.
 
 Production already has the bucket, and has none of the four policy names the
 migration creates, so it applies cleanly. Until it is applied, **uploading a
