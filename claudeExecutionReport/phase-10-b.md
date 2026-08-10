@@ -3,9 +3,14 @@
 **Three of the four items are complete. Per-shipment pickup selection is
 deliberately not built, and the reasoning is below rather than buried.**
 
-Branch `batch-b/honest-delivery`, five commits, **not merged**. Two production
-migrations are written and applied to staging only — under the merge policy that
-stops and asks.
+**In production since 2026-08-10.** Both migrations applied, Batch B merged as
+`7cede4a` and verified serving; the owner set the courier tolerance to 20 and
+confirmed the pickup deferral. The deploy record is
+[§ In production](#in-production) at the end, and the two sections that used to
+say otherwise — *Known imperfections* and *Blocked on the owner* — have been
+corrected rather than left to mislead.
+
+Branch `batch-b/honest-delivery`, five commits, merged into `main`.
 
 ---
 
@@ -215,18 +220,39 @@ one.
 
 ## Known imperfections
 
-**`audit:admin-pages` has a latent dependency on residue.** Its Pay-on-Delivery
-check reads an existing order out of the database rather than creating one, so it
-passes or fails depending on whether an *unrelated* earlier suite happened to
-leave a COD order behind. Staging currently has **zero orders** — `audit:checkout`
-cleans up after itself — so the check fails with "none found" while nothing is
-wrong.
+**~~`audit:admin-pages` has a latent dependency on residue.~~ Fixed
+2026-08-10 in `ecdf229`, as its own change.** Left here rather than deleted,
+because the finding is the useful part and the fix turned out to be smaller than
+what it uncovered.
 
-I confirmed this is not a regression from Batch B by querying the table directly
-rather than assuming. **It is a gate whose result is not a function of the code**,
-which is the same class of problem as the vacuous assertions found in Batch A,
-and it should build its own fixture. Not fixed here: it is a different gate, and
-changing it under a Batch B branch would hide the finding.
+What was reported: its Pay-on-Delivery check read an existing order out of the
+database rather than creating one, so it passed or failed depending on whether an
+*unrelated* earlier suite happened to leave a COD order behind. Staging had
+**zero orders** — `audit:checkout` cleans up after itself — so the check failed
+with "none found" while nothing was wrong. **A gate whose result is not a
+function of the code**, the same class of problem as the vacuous assertions found
+in Batch A.
+
+**What I had missed, and it was the worse half.** When no order was found the
+suite did not fail section 1 — it *skipped* it. Nine substantive checks, including
+the advance-and-balance assertions the suite exists for, silently did not run
+behind one loud cosmetic failure. And because the order came from whatever code
+was live when that other suite ran, those checks could never have caught a
+regression in the split they were written to protect.
+
+Measured on staging with zero orders, the condition that produced the false
+alarm: **52 passed / 1 failed → 63 passed / 0 failed.** Ten checks that never ran
+now run. `teardown --stock-only --dry-run` afterwards: zero orders, zero
+`order_items`, every variant matching the seed.
+
+The fixture is now placed through the same function checkout calls. Its cleanup
+passes `p_require_unpaid => false` deliberately: the fixture carries
+`payment_status = 'paid'` with no `payments` row — the state a real
+Pay-on-Delivery order reaches once its advance captures — and the guard reads
+exactly that combination as `already_paid` and declines to restock. Passing
+`true` would return quietly, delete the order anyway, and leave its units held
+with `order_items` cascaded away. That reasoning is read from the deployed
+migration body; the restock itself is measured above.
 
 **Best-rated has never chosen a real courier.** `chooseCourier` is proven against
 a fixture built to the observed shape, and `assignAwb` is wired — but no real AWB
@@ -245,27 +271,103 @@ be the "about 4 days" this batch removed.
 
 ---
 
-## Blocked on the owner
+## Was blocked on the owner — all three resolved 2026-08-10
 
-**1 · Two production migrations**, applied to staging and **not** to production:
+**1 · Two production migrations.** Applied. See § In production below.
 
-- `20260810150000_orders_quoted_estimated_days.sql` — additive, nullable, checked.
-- `20260810160000_shipments_courier_selection.sql` — two additive nullable
-  columns with a CHECK on the mode.
+**2 · The two business numbers.** The owner set
+`courier_price_tolerance_percent` to **20** and **deliberately left
+`courier_selection_mode` on `shiprocket`**, with the reasoning recorded here
+because it is better than what the brief assumed:
 
-Neither touches an existing value. The standing procedure applies: snapshot,
-content-verify, dry-run, push, confirm PostgREST serves the new columns before
-deploying code that writes them.
+> `chooseCourier` has never picked a real courier and no AWB has ever been
+> assigned successfully, so the first live parcel should exercise one new thing,
+> not two.
 
-**2 · Two business numbers, both currently unset and both failing loudly by
-design:**
+The tolerance is set *now* so that switching to `best_rated` later is a
+one-field change rather than two decisions at once. This is the right call and
+worth naming: the batch shipped two changes to the AWB step — a new assignment
+path and a new choice of courier — and testing them together on the first real
+parcel would leave a failure ambiguous between them.
 
-- **`courier_selection_mode`** is `shiprocket` — the previous behaviour. Changing
-  it to `best_rated` is what acts on the finding that the recommendation scored
-  worst on both lanes measured.
-- **`courier_price_tolerance_percent`** is unset. Until it is set, `best_rated`
-  refuses and falls back. **This is the number that decides how much more the
-  shop will pay for a courier that actually delivers**, and it is yours.
+**3 · Per-shipment pickup selection stays deferred**, confirmed, with the trigger
+unchanged: the day a second pickup address is added.
 
-**3 · Confirm per-shipment pickup selection stays deferred** until a second
-address exists.
+---
+
+<a id="in-production"></a>
+
+## In production
+
+Applied 2026-08-10 under the standing procedure in `docs/admin-guide.md` §12.
+
+### The migrations
+
+| Step | Result |
+|---|---|
+| `rebuild:stage` from empty | **100 migrations** replayed, seed run, 8/8 checks green |
+| Snapshot, schema | 34 tables · 60 policies · 28 public functions · 27 triggers · 114 indexes — **each equal to live** |
+| Snapshot, data | **all 34 public tables match live row-for-row**; `auth.users` 11 carried; newest order `FV-2026-00664` present; ends `RESET ALL;` |
+| Snapshot is genuinely pre-migration | the three new column names appear **0** times in it |
+| `db push --dry-run` | listed **exactly** the two expected files, nothing else |
+| `db push` | both applied; `notify pgrst` issued |
+
+The dump files hold real customers' names, addresses and phone numbers, so per
+§12 they are not in this repository and not named here.
+
+### The PostgREST gate, before any code that writes the columns
+
+| Direction | Probe | Result |
+|---|---|---|
+| Read | `select=quoted_estimated_days`, `select=courier_selection_mode,courier_selection_reason` | 200, columns present in the response |
+| **Write** | PATCH body naming the new columns | **204 — not `PGRST204`**, so the cache knows them |
+| Constraint rejects | `mode='whatever'`, `days=0`, `days=-1` | all three refused by constraint name |
+| Constraint accepts | `mode='best_rated'`, `days=4` | accepted |
+| anon | policies on `shipments` | `SELECT` only (`owns_order`); `ALL` is `authenticated` + `is_admin()` — **no anon UPDATE path exists** |
+
+Every write ran inside a transaction that rolled back. Production re-checked
+afterwards: shipment columns null, **0** orders carrying an estimate.
+
+**Two of my first probes proved nothing, and I nearly recorded them as passes.**
+Both PATCHed `id=eq.00000000-…`, so zero rows matched — the check constraint was
+never evaluated and RLS was never consulted, and both returned the 204 I was
+looking for. A 204 there is indistinguishable between "the constraint allows
+this" and "no row was examined". Redone against real rows inside rollbacks, which
+is where the numbers above come from. Same failure shape as the Batch A
+deploy probe that proved nothing: a check that proves a property of the
+machinery rather than the thing you care about. Third occurrence in this project;
+the standing question — *would this probe look different if the code were
+broken?* — is now the most valuable one I ask.
+
+### The deploy
+
+`7cede4a`, `READY`, target production, region `bom1`, aliased to
+`www.footvault.in` and `footvault.in`.
+
+**Verified by discriminator rather than by a 200,** and in both directions at
+once. New string `"We could not reach the courier for a date just now"` — checked
+absent from `main` first — appeared in
+`/_next/static/immutable/chunks/3eoyx5_jp4_79.js`, while the removed
+`"Usually 3–5 working days"` disappeared from `29-85hw_y4tzj.js`, **in the same
+poll**. The pre-deploy baseline was taken first and showed the opposite pair, so
+the probe was known to distinguish the two trees before it was relied on.
+
+The one surviving occurrence of the old string in `src/` is inside a comment
+explaining what the copy used to say; comments are stripped at build, which is
+why it works as a negative discriminator against the chunks.
+
+### Smoke check
+
+`/`, `/shop`, `/product/puma-suede-classic-mens`, `/cart`, `/checkout` — **200 on
+both hostnames**. `/admin` **404 anonymous** on both. All four cron jobs active
+with `last_status = succeeded`, reconciler included.
+
+### What this deploy does *not* prove
+
+The chunk grep proves the code is being served. It does **not** prove a customer
+has seen a real arrival date: `deliveryEstimate` is exercised by
+`audit:delivery-estimate` (23 checks) against staging, and the live checkout path
+needs a cart, an address and a Shiprocket call that no probe of mine placed. The
+new `/admin/health` pickup-divergence panel is likewise unverified on production,
+because it is behind the admin guard and I hold no owner session there. Both were
+green on staging; neither has been observed live.
