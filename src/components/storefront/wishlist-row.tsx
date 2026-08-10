@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import Image from "next/image";
+import { ProductImage } from "@/components/storefront/product-image";
 import Link from "next/link";
 
 import { SizeSelector } from "@/components/storefront/size-selector";
@@ -88,7 +88,7 @@ export function WishlistRow({ product }: { product: ProductSummary }) {
         aria-hidden
       >
         {product.heroImage ? (
-          <Image
+          <ProductImage
             src={product.heroImage.url}
             alt=""
             fill

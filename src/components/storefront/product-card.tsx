@@ -1,4 +1,4 @@
-import Image from "next/image";
+import { ProductImage } from "@/components/storefront/product-image";
 import Link from "next/link";
 
 import { Price } from "@/components/storefront/price";
@@ -77,7 +77,7 @@ export function ProductCard({
       */}
       <div className="card-media bg-fog relative aspect-4/5 overflow-hidden rounded-lg">
         {product.heroImage ? (
-          <Image
+          <ProductImage
             src={product.heroImage.url}
             alt={product.heroImage.alt}
             fill
@@ -91,7 +91,7 @@ export function ProductCard({
           />
         ) : null}
         {product.soleImage ? (
-          <Image
+          <ProductImage
             src={product.soleImage.url}
             // Decorative: the hero image above already names the product, and a
             // screen reader announcing both would read every card twice.
