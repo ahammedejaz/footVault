@@ -96,7 +96,27 @@ export const heroPayloadSchema = z.object({
    */
   video_url: href("The hero video"),
   poster_url: href("The video's still frame"),
+  /**
+   * Which of the two the customer actually gets.
+   *
+   * Absent means `video`, and that is load-bearing rather than tidy: every
+   * hero written before this field existed has no `media_mode`, and each one
+   * must keep playing its clip exactly as it did. A default of `poster` would
+   * silently stop every existing video hero the moment this shipped.
+   *
+   * `poster` does not hide the video with CSS — `home-sections.tsx` stops
+   * passing a `src` at all, so no `<video>` is constructed and no byte of the
+   * file is requested. That is the same path a customer gets under
+   * `prefers-reduced-motion` or `Save-Data`, which has been proved by
+   * `audit:hero-media` since it existed; this puts the switch in the owner's
+   * hands rather than the visitor's, and reuses the proof.
+   */
+  media_mode: z.enum(["video", "poster"]).optional(),
 });
+
+/** What an absent `media_mode` means. Named so the renderer and the editor
+ *  cannot disagree about it. */
+export const DEFAULT_HERO_MEDIA_MODE = "video" as const;
 
 export const categoryGridPayloadSchema = z.object({
   category_slugs: z

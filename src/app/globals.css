@@ -264,6 +264,56 @@
     opacity: 0.22;
   }
 
+  /*
+    The hero band's left and right edges, dissolved into the surface behind it.
+
+    Capping the media band at 1600px (see home-sections.tsx) stops the hero
+    being full-bleed on a wide monitor, and a stopped image has an edge: at the
+    loop's brightest frame that edge measured 7.74:1 against the ink beside it,
+    which is a hard vertical line — the same kind of artefact the scrim's
+    malformed gradient used to draw, arriving by a different route.
+
+    So the band fades out instead of stopping.
+
+    ## The fade is exactly as wide as the margin, and never wider
+
+    `clamp(0px, (100vw - 1600px) / 2, 3.5rem)` *is* the margin beside the band,
+    capped at 56px. That single expression makes this self-cancelling rather
+    than breakpoint-gated:
+
+      - below 1600px of viewport the band is full-bleed, the margin is negative,
+        the clamp floors it at 0, `background-size` becomes 0 and nothing paints.
+        A fade here would be a vignette at the edges of the screen, which is a
+        different design nobody asked for.
+      - at 1600px exactly the margin is 0 and so is the fade. No discontinuity
+        to step through as a window is resized.
+      - above that the fade grows with the margin until it reaches 56px.
+
+    A `min-width` media query would have had to guess a threshold; this one
+    cannot be wrong because it is derived from the thing it depends on.
+
+    ## Two layers rather than one four-stop gradient
+
+    One gradient would need `calc(100% - var(--fade))` as a colour-stop
+    position. Two edge-anchored layers sized to the fade need no explicit stop
+    positions at all — which keeps `audit:hero-media`'s "no colour stop may sit
+    behind the one before it" rule reading something simple, and keeps this
+    file from re-introducing the class of bug that gate exists to catch.
+  */
+  .hero-band-edge {
+    --hero-band-fade: clamp(0px, (100vw - 1600px) / 2, 3.5rem);
+    background-image:
+      linear-gradient(to right, var(--fv-ink), transparent),
+      linear-gradient(to left, var(--fv-ink), transparent);
+    background-size:
+      var(--hero-band-fade) 100%,
+      var(--hero-band-fade) 100%;
+    background-position:
+      left center,
+      right center;
+    background-repeat: no-repeat;
+  }
+
   /* Every interactive element clears 44×44 for touch, per the quality floor. */
   .tap-target {
     min-block-size: 44px;

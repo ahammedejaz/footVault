@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { ArrowDown, ArrowUp, GripVertical, Plus, Trash2 } from "lucide-react";
 
 import { HeroVideoUploader } from "@/components/admin/appearance/hero-video-uploader";
-import { Field, Text } from "@/components/admin/settings/controls";
+import { Field, RadioChoice, Text } from "@/components/admin/settings/controls";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -14,6 +14,7 @@ import {
   type PublishedSection,
 } from "@/lib/actions/admin/appearance";
 import {
+  DEFAULT_HERO_MEDIA_MODE,
   EDITABLE_SECTIONS,
   isEditableType,
   parseSectionPayload,
@@ -606,6 +607,42 @@ function PayloadFields({
             onChange={(value) => onField("poster_url", value)}
             hint="A frame from the video, from Media. It is what loads first, and it is what a customer who has asked for less motion sees instead of the video. If it is not a frame from the video, the picture visibly changes the moment the video starts."
           />
+          {/*
+            Directly under the two fields it arbitrates between, because the
+            question "which of these does a customer get" is meaningless read
+            anywhere else on this form.
+
+            `RadioChoice` rather than a switch: a switch has an implied "off"
+            and neither of these is off — both ship a hero. Two named states
+            with a sentence each is what the owner asked for, and it is the
+            same primitive /admin/settings uses for delivery mode, which
+            `audit:settings-controls` already drives by its visible label.
+          */}
+          <div className="sm:col-span-2">
+            <RadioChoice
+              name={`sec-${key}-media-mode`}
+              legend="What plays in the hero"
+              value={
+                stringAt(p, "media_mode") === "poster"
+                  ? "poster"
+                  : DEFAULT_HERO_MEDIA_MODE
+              }
+              onChange={(value) => onField("media_mode", value)}
+              options={[
+                {
+                  value: "video",
+                  label: "Video",
+                  note: "The clip plays and repeats. The still above is only what loads first — a customer never sees it as a picture in its own right.",
+                },
+                {
+                  value: "poster",
+                  label: "Still image only",
+                  note: "The still above becomes the hero and stays. No video is loaded at all, so the page is lighter and nothing moves. This is the one to use for a sale image.",
+                },
+              ]}
+              hint="Switching to Still image only does not delete the video — it stops sending it. Switch back whenever you like. With Still image only, the still is the whole hero for everyone, permanently, so give it an image designed to be looked at rather than a frame grabbed from the clip."
+            />
+          </div>
         </>
       );
 

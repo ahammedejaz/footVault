@@ -170,12 +170,28 @@ export function HeroVideo({ src }: { src: string }) {
         onPlay={() => setPaused(false)}
         className={cn(
           "absolute inset-0 size-full object-cover",
-          // Opacity only. The still underneath is the same frame at the same
-          // size, so there is nothing to move — a scale or a slide here would
-          // announce a change that has not happened. 700ms rather than the
-          // 200ms a button gets: nobody pressed anything, and a fast fade on a
-          // full-bleed image reads as a flicker rather than a transition.
-          "transition-opacity duration-700 ease-[cubic-bezier(0.4,0,0.2,1)]",
+          /*
+            No transition. This used to fade in over 700ms, and the fade was
+            wrong for a reason that only became true once the poster was a real
+            frame of this file.
+
+            `playing` fires with the video at frame zero, and the still
+            underneath *is* frame zero. A 700ms fade therefore cross-dissolves a
+            static frame zero against a video that is already moving — for
+            those 700ms the hero shows two shoes in two places at partial
+            opacity, which is a ghost. Swapping instantly shows frame zero
+            replaced by frame zero (or by frame one, 41ms of ordinary motion at
+            24fps), and there is nothing to see.
+
+            The reveal still hangs off `playing` rather than `loadeddata`, so
+            the structural fallback is untouched: the success path is the only
+            thing that reveals the video, and a clip that never starts leaves
+            the still exactly where it was.
+
+            This makes "the poster is a frame of this video" load-bearing. It
+            already was — the field's own hint says so — but a fade used to
+            soften a mismatched poster, and now nothing does.
+          */
           ready ? "opacity-100" : "opacity-0",
         )}
       >
@@ -190,25 +206,71 @@ export function HeroVideo({ src }: { src: string }) {
           onClick={toggle}
           className={cn(
             /*
+              The *target* is 44px and did not change. Only the paint did.
+
               `size-11` is 44px, and it is the real box rather than `hit-44`'s
               pseudo-element. `hit-44` sets `position: relative` on the element
               it is applied to, which silently beat `absolute` here and parked
               this button in the top-left corner of the hero — caught in a
               screenshot, not by any assertion. Two utilities that both own
               `position` cannot be combined, so this one owns its own size.
+
+              Keeping 44 rather than dropping to SC 2.5.8's 24px minimum: the
+              project's own floor is 44 (`.tap-target`, `hit-44`), a touch user
+              has no hover to reveal anything, and shrinking a target is not
+              what "quieter" was asked for — the button carries no paint of its
+              own now, so 44px costs nothing visually.
+
+              No `outline-none`. That utility is what `audit:focus-ring` exists
+              to catch: it sits in `@layer utilities`, beats the composite
+              indicator `@layer base` defines, and deletes the orange half of it
+              site-wide for the component that used it. The previous version of
+              this button had it. The global indicator is also the "comes
+              forward on keyboard focus" half of the brief, at full strength.
             */
-            "absolute right-3 bottom-3 z-10 grid size-11 place-items-center rounded-full",
-            "bg-ink/55 text-paper backdrop-blur-sm",
-            "transition-[background-color,transform] duration-150 ease-out",
-            "hover:bg-ink/75 active:scale-[0.94]",
-            "focus-visible:ring-paper focus-visible:ring-2 focus-visible:ring-offset-0 focus-visible:outline-none",
+            "group absolute right-3 bottom-3 z-10 grid size-11 place-items-center",
+            "rounded-full active:scale-[0.94]",
           )}
         >
-          {paused ? (
-            <Play className="size-4 translate-x-px" aria-hidden />
-          ) : (
-            <Pause className="size-4" aria-hidden />
-          )}
+          {/*
+            The visible mark, and it is deliberately almost nothing.
+
+            32px inside the 44px target, ink at 70% with the icon at 60% paper.
+            Measured against this clip's corner — which never rises above luma
+            54/255 across the whole loop — the disc reads 1.16:1 against the
+            footage behind it, so as a *shape* it is invisible; what a person
+            sees is a dim glyph.
+
+            70/60 rather than something quieter still, because the split has to
+            survive a clip that does not exist yet. SC 1.4.11 wants 3:1 for the
+            visual information identifying a control, and the icon-against-disc
+            ratio is what has to hold:
+
+              this clip's corner   6.77:1
+              its brightest pixel  5.96:1
+              a mid-bright clip    5.03:1
+              a pure white clip    3.57:1
+
+            A more opaque disc is the lever that buys the last row, and it costs
+            nothing in quietness because ink over a dark corner is still dark.
+            Thinning the icon instead would have failed the moment somebody
+            uploaded daylight footage.
+          */}
+          <span
+            className={cn(
+              "grid size-8 place-items-center rounded-full",
+              "bg-ink/70 text-paper/60 backdrop-blur-[2px]",
+              "transition-[background-color,color] duration-200 ease-out",
+              "group-hover:bg-ink/85 group-hover:text-paper",
+              "group-focus-visible:bg-ink/85 group-focus-visible:text-paper",
+            )}
+          >
+            {paused ? (
+              <Play className="size-3.5 translate-x-px" aria-hidden />
+            ) : (
+              <Pause className="size-3.5" aria-hidden />
+            )}
+          </span>
           <span className="sr-only">
             {paused ? "Play the background video" : "Pause the background video"}
           </span>

@@ -120,7 +120,27 @@ async function Hero({ section }: { section: HomepageSection }) {
    * which is the honest second-best: a hero that changes when the video begins,
    * rather than a hero that is empty until it does.
    */
-  const video = payloadString(section.payload, "video_url");
+  /*
+    Which of the two the owner has chosen, from /admin/appearance.
+
+    `poster` resolves `video` to null, and that single line is the whole
+    feature: nothing downstream is conditional, `<HeroVideo>` is never
+    constructed, no `<video>` element exists, and no byte of the file is
+    requested. It is the identical path a customer already gets under
+    `prefers-reduced-motion` or `Save-Data` — the one `audit:hero-media`
+    asserts creates no element and fetches nothing — so the owner's switch
+    inherits that proof rather than needing a parallel one.
+
+    Hiding a playing video with CSS would have been the other way to write
+    this, and it would have downloaded 2.5MB to show nobody.
+
+    Absent means `video`: heroes written before this field must keep playing.
+  */
+  const posterOnly =
+    payloadString(section.payload, "media_mode") === "poster";
+  const video = posterOnly
+    ? null
+    : payloadString(section.payload, "video_url");
   const poster = payloadString(section.payload, "poster_url");
   const desktopStill = poster ?? desktop;
   const mobileStill = poster ?? mobile;
@@ -165,7 +185,27 @@ async function Hero({ section }: { section: HomepageSection }) {
         enough to fix it is a scrim that hides the photograph. Above `md` there
         is room to put them side by side, and the overlay is worth having.
       */}
-      <div className="relative aspect-5/4 w-full sm:aspect-video md:absolute md:inset-0 md:aspect-auto md:h-full">
+      {/*
+        The 1600px cap is the quality ceiling expressed as a width.
+
+        `object-cover` on a band far wider than 16:9 always scales by width, so
+        above 1280px of viewport the source is being stretched, and at 2560 it
+        was stretched 2.00x with 39% of the frame left on screen. Making the
+        hero taller cannot help — it changes how much of the frame is visible
+        and not the scale. Only the rendered width or a bigger file can, and a
+        bigger file costs every phone on the site 5MB to fix a wide-monitor
+        problem (the measurements are in phase-10-c4-live.md §5).
+
+        So: 1600px, which is 1.25x on a 1280-wide source — exactly the ceiling
+        `audit:hero-media` enforces, and therefore the widest band the quality
+        rule allows. Below 1600px of viewport it does nothing at all, which is
+        every phone and every laptop; above it, the section's own ink shows at
+        either side and the hero is framed rather than full-bleed.
+
+        Scoped to `md` only for legibility. The mobile band is `w-full` under a
+        768px breakpoint, so a 1600px cap could never bind there anyway.
+      */}
+      <div className="relative aspect-5/4 w-full sm:aspect-video md:absolute md:inset-0 md:mx-auto md:aspect-auto md:h-full md:max-w-[1600px]">
         {mobileProps && desktopProps ? (
           <picture>
             <source
@@ -205,12 +245,84 @@ async function Hero({ section }: { section: HomepageSection }) {
         */}
         {video ? <HeroVideo src={video} /> : null}
 
-        {/* Mobile: a short fade into the copy below, so the seam is not a line.
-            Desktop: the scrim that keeps the headline legible over the art. */}
+        {/*
+          Mobile: a short fade into the copy below, so the seam is not a line.
+          Desktop: the contrast floor under the copy, and nothing more than that.
+
+          ## Every position is stated, because one of them used not to be
+
+          The desktop gradient used to inherit the mobile `to-40%` while adding
+          `md:via-55%`, which computed to `ink 0%, ink/70 55%, transparent 40%`
+          — a stop *behind* its predecessor. CSS clamps such a stop up to the
+          one before it, so transparency began at 55% too, the fade had zero
+          width, and the browser drew a hard vertical line down the hero at
+          every viewport from `md` up. It had been there since the hero was
+          written; flat placeholder art hid it and footage did not.
+
+          `md:to-100%` is the fix. It is also why all three desktop positions
+          are now written out even though 0% and 100% are the defaults: the
+          defect was an *unstated* position inheriting the wrong value, and a
+          position nobody wrote is a position nobody can see is wrong.
+
+          ## Why the shade is much lighter, and where the floor actually is
+
+          The owner asked for the dark blue wash to go. It cannot go entirely:
+          the video is owner-editable from /admin/appearance, so legibility
+          would otherwise depend on whichever clip is uploaded next, and no
+          gate can assert the contrast of footage that does not exist yet.
+
+          So it is a floor rather than a wash — ink/55 to ink/45, against ink
+          and ink/70 before, which is roughly 45% of the ink gone.
+
+          The numbers are measured rather than modelled. The clip was scanned
+          frame by frame for the one where the headline's own box is brightest
+          (t=2.292s, a white shoe crossing the copy); the page was screenshotted
+          twice at that frame with the scrim removed, once with the copy shown
+          and once hidden; the pixels that differ are the glyphs, and the
+          candidate gradients were composited over the *hidden* shot inside that
+          mask. Bounding boxes were not used — a box is mostly not text, and one
+          bright patch in its empty right-hand side reads as a failure no letter
+          is anywhere near. Under the glyphs, at 1440 and 2560:
+
+            headline  #fbfcfd  7.2-7.7:1 mean, 5.0:1 p95   (needs 3:1)
+            paragraph #fbfcfd  7.4-7.6:1 mean, 5.8:1 p95   (needs 4.5:1)
+            eyebrow   #fe9301  8.0-8.1:1 mean, 8.0:1 p95   (needs 4.5:1)
+
+          The paragraph is that colour *because* of this scrim; see the note on
+          it below. At the muted #a8b4c6 it was the one run that failed, at
+          3.6:1, and it was the constraint that decided how light this could go.
+
+          ## The via sits at 70%, not at 55%
+
+          55% is where the copy ends at `lg` and wider, so the old gradient was
+          fully transparent across the last fifth of the copy column at `md`
+          itself, where it runs to ~70% of the band. That never showed as a
+          contrast failure on this clip — the frame is dark out there — but it
+          meant the scrim's coverage depended on the footage rather than on the
+          layout. Turning at 70% and terminating at 100% covers the copy at
+          every breakpoint instead of only the widest ones.
+        */}
         <div
-          className="from-ink absolute inset-0 bg-gradient-to-t to-transparent to-40% md:via-ink/70 md:bg-gradient-to-r md:via-55% md:to-transparent"
+          className="from-ink absolute inset-0 bg-gradient-to-t to-transparent to-40% md:from-ink/55 md:via-ink/45 md:bg-gradient-to-r md:from-0% md:via-70% md:to-transparent md:to-100%"
           aria-hidden
         />
+
+        {/*
+          The band's own edges, dissolved into the ink beside them. Paints
+          nothing at all until the 1600px cap actually leaves a margin — see
+          `.hero-band-edge` in globals.css, where the arithmetic lives.
+
+          After the scrim in the DOM so it covers it: at the left edge the
+          result is pure ink either way, which is the darkest the copy's
+          background can be, so this can only help the contrast floor.
+
+          Before the pause control in paint order, though, and that is not an
+          accident of source order — the button carries `z-10` and this does
+          not, so a control never fades out. Source order alone would not have
+          done it: the button is rendered inside HeroVideo, which sits *above*
+          both of these.
+        */}
+        <div className="hero-band-edge pointer-events-none absolute inset-0" aria-hidden />
       </div>
 
       <div className="relative mx-auto max-w-7xl px-4 pt-6 pb-14 sm:px-6 md:flex md:min-h-[34rem] md:items-center md:py-24">
@@ -225,7 +337,27 @@ async function Hero({ section }: { section: HomepageSection }) {
             {title}
           </h1>
           {subtitle ? (
-            <p className="text-muted-foreground mt-5 max-w-md text-base text-pretty">
+            /*
+              `text-paper`, not `text-muted-foreground`, and this is the change
+              that let the scrim get lighter.
+
+              `--muted-foreground` on an ink surface is #a8b4c6. That is a token
+              for secondary text on a *flat navy panel*, where it measures well
+              against one known colour. This paragraph is not on a panel — it is
+              on footage, and on the frame where a white shoe crosses the copy it
+              measured 3.6:1 under a scrim light enough to be worth having. The
+              scrim heavy enough to rescue #a8b4c6 is the wash that was being
+              removed, so the choice was the colour or the wash.
+
+              At #fbfcfd the same pixels measure 7.4:1 mean and 5.8:1 at the 95th
+              percentile, against a 4.5:1 floor — and it is the only variant that
+              survives a brighter clip than this one, which matters because the
+              video is owner-editable.
+
+              The hierarchy it gives up is tonal. Size and weight keep it: 16px
+              regular under a 36-60px extrabold display line.
+            */
+            <p className="text-paper mt-5 max-w-md text-base text-pretty">
               {subtitle}
             </p>
           ) : null}
