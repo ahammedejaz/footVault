@@ -80,8 +80,28 @@ async function Hero({ section }: { section: HomepageSection }) {
   const secondaryLabel = payloadString(section.payload, "secondary_cta_label");
   const secondaryHref = payloadString(section.payload, "secondary_cta_href");
 
-  const desktop = banner?.imageUrl ?? null;
-  const mobile = banner?.mobileImageUrl ?? desktop;
+  /**
+   * Imagery is payload-first, and the payload owns it **wholesale** once it
+   * speaks. Before Phase 10 the hero's copy lived in this section's payload
+   * while its images lived in a separate `banners` row, so "edit the hero"
+   * meant two rows in two tables — the editor could not honestly claim the
+   * section. Now `/admin/appearance` writes the image URLs into the payload,
+   * and the banner remains only the fallback that keeps every pre-editor
+   * homepage rendering exactly as it did.
+   *
+   * All-or-nothing on purpose: a payload desktop image combined with the
+   * banner's mobile crop would be two unrelated photographs presented as one
+   * art-directed pair, which is worse than either alone.
+   */
+  const payloadDesktop = payloadString(section.payload, "desktop_image_url");
+  const payloadMobile = payloadString(section.payload, "mobile_image_url");
+  const payloadOwnsImagery = payloadDesktop !== null || payloadMobile !== null;
+  const desktop = payloadOwnsImagery
+    ? (payloadDesktop ?? payloadMobile)
+    : (banner?.imageUrl ?? null);
+  const mobile = payloadOwnsImagery
+    ? (payloadMobile ?? payloadDesktop)
+    : (banner?.mobileImageUrl ?? desktop);
 
   // What both crops genuinely agree on — and nothing else. `SharedImageProps`
   // forbids a layout key here: the two crops have deliberately different boxes,

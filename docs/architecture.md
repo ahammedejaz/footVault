@@ -107,6 +107,23 @@ src/lib/cart-types.ts      the bag, its lines, adjustments, shipping progress
 `src/lib/queries/*` is `server-only` and re-exports those types for server
 callers, so there is still one name per concept.
 
+
+### The boundary and the appearance preview
+
+The homepage editor's Preview returns real rendered `<HomeSection>` elements
+across a Server Action boundary, so the owner previews the storefront's own
+renderer rather than a mock. One consequence is invisible in development and
+breaks only in a production build: the client components inside that tree (the
+rail, the product image, the save-for-later heart) resolve against the **admin
+route's** client manifest, and the bundler builds that manifest from the
+route's import graph — it does not trace what an action returns. The admin
+appearance page therefore renders the live homepage itself ("Live now"), which
+puts those modules into the route's graph through a render path that cannot be
+tree-shaken. `audit:appearance` runs against a production build
+(`npm run build:stage && npm run start:stage`) precisely because this class of
+failure — and stale-cache-after-publish, its sibling — does not exist under
+`next dev`.
+
 ---
 
 ## Data flow

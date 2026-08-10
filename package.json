@@ -73,7 +73,8 @@
     "audit:cart-limit": "tsx scripts/audit/cart-limit.ts",
     "audit:settings-controls": "tsx scripts/audit/settings-controls.ts",
     "audit:reachability": "tsx scripts/audit/customer-reachability.ts",
-    "audit:homepage-tokens": "tsx scripts/audit/homepage-tokens.ts"
+    "audit:homepage-tokens": "tsx scripts/audit/homepage-tokens.ts",
+    "audit:appearance": "tsx scripts/audit/appearance.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.7.1",

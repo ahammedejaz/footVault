@@ -2,7 +2,11 @@ import { cookies } from "next/headers";
 import Link from "next/link";
 
 import { AnnouncementStrip } from "@/components/storefront/announcement-strip";
-import { ANNOUNCEMENT_COOKIE, announcementKey } from "@/lib/announcement";
+import {
+  ANNOUNCEMENT_COOKIE,
+  announcementIsLive,
+  announcementKey,
+} from "@/lib/announcement";
 import { contentTokens, fillTokens } from "@/lib/content-tokens";
 import { prerenderOrDefer } from "@/lib/prerender";
 import { cachedSiteSettings } from "@/lib/queries/cached";
@@ -35,9 +39,22 @@ export async function AnnouncementBar() {
     text: "Damage on arrival? Tell us within 24 hours",
     href: "/page/returns",
     is_active: true,
+    starts_at: null,
+    ends_at: null,
   });
 
-  if (!announcement.is_active || !announcement.text) return null;
+  /*
+    The scheduling window, checked per request — this component already reads a
+    cookie, so it renders dynamically and the clock is the request's. The
+    semantics (inclusive start, exclusive end, malformed dates failing open)
+    live with the dismissal mechanics in src/lib/announcement.ts.
+  */
+  if (
+    !announcement.is_active ||
+    !announcement.text ||
+    !announcementIsLive(announcement)
+  )
+    return null;
 
   /**
    * The strip carried "Free shipping over ₹2,499" above every page on the site

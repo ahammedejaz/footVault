@@ -6,6 +6,7 @@ import { Loader2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
+  saveAnnouncement,
   saveParcelDefaults,
   saveShippingSettings,
   saveStoreSettings,
@@ -13,11 +14,13 @@ import {
 import { toast } from "@/lib/toast";
 import {
   Amount,
+  Field,
   Money,
   RadioChoice,
   Text,
   Toggle,
 } from "@/components/admin/settings/controls";
+import { Input } from "@/components/ui/input";
 
 /**
  * The two settings forms.
@@ -687,3 +690,99 @@ export function StoreSettingsForm({ initial }: { initial: StoreFormValues }) {
 }
 
 
+
+/* --------------------------------------------------- the announcement ---- */
+
+export type AnnouncementFormValues = {
+  isActive: boolean;
+  text: string;
+  href: string;
+  /** Wall-clock IST, the format datetime-local edits. Empty means unset. */
+  startsAt: string;
+  endsAt: string;
+};
+
+export function AnnouncementForm({
+  initial,
+}: {
+  initial: AnnouncementFormValues;
+}) {
+  const { saving, save } = useSaver();
+  const [v, setV] = React.useState(initial);
+
+  return (
+    <form
+      onSubmit={(event) => {
+        event.preventDefault();
+        void save(() => saveAnnouncement(v), "Announcement saved.");
+      }}
+      className="space-y-5"
+    >
+      <Toggle
+        id="announcement-active"
+        label="Shown to customers"
+        checked={v.isActive}
+        onChange={(next) => setV((prev) => ({ ...prev, isActive: next }))}
+        hint="The master switch. The dates below only narrow when an active announcement appears."
+      />
+      <Text
+        id="announcement-text"
+        label="What it says"
+        value={v.text}
+        onChange={(next) => setV((prev) => ({ ...prev, text: next }))}
+        maxLength={140}
+        hint={
+          <>
+            Never type a price or threshold —{" "}
+            <code>{"{{free_shipping_threshold}}"}</code> and{" "}
+            <code>{"{{return_window}}"}</code> always show the current values
+            from these settings.
+          </>
+        }
+      />
+      <Text
+        id="announcement-href"
+        label="Where it links"
+        value={v.href}
+        onChange={(next) => setV((prev) => ({ ...prev, href: next }))}
+        hint="A page on this site, like /page/returns. Empty means the strip is just words."
+      />
+      <div className="grid gap-5 sm:grid-cols-2">
+        <Field
+          htmlFor="announcement-starts"
+          label="When it starts"
+          hint="Indian Standard Time. Empty means immediately."
+        >
+          <Input
+            id="announcement-starts"
+            type="datetime-local"
+            value={v.startsAt}
+            aria-describedby="announcement-starts-hint"
+            onChange={(event) =>
+              setV((prev) => ({ ...prev, startsAt: event.target.value }))
+            }
+          />
+        </Field>
+        <Field
+          htmlFor="announcement-ends"
+          label="When it ends"
+          hint="Indian Standard Time. Empty means until you switch it off."
+        >
+          <Input
+            id="announcement-ends"
+            type="datetime-local"
+            value={v.endsAt}
+            aria-describedby="announcement-ends-hint"
+            onChange={(event) =>
+              setV((prev) => ({ ...prev, endsAt: event.target.value }))
+            }
+          />
+        </Field>
+      </div>
+      <Button type="submit" disabled={saving} className="min-h-11">
+        {saving ? <Loader2 aria-hidden className="size-4 animate-spin" /> : null}
+        Save the announcement
+      </Button>
+    </form>
+  );
+}

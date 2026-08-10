@@ -49,6 +49,11 @@ export const ADMIN_NAV: readonly AdminNavItem[] = [
   { href: "/admin/customers", label: "Customers", hint: "Who has bought what" },
   { href: "/admin/media", label: "Media", hint: "Uploaded photographs" },
   {
+    href: "/admin/appearance",
+    label: "Appearance",
+    hint: "The homepage, arranged",
+  },
+  {
     href: "/admin/settings",
     label: "Settings",
     hint: "Shop details and rules",

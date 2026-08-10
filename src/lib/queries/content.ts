@@ -4,7 +4,7 @@ import { createStaticClient } from "@/lib/supabase/static";
 import { maybeRow, rows } from "@/lib/queries/run";
 import type { Database } from "@/lib/database.types";
 
-type SectionType = Database["public"]["Enums"]["section_type"];
+export type SectionType = Database["public"]["Enums"]["section_type"];
 
 /** Public content, like the catalog, reads through the cookieless client. */
 const db = () => createStaticClient();
@@ -266,4 +266,11 @@ export type AnnouncementSettings = {
   text: string;
   href: string | null;
   is_active: boolean;
+  /**
+   * The scheduling window, ISO strings with an explicit offset, both optional.
+   * Null starts means "immediately"; null ends means "until switched off".
+   * The strip renders only inside the window — see announcement-bar.tsx.
+   */
+  starts_at?: string | null;
+  ends_at?: string | null;
 };

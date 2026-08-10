@@ -506,18 +506,15 @@ So you are not hunting for something that is not there. This list was rewritten
 in Batch 3; the earlier version predated the order screen and undersold what
 works.
 
-**In the admin panel, these work:** Dashboard, Orders, the **single order
-screen** (money, shipping buttons, replacements, notes, and since Batch 3 the
-refund panel), Inventory, and **Settings** — delivery rates, the parcel box,
-Pay on Delivery controls.
+**In the admin panel, these work:** Dashboard, Orders and the single order
+screen (money, shipping buttons, replacements, notes, refunds), Returns to
+origin, Products, Inventory, Categories, Brands, Coupons, Customers, Media,
+**Appearance** (the homepage editor — §10a), Settings (delivery, the parcel
+box, Pay on Delivery, the courier choice, the announcement bar), and Health.
 
-**Still in the menu but opening to "page not found":** Products, Categories,
-Brands, Customers, Media. Adding and editing products still happens in the
-database, not in the panel.
-
-**Also not built:** coupon codes (the box on the bag page is visibly switched
-off and nothing typed into it can change a total), reviews, and the homepage
-builder (`/admin/appearance` — promised, still owed, scheduled as Batch 5).
+**Not built:** reviews, and a homepage **hero video** — the editor can place
+images today; video is queued behind real product photography, at your
+instruction, and needs a storage bucket only you can create.
 
 **Order emails are built and wired — five to the customer and one to you — but
 nobody receives them until an email provider is connected.** That is a
@@ -729,13 +726,44 @@ reset email, no registration form. And **customers never need an account to
 buy** — signing in only keeps a bag across phones, saves a list, and puts past
 orders in one place. Checkout stays open to guests on purpose.
 
-**The thin strip above the header** is text stored in the database. Ask your
-developer to change it. Two things to know:
+**The thin strip above the header** is yours to edit at **Settings → The
+announcement bar**: the words, where it links, whether it shows, and — since
+Phase 10 — **when**: give it a start and an end (Indian Standard Time) and it
+appears and disappears on its own. Things to know:
 
 - When the words change, **everyone sees the new one**, including people who
-  closed the old one. Closing one message must not hide next month's.
+  closed the old one. Closing one message must not hide next month's. A
+  scheduled window opening again does **not** bring back a strip someone
+  already closed — same words, same dismissal.
+- **Never type a price or threshold into it.** Write
+  `{{free_shipping_threshold}}` or `{{return_window}}` and the current value
+  from Settings is always shown. A typed number is exactly how the strip once
+  promised free shipping at a threshold the till no longer used.
 - **It must never promise returns or refunds.** It used to say "Free returns
   within 7 days", which was never your policy.
+
+---
+
+## 10a · The homepage is yours to arrange
+
+**Appearance** in the admin menu is the homepage editor. The list is the page:
+every section in the order customers see it. Move sections with the arrows (or
+drag), hide one without deleting it, open **Edit** to change its words, images
+and products, and add new sections — including a **Text block** for your own
+prose, which understands `**bold**`, `- ` bullet lines and the same
+`{{tokens}}` as everywhere else.
+
+Three things worth knowing:
+
+- **Nothing changes for customers until you press Publish.** Close the tab and
+  every unpublished edit is gone. Preview shows the page your edits would
+  produce — rendered by the shop itself, not a mock-up — without publishing
+  anything.
+- **Publish says what it removes.** Deleting a section only marks it; the red
+  line above Publish names what will actually be removed, and that removal is
+  permanent.
+- **"Live now"** at the bottom is the homepage as customers currently see it —
+  the last published layout, not your working copy.
 
 ---
 

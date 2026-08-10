@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import {
+  AnnouncementForm,
   ParcelDefaultsForm,
   ShippingSettingsForm,
   StoreSettingsForm,
@@ -13,6 +14,7 @@ import {
   settingObject,
   settingString,
 } from "@/lib/queries/admin/settings";
+import { istWallClock } from "@/lib/announcement";
 import { parcelDefaultsStatus } from "@/lib/shipping/quote";
 
 export const metadata: Metadata = { title: "Settings" };
@@ -41,6 +43,7 @@ export default async function AdminSettingsPage() {
   const shipping = settingObject(settings, "shipping");
   const parcelRow = settingObject(settings, "shipping_defaults");
   const contact = settingObject(settings, "contact");
+  const announcement = settingObject(settings, "announcement");
   const social = settingObject(settings, "social");
   const prepaidDiscount = (shipping.prepaid_discount ?? {}) as {
     mode?: string;
@@ -199,6 +202,29 @@ export default async function AdminSettingsPage() {
                 address: String(contact.address ?? ""),
                 instagram: String(social.instagram ?? ""),
                 facebook: String(social.facebook ?? ""),
+              }}
+            />
+          </Panel>
+
+          <Panel
+            title="The announcement bar"
+            description="The strip across the top of every page. It can be scheduled; a customer who closes it does not see the same words again."
+          >
+            <AnnouncementForm
+              initial={{
+                isActive: announcement.is_active !== false,
+                text: String(announcement.text ?? ""),
+                href: String(announcement.href ?? ""),
+                startsAt: istWallClock(
+                  typeof announcement.starts_at === "string"
+                    ? announcement.starts_at
+                    : null,
+                ),
+                endsAt: istWallClock(
+                  typeof announcement.ends_at === "string"
+                    ? announcement.ends_at
+                    : null,
+                ),
               }}
             />
           </Panel>

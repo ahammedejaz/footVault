@@ -35,7 +35,7 @@
  *
  * ## Coverage is asserted, not claimed
  *
- * `CONTROLS` below lists all 33 controls on the page. The run fails if any of
+ * `CONTROLS` below lists every control on the page. The run fails if any of
  * them was never operated — so a control added to the form without an entry
  * here, or an entry that silently stopped running, is a failure rather than a
  * quieter report.
@@ -105,13 +105,13 @@ type Control = {
    */
   options?: Record<string, string | RegExp>;
   /** Which settings row it lands in. */
-  row: "shipping" | "shipping_defaults" | "store_name" | "store_tagline" | "contact" | "social";
+  row: "shipping" | "shipping_defaults" | "store_name" | "store_tagline" | "contact" | "social" | "announcement";
   /** Read the stored value out of that row's `value`. */
   read: (value: unknown) => unknown;
 };
 
 /**
- * All 33 controls, in the order they appear on the page.
+ * Every control, in the order it appears on the page.
  *
  * The labels are the strings a shopkeeper reads. When the panel is redesigned
  * these change, and that is the intended cost: a redesign that renames a control
@@ -169,6 +169,15 @@ const CONTROLS: Control[] = [
   { id: "contact-address", label: "Shop address", kind: "text", row: "contact", read: (v) => obj(v).address },
   { id: "social-instagram", label: "Instagram", kind: "text", row: "social", read: (v) => obj(v).instagram },
   { id: "social-facebook", label: "Facebook", kind: "text", row: "social", read: (v) => obj(v).facebook },
+  /*
+    Phase 10 Batch C. The announcement had no control at all until this batch —
+    the strip rendered from a row only SQL could edit. Five controls, one row.
+  */
+  { id: "announcement-active", label: "Shown to customers", kind: "checkbox", row: "announcement", read: (v) => obj(v).is_active },
+  { id: "announcement-text", label: "What it says", kind: "text", row: "announcement", read: (v) => obj(v).text },
+  { id: "announcement-href", label: "Where it links", kind: "text", row: "announcement", read: (v) => obj(v).href },
+  { id: "announcement-starts", label: "When it starts", kind: "text", row: "announcement", read: (v) => obj(v).starts_at },
+  { id: "announcement-ends", label: "When it ends", kind: "text", row: "announcement", read: (v) => obj(v).ends_at },
 ];
 
 function obj(value: unknown): Record<string, unknown> {
@@ -195,6 +204,7 @@ const SAVE: Record<Control["row"], RegExp> = {
   store_tagline: /Save shop details/,
   contact: /Save shop details/,
   social: /Save shop details/,
+  announcement: /Save the announcement/,
 };
 
 /**
@@ -328,6 +338,7 @@ async function main() {
     "store_tagline",
     "contact",
     "social",
+    "announcement",
   ];
   const original = new Map<string, Json>();
   for (const row of rows) {
@@ -376,6 +387,90 @@ async function main() {
     for (const [id, value] of text) await setValue(page, id, value);
     await save(page, "store_name");
     for (const [id, value] of text) await assertStored(page, id, value);
+
+    section("1b · the announcement, including its schedule");
+    await open();
+    await setValue(page, "announcement-active", true);
+    await setValue(
+      page,
+      "announcement-text",
+      "QA: free over {{free_shipping_threshold}}",
+    );
+    await setValue(page, "announcement-href", "/page/returns");
+    await setValue(page, "announcement-starts", "2026-01-05T10:30");
+    await setValue(page, "announcement-ends", "2027-01-05T18:45");
+    await save(page, "announcement");
+    await assertStored(page, "announcement-active", true);
+    await assertStored(
+      page,
+      "announcement-text",
+      "QA: free over {{free_shipping_threshold}}",
+    );
+    await assertStored(page, "announcement-href", "/page/returns");
+    /*
+      The form edits an IST wall clock; the row stores the pinned instant. The
+      offset in the expectation is the point of the assertion — a save that
+      stored the naive string would round-trip visibly but mean a different
+      moment on every machine that read it.
+    */
+    await assertStored(page, "announcement-starts", "2026-01-05T10:30:00+05:30");
+    await assertStored(page, "announcement-ends", "2027-01-05T18:45:00+05:30");
+
+    /*
+      The strip itself, on the live storefront. The storage assertions above
+      cannot see a missing cache-bust: `cachedSiteSettings` sits under the
+      chrome tag with an hour's window, and only `updateTag` in the save action
+      refreshes it. Meaningful against a production build (`build:stage` +
+      `start:stage`) — the dev server re-reads per request and would pass with
+      the bust deleted. The window set above is open (started January, ends next
+      year), so the strip must be live with its token resolved; moving the start
+      into the future must take it off the page.
+    */
+    {
+      const withStrip = await (
+        await fetch(`${BASE_URL}/`, { cache: "no-store" })
+      ).text();
+      check(
+        "the live strip shows the saved announcement, token resolved",
+        withStrip.includes("QA: free over ₹"),
+        withStrip.includes("QA: free over")
+          ? "present but the token did not resolve"
+          : "absent from the live page",
+      );
+
+      await open();
+      /*
+        Both dates move, not one: the form still holds the 2027 end from above,
+        and a 2030 start against a 2027 end is refused by the schema's
+        ends-after-starts rule — correctly. The first version of this block set
+        only the start, the save was (rightly) refused, and the red that came
+        back looked like a scheduling bug in the strip. The storage assertion
+        below is what tells those two stories apart.
+      */
+      await setValue(page, "announcement-starts", "2030-01-05T10:30");
+      await setValue(page, "announcement-ends", "2031-01-05T10:30");
+      await save(page, "announcement");
+      await assertStored(
+        page,
+        "announcement-starts",
+        "2030-01-05T10:30:00+05:30",
+      );
+      const scheduledOut = await (
+        await fetch(`${BASE_URL}/`, { cache: "no-store" })
+      ).text();
+      check(
+        "a start date in the future takes the strip off the live page",
+        !scheduledOut.includes("QA: free over"),
+      );
+    }
+
+    /* Cleared dates store as null: empty is "no window", not the epoch. */
+    await open();
+    await setValue(page, "announcement-starts", "");
+    await setValue(page, "announcement-ends", "");
+    await save(page, "announcement");
+    await assertStored(page, "announcement-starts", null);
+    await assertStored(page, "announcement-ends", null);
 
     section("2 · the shop's parcel");
     await open();

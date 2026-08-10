@@ -6,7 +6,7 @@ import { z } from "zod";
 import { adminAction, type AdminResult } from "@/lib/admin/guard";
 import type { Json } from "@/lib/database.types";
 import { MIN_CHARGEABLE_PAISE } from "@/lib/payments/types";
-import { CATALOG_CACHE_TAG } from "@/lib/queries/cached";
+import { CATALOG_CACHE_TAG, CHROME_CACHE_TAG } from "@/lib/queries/cached";
 
 /**
  * The shop's own numbers and words, written by the owner.
@@ -512,6 +512,115 @@ export async function saveParcelDefaults(
 
       updateTag(CATALOG_CACHE_TAG);
       revalidatePath("/admin/settings");
+      return { ok: true };
+    },
+  );
+}
+
+/* ------------------------------------------------ the announcement -------- */
+
+/**
+ * `datetime-local` gives a wall-clock string with no zone. The shop runs on
+ * Indian Standard Time — the dispatch cutoff in `estimate.ts` is already an
+ * IST fact — so the wall time is pinned to +05:30 explicitly rather than to
+ * whatever machine happens to render the page. The stored value is a full ISO
+ * instant; `Date.parse` in the announcement bar needs nothing else.
+ */
+const WALL_CLOCK = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/;
+
+const wallClockField = (label: string) =>
+  z
+    .string()
+    .trim()
+    .refine(
+      (value) => value === "" || WALL_CLOCK.test(value),
+      `${label} is not a date and time.`,
+    )
+    .transform((value) => (value ? `${value}:00+05:30` : null));
+
+const announcementSchema = z
+  .object({
+    isActive: z.boolean(),
+    text: z
+      .string()
+      .trim()
+      .max(140, "Keep the announcement under 140 characters."),
+    href: z
+      .string()
+      .trim()
+      .max(200, "That address is too long.")
+      .refine(
+        (value) =>
+          value === "" ||
+          (value.startsWith("/") && !value.startsWith("//")) ||
+          value.startsWith("https://"),
+        "The link must start with / (a page on this site) or https://",
+      )
+      .transform((value) => (value ? value : null)),
+    startsAt: wallClockField("When it starts"),
+    endsAt: wallClockField("When it ends"),
+  })
+  .refine(
+    (value) =>
+      !value.startsAt || !value.endsAt || value.endsAt > value.startsAt,
+    { message: "The announcement ends before it starts." },
+  );
+
+/**
+ * The strip across the top of every storefront page.
+ *
+ * The dismissal cookie is keyed on a hash of the **raw** text — before token
+ * substitution — so editing the copy shows the new strip to everyone, while a
+ * scheduling window opening and closing does *not* resurrect a strip a
+ * customer already closed: same words, same key, cookie still set. That
+ * property is why scheduling lives in this row rather than as a cron toggling
+ * `is_active`.
+ */
+export async function saveAnnouncement(
+  input: unknown,
+): Promise<AdminResult<object>> {
+  return adminAction<object>(
+    "saveAnnouncement",
+    "adminMutation",
+    async ({ supabase }) => {
+      const parsed = announcementSchema.safeParse(input);
+      if (!parsed.success) {
+        return {
+          ok: false,
+          reason: "invalid",
+          message:
+            parsed.error.issues[0]?.message ?? "Check that and try again.",
+        };
+      }
+      const v = parsed.data;
+
+      const { error } = await supabase
+        .from("site_settings")
+        .update({
+          value: {
+            text: v.text,
+            href: v.href,
+            is_active: v.isActive,
+            starts_at: v.startsAt,
+            ends_at: v.endsAt,
+          },
+        })
+        .eq("key", "announcement");
+      if (error) {
+        return {
+          ok: false,
+          reason: "error",
+          message: "Could not save the announcement.",
+        };
+      }
+
+      /**
+       * `CHROME_CACHE_TAG`, not the catalog: `cachedSiteSettings` — the read
+       * under the announcement bar — is tagged `chrome`. Busting the wrong tag
+       * here would be the classic "my edit did nothing" for up to an hour.
+       */
+      updateTag(CHROME_CACHE_TAG);
+      revalidatePath("/", "layout");
       return { ok: true };
     },
   );
