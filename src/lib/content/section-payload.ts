@@ -79,6 +79,23 @@ export const heroPayloadSchema = z.object({
    */
   desktop_image_url: href("The desktop image"),
   mobile_image_url: href("The mobile image"),
+  /**
+   * Motion, and the still it plays over.
+   *
+   * `video_url` is what makes the hero a video hero: absent, nothing below
+   * changes and the section renders exactly the still it rendered before, which
+   * is what keeps every existing homepage byte-identical through this change.
+   *
+   * `poster_url` is the frame the customer sees first and, for a customer who
+   * has asked their device for less motion, the frame they see instead. It is a
+   * separate field rather than reusing the images above because the two answer
+   * different questions: the images are the art-directed pair for a still hero,
+   * the poster has one job, which is to be indistinguishable from the video's
+   * first frame. When it is absent the images stand in — a visible change at
+   * the moment playback starts is worse than a blank box, but only just.
+   */
+  video_url: href("The hero video"),
+  poster_url: href("The video's still frame"),
 });
 
 export const categoryGridPayloadSchema = z.object({

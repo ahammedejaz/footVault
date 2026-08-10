@@ -4,6 +4,7 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import { ArrowDown, ArrowUp, GripVertical, Plus, Trash2 } from "lucide-react";
 
+import { HeroVideoUploader } from "@/components/admin/appearance/hero-video-uploader";
 import { Field, Text } from "@/components/admin/settings/controls";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -586,6 +587,24 @@ function PayloadFields({
             value={stringAt(p, "mobile_image_url")}
             onChange={(value) => onField("mobile_image_url", value)}
             hint="A taller crop for phones. If only one image is given, it is used everywhere."
+          />
+          <HeroVideoUploader
+            id={`sec-${key}-video-upload`}
+            onUploaded={(url) => onField("video_url", url)}
+          />
+          <Text
+            id={`sec-${key}-video`}
+            label="Video address"
+            value={stringAt(p, "video_url")}
+            onChange={(value) => onField("video_url", value)}
+            hint="Filled in by the upload above. Clear it to go back to a still hero."
+          />
+          <Text
+            id={`sec-${key}-poster`}
+            label="Video still address"
+            value={stringAt(p, "poster_url")}
+            onChange={(value) => onField("poster_url", value)}
+            hint="A frame from the video, from Media. It is what loads first, and it is what a customer who has asked for less motion sees instead of the video. If it is not a frame from the video, the picture visibly changes the moment the video starts."
           />
         </>
       );

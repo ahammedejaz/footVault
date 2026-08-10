@@ -6,6 +6,7 @@ import type { ContentTokens } from "@/lib/content-tokens";
 import { fillSectionTokens } from "@/lib/content/homepage-sections";
 import { imageSourceProps, type SharedImageProps } from "@/lib/image-layout";
 
+import { HeroVideo } from "@/components/storefront/hero-video";
 import { ProseBlocks, hasProse } from "@/components/storefront/prose";
 import { ProductCard } from "@/components/storefront/product-card";
 import { Rail } from "@/components/storefront/rail";
@@ -103,6 +104,27 @@ async function Hero({ section }: { section: HomepageSection }) {
     ? (payloadMobile ?? payloadDesktop)
     : (banner?.mobileImageUrl ?? desktop);
 
+  /**
+   * Motion, and the still it plays over.
+   *
+   * Absent a `video_url` nothing below this line does anything, which is the
+   * property that matters: every homepage that existed before this feature
+   * renders the identical markup it rendered before, down to the byte.
+   *
+   * The poster replaces **both** crops rather than joining them as a third.
+   * Art direction answers "what is the best framing of this subject for this
+   * screen", and a poster is not answering that question — it is answering "what
+   * is the video's first frame", and there is only one of those. Two crops of it
+   * would guarantee that at least one breakpoint visibly jumps the moment
+   * playback starts. When no poster is given the art-directed pair stands in,
+   * which is the honest second-best: a hero that changes when the video begins,
+   * rather than a hero that is empty until it does.
+   */
+  const video = payloadString(section.payload, "video_url");
+  const poster = payloadString(section.payload, "poster_url");
+  const desktopStill = poster ?? desktop;
+  const mobileStill = poster ?? mobile;
+
   // What both crops genuinely agree on — and nothing else. `SharedImageProps`
   // forbids a layout key here: the two crops have deliberately different boxes,
   // which is the whole point of art-directing them, so a layout is not
@@ -123,11 +145,11 @@ async function Hero({ section }: { section: HomepageSection }) {
   // positions with CSS (`absolute inset-0 size-full object-cover`), so the box
   // is already owned. What next/image still needs from us is each crop's
   // intrinsic size, because that is what the srcset candidates are built from.
-  const desktopProps = desktop
-    ? imageSourceProps(common, desktop, { width: 1920, height: 1000 })
+  const desktopProps = desktopStill
+    ? imageSourceProps(common, desktopStill, { width: 1920, height: 1000 })
     : null;
-  const mobileProps = mobile
-    ? imageSourceProps(common, mobile, { width: 900, height: 720 })
+  const mobileProps = mobileStill
+    ? imageSourceProps(common, mobileStill, { width: 900, height: 720 })
     : null;
 
   return (
@@ -167,6 +189,21 @@ async function Hero({ section }: { section: HomepageSection }) {
             aria-hidden
           />
         )}
+
+        {/*
+          Between the still and the scrim, deliberately.
+
+          Under the scrim because a headline over *moving* footage is harder to
+          read than the same headline over a photograph, and the gradient that
+          makes one legible is the gradient that makes the other legible. Over
+          the still because that is the whole trick: the image below never goes
+          away, so a video that cannot play is not a failure state anybody has
+          to handle.
+
+          It renders nothing at all on the server and nothing on the client
+          until the page has loaded and gone idle. See hero-video.tsx.
+        */}
+        {video ? <HeroVideo src={video} /> : null}
 
         {/* Mobile: a short fade into the copy below, so the seam is not a line.
             Desktop: the scrim that keeps the headline legible over the art. */}
