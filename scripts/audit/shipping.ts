@@ -616,6 +616,8 @@ async function main() {
        */
       prepaidEstimateFeePaise: 19_900,
       codEnabled: true,
+    courierSelectionMode: "shiprocket" as const,
+    courierPriceTolerancePercent: null,
       codMinimumOrderValuePaise: 0,
       codAdvanceMaximumPaise: 0,
       includeGstInAdvance: false,

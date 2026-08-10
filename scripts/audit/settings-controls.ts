@@ -35,7 +35,7 @@
  *
  * ## Coverage is asserted, not claimed
  *
- * `CONTROLS` below lists all 31 controls on the page. The run fails if any of
+ * `CONTROLS` below lists all 33 controls on the page. The run fails if any of
  * them was never operated — so a control added to the form without an entry
  * here, or an entry that silently stopped running, is a failure rather than a
  * quieter report.
@@ -111,7 +111,7 @@ type Control = {
 };
 
 /**
- * All 31 controls, in the order they appear on the page.
+ * All 33 controls, in the order they appear on the page.
  *
  * The labels are the strings a shopkeeper reads. When the panel is redesigned
  * these change, and that is the intended cost: a redesign that renames a control
@@ -139,6 +139,10 @@ const CONTROLS: Control[] = [
     read: (v) => obj(obj(v).prepaid_discount).mode },
   { id: "prepaid-discount-value", label: /Discount amount/, kind: "number", row: "shipping", read: (v) => obj(obj(v).prepaid_discount).value },
   { id: "max-total-discount-percent", label: /Most a coupon and this discount can take off together/, kind: "number", row: "shipping", read: (v) => obj(v).max_total_discount_percent },
+  { id: "courier-selection-mode", label: "How the courier is chosen", kind: "radio", row: "shipping",
+    options: { shiprocket: "Let Shiprocket decide", cheapest: "Always the cheapest", best_rated: "Best record, within a price limit" },
+    read: (v) => obj(v).courier_selection_mode },
+  { id: "courier-price-tolerance", label: "How much more a better courier may cost", kind: "number", row: "shipping", read: (v) => obj(v).courier_price_tolerance_percent },
   { id: "rto-policy", label: "What a customer who paid online gets back", kind: "radio", row: "shipping",
     options: { actual_freight: "Everything except what the journey cost", flat: "Everything except a fixed amount", none: "Everything, nothing deducted" },
     read: (v) => obj(v).rto_deduction_policy },
@@ -490,6 +494,39 @@ async function main() {
     await setValue(page, "cod-enabled", true);
     await save(page, "shipping");
     await assertStored(page, "cod-enabled", true);
+
+    section("10b · who chooses the courier");
+    /*
+      The mode is driven through all three options rather than flipped once.
+      Two of the three change what the shop pays, and a selector that ignored
+      its setting would still store whichever value was written last — so the
+      assertion has to be that each option lands distinctly, not that the
+      control moves.
+    */
+    for (const mode of ["cheapest", "best_rated", "shiprocket"] as const) {
+      await open();
+      await setValue(page, "courier-selection-mode", mode);
+      await save(page, "shipping");
+      await assertStored(page, "courier-selection-mode", mode);
+    }
+
+    /*
+      The tolerance, and then explicitly back to empty.
+
+      Empty is the state that makes best-rated refuse rather than guess — the
+      build-unset rule — so it is a value worth proving the form can actually
+      produce. A control that can be set but never cleared would strand the shop
+      on whatever number was typed first.
+    */
+    await open();
+    await setValue(page, "courier-price-tolerance", 12);
+    await save(page, "shipping");
+    await assertStored(page, "courier-price-tolerance", 12);
+
+    await open();
+    await setValue(page, "courier-price-tolerance", 0);
+    await save(page, "shipping");
+    await assertStored(page, "courier-price-tolerance", null);
 
     /* ═══ 11 · coverage, asserted ═════════════════════════════════════════ */
     section("11 · every control on the page was operated");

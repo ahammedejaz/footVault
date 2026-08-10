@@ -61,6 +61,8 @@ export type ShippingFormValues = {
   prepaidDiscountMode: "flat" | "percent";
   prepaidDiscountValue: number;
   maxTotalDiscountPercent: number;
+  courierSelectionMode: "cheapest" | "shiprocket" | "best_rated";
+  courierPriceTolerancePercent: number;
   shippingRateMode: "live" | "flat";
   flatShippingFeeRupees: number;
   flatCodDepositMode: "unset" | "multiplier" | "fixed";
@@ -336,6 +338,47 @@ export function ShippingSettingsForm({
             value={v.maxTotalDiscountPercent}
             onChange={(n) => set("maxTotalDiscountPercent", n)}
             hint="A coupon and the online-payment discount add up, and together they never exceed this share of the goods total — the coupon keeps its full value and the online-payment part shrinks to fit. Empty means they do not combine at all: a customer gets whichever single discount is larger, until you set a ceiling here."
+          />
+        </div>
+      </Section>
+
+      <Section title="Which courier carries it">
+        <RadioChoice
+          name="courier-selection-mode"
+          legend="How the courier is chosen"
+          value={v.courierSelectionMode}
+          onChange={(next) =>
+            set(
+              "courierSelectionMode",
+              next as "cheapest" | "shiprocket" | "best_rated",
+            )
+          }
+          options={[
+            {
+              value: "shiprocket",
+              label: "Let Shiprocket decide",
+              note: "What the shop did before this setting existed. On both routes we measured, the courier Shiprocket recommended scored worst of the ones available on delivery, returns and tracking.",
+            },
+            {
+              value: "cheapest",
+              label: "Always the cheapest",
+              note: "Lowest quoted rate, whatever its record.",
+            },
+            {
+              value: "best_rated",
+              label: "Best record, within a price limit",
+              note: "The courier with the best delivery, returns and tracking scores — as long as it costs no more than the limit below.",
+            },
+          ]}
+        />
+        <div className="grid gap-5 sm:grid-cols-2">
+          <Amount
+            id="courier-price-tolerance"
+            label="How much more a better courier may cost"
+            unit="%"
+            value={v.courierPriceTolerancePercent}
+            onChange={(n) => set("courierPriceTolerancePercent", n)}
+            hint="Only used by 'Best record, within a price limit'. 10 means the shop will pay up to 10% above the cheapest quote for a courier with a better record. Leave it empty and that option refuses to choose rather than guessing what you would spend — nothing is picked for you."
           />
         </div>
       </Section>

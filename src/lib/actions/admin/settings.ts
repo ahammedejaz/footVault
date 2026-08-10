@@ -60,6 +60,11 @@ const shippingSchema = z
       .number({ message: "The combined-discount ceiling must be a number." })
       .min(0, "The combined-discount ceiling cannot be negative.")
       .max(100, "A ceiling over 100% is not a ceiling."),
+    courierSelectionMode: z.enum(["cheapest", "shiprocket", "best_rated"]),
+    courierPriceTolerancePercent: z
+      .number({ message: "The courier price tolerance must be a number." })
+      .min(0, "The courier price tolerance cannot be negative.")
+      .max(100, "A tolerance over 100% would let any courier through."),
     shippingRateMode: z.enum(["live", "flat"]),
     flatShippingFeeRupees: rupees("The flat delivery charge"),
     flatCodDepositMode: z.enum(["unset", "multiplier", "fixed"]),
@@ -265,6 +270,19 @@ export async function saveShippingSettings(
             */
             max_total_discount_percent:
               v.maxTotalDiscountPercent > 0 ? v.maxTotalDiscountPercent : null,
+            courier_selection_mode: v.courierSelectionMode,
+            /*
+              Zero is written as null, not as zero. A zero tolerance means
+              "never pay a rupee more", which is the `cheapest` mode said a
+              longer way — storing it as a real number would give the owner two
+              controls that do the same thing and then disagree about which is
+              in force. Null is also what makes best-rated refuse rather than
+              guess, which is the whole point of the setting.
+            */
+            courier_price_tolerance_percent:
+              v.courierPriceTolerancePercent > 0
+                ? v.courierPriceTolerancePercent
+                : null,
             shipping_rate_mode: v.shippingRateMode,
             flat_shipping_fee_paise: v.flatShippingFeeRupees,
             /*

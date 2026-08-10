@@ -105,6 +105,8 @@ function settings(over: Partial<ShippingSettings> = {}): ShippingSettings {
     freeAbovePaise: FREE_ABOVE,
     prepaidEstimateFeePaise: 19_900,
     codEnabled: true,
+    courierSelectionMode: "shiprocket" as const,
+    courierPriceTolerancePercent: null,
     codMinimumOrderValuePaise: 99_900,
     codAdvanceMaximumPaise: 50_000,
     includeGstInAdvance: false,
@@ -564,6 +566,8 @@ section("decision 7 · cod_enabled is refused at the API, not just hidden in the
 {
   const base = {
     codEnabled: true,
+    courierSelectionMode: "shiprocket" as const,
+    courierPriceTolerancePercent: null,
     codBlocked: false,
     belowMinimum: false,
     flatMode: false,

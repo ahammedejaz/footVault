@@ -9,10 +9,13 @@ import {
 } from "@/lib/orders/rto";
 import { shiprocketFetch, type ShiprocketResult } from "@/lib/shipping/client";
 import { shiprocketPickupLocation } from "@/lib/shipping/config";
+import { chooseCourier } from "@/lib/shipping/courier-choice";
 import {
   ParcelDefaultsIncompleteError,
+  quoteDelivery,
   shippingDefaults,
 } from "@/lib/shipping/quote";
+import { shippingSettings } from "@/lib/shipping/settings";
 import { maybeRow, rows } from "@/lib/queries/run";
 
 /**
@@ -441,6 +444,103 @@ export async function createShipment(
 
 /* --------------------------------------------------------------- 2 · awb -- */
 
+/**
+ * Which courier this parcel should go with, and the record of why.
+ *
+ * It re-quotes the lane rather than reading the courier list frozen at
+ * checkout, and that is deliberate: the quote may be days old by the time the
+ * owner packs the parcel, couriers drop off lanes, and the scores move. The
+ * decision should be made against what is true now, not against what was true
+ * when the customer paid — the *price* the customer was charged is frozen, and
+ * that is a different question from who carries it.
+ *
+ * Never throws and never refuses. Every unhappy path returns
+ * `{ courierId: null }`, which means "Shiprocket, you choose" — the behaviour
+ * this had before Phase 10. A parcel the customer has paid for must not sit
+ * unassigned because a preference could not be resolved.
+ */
+async function selectCourierFor(
+  supabase: Db,
+  orderId: string,
+  shipment: { order_id?: string | null },
+): Promise<{
+  courierId: number | null;
+  mode: string | null;
+  reason: string | null;
+  warning: string | null;
+}> {
+  void shipment;
+  const none = { courierId: null, mode: null, reason: null };
+
+  try {
+    const settings = await shippingSettings();
+
+    if (settings.courierSelectionMode === "shiprocket") {
+      // Nothing to decide, and saying so is still worth recording: it separates
+      // "the owner chose to defer" from "we could not work it out".
+      return {
+        ...none,
+        mode: "shiprocket",
+        reason: "Shiprocket's own recommendation, by the shop's setting",
+        warning: null,
+      };
+    }
+
+    const { data: order, error } = await supabase
+      .from("orders")
+      .select("shipping_address, grand_total")
+      .eq("id", orderId)
+      .maybeSingle();
+
+    if (error || !order) {
+      return { ...none, warning: `could not read the order: ${error?.message}` };
+    }
+
+    const address = order.shipping_address as { postalCode?: string } | null;
+    const postcode = address?.postalCode;
+    if (!postcode) {
+      return { ...none, warning: "the order has no delivery pin code" };
+    }
+
+    const defaults = await shippingDefaults();
+    const verdict = await quoteDelivery({
+      deliveryPostcode: postcode,
+      weightKg: Math.max(0.1, defaults.weight_grams / 1000),
+      valuePaise: order.grand_total ?? undefined,
+    });
+
+    if (verdict.source !== "shiprocket") {
+      return {
+        ...none,
+        warning: `the lane could not be re-quoted (${verdict.source})`,
+      };
+    }
+
+    const choice = chooseCourier({
+      couriers: verdict.couriers,
+      mode: settings.courierSelectionMode,
+      tolerancePercent: settings.courierPriceTolerancePercent,
+      recommendedCourierId: verdict.recommendedCourierId,
+    });
+
+    if (!choice.ok) {
+      return { ...none, warning: choice.message };
+    }
+
+    return {
+      courierId: choice.courier.id,
+      mode: choice.mode,
+      reason: `${choice.courier.name}: ${choice.reason}`,
+      warning: null,
+    };
+  } catch (caught) {
+    return {
+      ...none,
+      warning: caught instanceof Error ? caught.message : "unknown",
+    };
+  }
+}
+
 export async function assignAwb(
   supabase: Db,
   orderId: string,
@@ -465,6 +565,28 @@ export async function assignAwb(
     };
   }
 
+  /**
+   * Who picks the courier.
+   *
+   * Posting `{ shipment_id }` alone lets Shiprocket choose, which is what this
+   * did before Phase 10 — and on both lanes tested its recommendation scored
+   * worst of the available set on all three metrics. So the shop asks its own
+   * question first, from the same serviceability response the quote used.
+   *
+   * **Every failure here falls back to letting Shiprocket choose**, loudly. A
+   * lane that cannot be re-quoted, a selector that refuses because the owner has
+   * not set a tolerance, an outage — none of them is a reason to leave a paid
+   * parcel unassigned. The previous behaviour is the floor, and the log says
+   * when the shop dropped to it.
+   */
+  const choice = await selectCourierFor(supabase, orderId, shipment);
+  if (choice.warning) {
+    console.warn("[shiprocket] falling back to Shiprocket's own choice", {
+      orderId,
+      reason: choice.warning,
+    });
+  }
+
   const result = await shiprocketFetch<{
     response?: {
       data?: {
@@ -475,7 +597,12 @@ export async function assignAwb(
     };
   }>("/courier/assign/awb", {
     method: "POST",
-    body: { shipment_id: Number(shipment.shipment_id) },
+    body: {
+      shipment_id: Number(shipment.shipment_id),
+      // Omitted entirely rather than sent as null: Shiprocket treats an absent
+      // courier_id as "you choose", and a null as a value it has to interpret.
+      ...(choice.courierId === null ? {} : { courier_id: choice.courierId }),
+    },
   });
 
   if (!result.ok) {
@@ -509,6 +636,8 @@ export async function assignAwb(
       awb_code: awb,
       courier_name: stringify(data?.courier_name),
       courier_id: stringify(data?.courier_company_id),
+      courier_selection_mode: choice.mode,
+      courier_selection_reason: choice.reason,
       status: "awb_assigned",
       raw_awb: result.data as never,
     })

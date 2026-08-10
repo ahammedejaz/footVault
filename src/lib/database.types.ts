@@ -1510,6 +1510,8 @@ export type Database = {
           cod_collectable_amount: number
           courier_id: string | null
           courier_name: string | null
+          courier_selection_mode: string | null
+          courier_selection_reason: string | null
           created_at: string
           delivered_at: string | null
           id: string
@@ -1536,6 +1538,8 @@ export type Database = {
           cod_collectable_amount?: number
           courier_id?: string | null
           courier_name?: string | null
+          courier_selection_mode?: string | null
+          courier_selection_reason?: string | null
           created_at?: string
           delivered_at?: string | null
           id?: string
@@ -1562,6 +1566,8 @@ export type Database = {
           cod_collectable_amount?: number
           courier_id?: string | null
           courier_name?: string | null
+          courier_selection_mode?: string | null
+          courier_selection_reason?: string | null
           created_at?: string
           delivered_at?: string | null
           id?: string
