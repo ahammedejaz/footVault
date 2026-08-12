@@ -146,15 +146,31 @@ export function Totals({
         </span>
       </div>
 
-      {paysOnDelivery ? (
+      {/*
+        Settlement, below the total — who pays which part. Discounts sit ABOVE
+        the total (they change what the order costs); coins sit here (they
+        change who pays it). That placement is the visible difference between
+        a discount and a tender, and the only place the model is explained to
+        a customer. Every line is a named field.
+      */}
+      {paysOnDelivery || totals.coinPaid > 0 ? (
         <div className="border-border mt-4 space-y-2 rounded-lg border p-3">
           <dl className="space-y-2 text-sm">
-            <Row label="Pay now" strong>
-              {formatPaise(totals.advanceAmount)}
-            </Row>
-            <Row label="Pay in cash on delivery" strong>
-              {formatPaise(totals.balanceDueOnDelivery)}
-            </Row>
+            {totals.coinPaid > 0 ? (
+              <Row label="Paid by coins" strong>
+                {formatPaise(totals.coinPaid)}
+              </Row>
+            ) : null}
+            {totals.advanceAmount > 0 || totals.coinPaid === 0 ? (
+              <Row label={paysOnDelivery ? "Pay now" : "Paid by card"} strong>
+                {formatPaise(totals.advanceAmount)}
+              </Row>
+            ) : null}
+            {paysOnDelivery ? (
+              <Row label="Pay in cash on delivery" strong>
+                {formatPaise(totals.balanceDueOnDelivery)}
+              </Row>
+            ) : null}
           </dl>
           {/*
             The brief's sentence, verbatim, because it is the one that stops a
@@ -162,10 +178,12 @@ export function Totals({
             is the delivery, and it is *taken off* what the courier collects
             rather than added to it.
           */}
-          <p className="text-muted-foreground text-xs text-pretty">
-            The amount you pay now covers delivery. The rest is paid in cash
-            when your order arrives.
-          </p>
+          {paysOnDelivery ? (
+            <p className="text-muted-foreground text-xs text-pretty">
+              The amount you pay now covers delivery. The rest is paid in cash
+              when your order arrives.
+            </p>
+          ) : null}
         </div>
       ) : null}
 

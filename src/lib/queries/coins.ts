@@ -14,7 +14,7 @@ import { maybeRow, rows } from "@/lib/queries/run";
 export type CoinHistoryEntry = {
   id: string;
   delta: number;
-  reason: "earned" | "redeemed" | "reversed" | "expired" | "adjusted";
+  reason: "earned" | "redeemed" | "reversed" | "expired" | "adjusted" | "released";
   orderNumber: string | null;
   note: string | null;
   expiresAt: string | null;

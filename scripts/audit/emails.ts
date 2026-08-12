@@ -80,6 +80,7 @@ const TOTALS = {
   grandTotal: 887_600,
   advanceAmount: 887_600,
   balanceDueOnDelivery: 0,
+  coinPaid: 0,
 };
 
 console.log("\nOrder emails\n");
@@ -317,6 +318,7 @@ const distinct = buildOrderConfirmationEmail({
     grandTotal: 860_600,
     advanceAmount: 30_000,
     balanceDueOnDelivery: 830_600,
+    coinPaid: 0,
   },
   shippingAddress: ADDRESS,
 });

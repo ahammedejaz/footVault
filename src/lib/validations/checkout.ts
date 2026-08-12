@@ -176,6 +176,14 @@ export function checkoutSchema(options: { requireContactEmail: boolean }) {
         .nullish()
         .transform((value) => (value ? value : null)),
       saveAddress: z.boolean().optional().default(false),
+      /**
+       * "Use my Vault Coins" — a boolean, deliberately not a number. The
+       * server plans the spend (as many as the caps allow) and
+       * `create_order_with_stock` decides under the account lock; a browser
+       * never names an amount, which is the same rule every other money
+       * figure here follows.
+       */
+      spendCoins: z.boolean().optional().default(false),
     })
     .superRefine((value, ctx) => {
       if (!value.addressId && !value.address) {
