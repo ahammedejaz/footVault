@@ -91,10 +91,26 @@ async function notifyStatusChange(
     const customerName = order.shipping_address?.recipientName ?? "there";
 
     if (to === "delivered") {
+      /*
+        The coins the parcel earned, read back from the ledger rather than
+        recomputed: the credit hook ran before this email (see the caller),
+        so the row is the truth, and a hook that failed or credited nothing
+        reads as null — the builder then says nothing rather than "0 coins".
+      */
+      const earned = await maybeRow<{ delta: number }>(
+        "notifyStatusChange.coins",
+        supabase
+          .from("coin_transactions")
+          .select("delta")
+          .eq("order_id", orderId)
+          .eq("reason", "earned")
+          .maybeSingle(),
+      );
       await sendDelivered({
         orderNumber: order.order_number,
         to: order.contact_email,
         customerName,
+        coinsEarned: earned?.delta ?? null,
       });
       return;
     }
@@ -361,6 +377,68 @@ export async function transitionOrder(args: {
     }
 
     /*
+      The coin consequences, before the emails, through the one seam every
+      status change already passes. Both SQL functions are idempotent on
+      unique(order_id, reason), so a CAS retry, a replayed poll tick or a
+      double-fired hook nets one row — the gate replays ten times to prove
+      it. Logged loudly on failure and never allowed to fail the transition:
+      the order DID move, and the ledger's reconciliation gate plus the
+      liability tile are what surface a credit that went missing, not a
+      status change refusing to stick.
+
+        - delivered  → credit_order_coins. Verdicts that are not 'credited'
+          are normal states ('rate_unset' until the owner types a rate,
+          'no_user' for guests, 'already_credited' on replays) and only
+          unexpected ones are worth a log line.
+        - returned   → reverse_order_coins. The delivered→returned road is
+          the one exit from delivered (recordReplacement), and it must take
+          the coins back — the ₹10,000-order-100-coins-refund exploit's
+          first half. The refund path calls the same SQL function; one
+          implementation of "undo this money".
+    */
+    if (to === "delivered" || to === "returned") {
+      try {
+        let coinVerdict: string | null;
+        let coinError: { message: string } | null;
+        if (to === "delivered") {
+          const { data, error } = await elevated().rpc("credit_order_coins", {
+            p_order_id: orderId,
+          });
+          coinVerdict = data;
+          coinError = error;
+        } else {
+          const { data, error } = await elevated().rpc("reverse_order_coins", {
+            p_order_id: orderId,
+            p_reason: "Order returned",
+            p_actor: actorId ?? undefined,
+          });
+          coinVerdict = data;
+          coinError = error;
+        }
+        if (coinError) {
+          console.error(
+            `[coins] ${to} hook failed for order ${orderId}: ${coinError.message}`,
+          );
+        } else if (
+          coinVerdict !== "credited" &&
+          coinVerdict !== "reversed" &&
+          coinVerdict !== "rate_unset" &&
+          coinVerdict !== "no_user" &&
+          coinVerdict !== "nothing_to_credit" &&
+          coinVerdict !== "nothing_to_reverse" &&
+          coinVerdict !== "already_credited" &&
+          coinVerdict !== "already_reversed"
+        ) {
+          console.error(
+            `[coins] unexpected verdict on ${to} for order ${orderId}: ${String(coinVerdict)}`,
+          );
+        }
+      } catch (thrown) {
+        console.error(`[coins] ${to} hook threw for order ${orderId}:`, thrown);
+      }
+    }
+
+    /*
       The two status changes a customer is told about.
 
       Hooked here rather than in the admin actions because this is the only
@@ -371,7 +449,9 @@ export async function transitionOrder(args: {
       one that gets forgotten is the one nobody notices for a month.
 
       Inside the CAS, after the swap that won, so a losing attempt cannot send.
-      Never allowed to matter — see `notifyStatusChange`.
+      After the coin hook, so the delivered email can truthfully say how many
+      coins the parcel earned. Never allowed to matter — see
+      `notifyStatusChange`.
     */
     if (to === "shipped" || to === "delivered") {
       await notifyStatusChange(supabase, orderId, to);

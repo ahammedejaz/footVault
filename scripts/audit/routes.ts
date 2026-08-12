@@ -45,6 +45,7 @@ export const AUDIT_ROUTES: readonly AuditRoute[] = [
   { path: "/account", name: "account" },
   { path: "/account/orders", name: "account-orders-signed-out" },
   { path: "/account/addresses", name: "account-addresses-signed-out" },
+  { path: "/account/coins", name: "account-coins-signed-out" },
 
   // Both answer 200 CARRYING the not-found page, and that is deliberate:
   // loading.tsx streams a skeleton, so the response commits 200 before

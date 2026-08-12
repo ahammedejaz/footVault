@@ -284,6 +284,90 @@ export type Database = {
           },
         ]
       }
+      coin_accounts: {
+        Row: {
+          coins_disabled: boolean
+          created_at: string
+          user_id: string
+        }
+        Insert: {
+          coins_disabled?: boolean
+          created_at?: string
+          user_id: string
+        }
+        Update: {
+          coins_disabled?: boolean
+          created_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "coin_accounts_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: true
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      coin_transactions: {
+        Row: {
+          actor: string | null
+          created_at: string
+          delta: number
+          expires_at: string | null
+          id: string
+          note: string | null
+          order_id: string | null
+          reason: Database["public"]["Enums"]["coin_reason"]
+          user_id: string
+        }
+        Insert: {
+          actor?: string | null
+          created_at?: string
+          delta: number
+          expires_at?: string | null
+          id?: string
+          note?: string | null
+          order_id?: string | null
+          reason: Database["public"]["Enums"]["coin_reason"]
+          user_id: string
+        }
+        Update: {
+          actor?: string | null
+          created_at?: string
+          delta?: number
+          expires_at?: string | null
+          id?: string
+          note?: string | null
+          order_id?: string | null
+          reason?: Database["public"]["Enums"]["coin_reason"]
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "coin_transactions_actor_fkey"
+            columns: ["actor"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "coin_transactions_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "coin_transactions_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       collection_products: {
         Row: {
           collection_id: string
@@ -1871,6 +1955,7 @@ export type Database = {
           subtotal: number
         }[]
       }
+      credit_order_coins: { Args: { p_order_id: string }; Returns: string }
       cron_health: {
         Args: never
         Returns: {
@@ -1937,9 +2022,14 @@ export type Database = {
         Args: { p_actor: string; p_order_id: string }
         Returns: string
       }
+      reverse_order_coins: {
+        Args: { p_actor?: string; p_order_id: string; p_reason: string }
+        Returns: string
+      }
     }
     Enums: {
       cart_status: "active" | "converted" | "abandoned"
+      coin_reason: "earned" | "redeemed" | "reversed" | "expired" | "adjusted"
       coupon_type: "percent" | "fixed"
       footwear_type:
         | "sneaker"
@@ -2122,6 +2212,7 @@ export const Constants = {
   public: {
     Enums: {
       cart_status: ["active", "converted", "abandoned"],
+      coin_reason: ["earned", "redeemed", "reversed", "expired", "adjusted"],
       coupon_type: ["percent", "fixed"],
       footwear_type: [
         "sneaker",

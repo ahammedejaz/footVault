@@ -70,6 +70,11 @@ export const SETTINGS_VISIBILITY: Record<string, SettingClassification> = {
     visibility: "public",
     reason: "what the checkout offers, which the customer is about to be shown anyway",
   },
+  loyalty: {
+    visibility: "private",
+    reason:
+      "the coin earn rate, expiry and (Batch C) redemption caps — the owner's margin. The storefront's 'what a coin is worth' copy is rendered server-side from this row; nothing a browser can read carries it. Every number in it starts unset: the programme earns and redeems nothing until the owner types the values",
+  },
   reviews: {
     visibility: "private",
     reason:
