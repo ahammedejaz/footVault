@@ -119,7 +119,7 @@ export function ReviewForm({
           maxLength={120}
           onChange={(event) => setTitle(event.target.value)}
           placeholder="Fits true to size"
-          className="border-border bg-background focus-visible:ring-ring mt-1 block w-full rounded-lg border px-3 py-2 text-sm focus-visible:ring-2 focus-visible:outline-none"
+          className="border-border bg-background mt-1 block w-full rounded-lg border px-3 py-2 text-sm"
         />
       </label>
 
@@ -133,7 +133,7 @@ export function ReviewForm({
           rows={4}
           onChange={(event) => setBody(event.target.value)}
           placeholder="How do they fit, feel, and hold up?"
-          className="border-border bg-background focus-visible:ring-ring mt-1 block w-full rounded-lg border px-3 py-2 text-sm focus-visible:ring-2 focus-visible:outline-none"
+          className="border-border bg-background mt-1 block w-full rounded-lg border px-3 py-2 text-sm"
         />
       </label>
 

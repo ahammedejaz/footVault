@@ -897,6 +897,7 @@ export type Database = {
           rto_received_by: string | null
           rto_restocked_at: string | null
           shipping_address: Json
+          shipping_address_key: string | null
           shipping_fee: number
           status: Database["public"]["Enums"]["order_status"]
           stock_restored_at: string | null
@@ -948,6 +949,7 @@ export type Database = {
           rto_received_by?: string | null
           rto_restocked_at?: string | null
           shipping_address: Json
+          shipping_address_key?: string | null
           shipping_fee?: number
           status?: Database["public"]["Enums"]["order_status"]
           stock_restored_at?: string | null
@@ -999,6 +1001,7 @@ export type Database = {
           rto_received_by?: string | null
           rto_restocked_at?: string | null
           shipping_address?: Json
+          shipping_address_key?: string | null
           shipping_fee?: number
           status?: Database["public"]["Enums"]["order_status"]
           stock_restored_at?: string | null

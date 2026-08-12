@@ -78,7 +78,7 @@ async function main(): Promise<void> {
     .single();
   if (loyaltyError) throw new Error(`loyalty unreadable: ${loyaltyError.message}`);
 
-  async function setLoyalty(value: Record<string, number>) {
+  async function setLoyalty(value: Record<string, number | boolean>) {
     const { error } = await admin
       .from("site_settings")
       .update({ value })
@@ -193,6 +193,7 @@ async function main(): Promise<void> {
     section("1 · the two caps, and the preview agrees with the law");
 
     await setLoyalty({
+      enabled: true,
       coin_value_paise: 10_000, // ₹100 a coin
       coin_max_percent_of_order: 50,
       coin_max_coins_per_order: 100,
@@ -265,6 +266,7 @@ async function main(): Promise<void> {
 
     /* the absolute cap binds when the percent cap would allow more */
     await setLoyalty({
+      enabled: true,
       coin_value_paise: 10_000,
       coin_max_percent_of_order: 100,
       coin_max_coins_per_order: 5,
@@ -316,6 +318,7 @@ async function main(): Promise<void> {
     section("3 · COD — coins settle the door, never the deposit");
 
     await setLoyalty({
+      enabled: true,
       coin_value_paise: 10_000,
       coin_max_percent_of_order: 50,
       coin_max_coins_per_order: 100,
@@ -351,15 +354,27 @@ async function main(): Promise<void> {
     }
 
     /* a spend bigger than the whole balance-at-the-door is refused */
+    // Self-calibrating: probe this cart's real total (variant prices differ
+    // run to run), then leave exactly ₹150 at the door and ask for ₹200 of
+    // coins — inside the 50% cap on any real pair, past the balance on all
+    // of them, so the structural rule and not a cap is what must refuse it.
     const cartC2 = await makeCart(v[3]!.id);
-    // Ten coins (₹1,000) sits INSIDE the 50% cap on a ~₹2,700 order but past
-    // the ~₹200 left at the door under a ₹2,500 advance — so the structural
-    // rule, not a cap, is what must refuse it.
+    const probeC = await place({ cartId: cartC2, coinSpend: 0 });
+    if (!probeC.ok) throw new Error(`door probe failed: ${probeC.message}`);
+    const probeCRow = await orderRow(probeC.orderId);
+    const { error: probeCCancel } = await admin.rpc("cancel_order_with_restock", {
+      p_order_id: probeC.orderId,
+      p_reason: "QA probe",
+      p_require_unpaid: true,
+      p_release_cart: false,
+    });
+    if (probeCCancel) throw new Error(`door probe cancel: ${probeCCancel.message}`);
+    const cartC3 = await makeCart(v[3]!.id);
     const overBalance = await place({
-      cartId: cartC2,
-      coinSpend: 10,
+      cartId: cartC3,
+      coinSpend: 2,
       method: "cod",
-      advance: 250_000,
+      advance: probeCRow.grand_total - 15_000,
     });
     ok(
       "coins that would eat past the door balance are refused, advance intact",
@@ -373,6 +388,7 @@ async function main(): Promise<void> {
     section("4 · never 1–99 paise on the card");
 
     await setLoyalty({
+      enabled: true,
       coin_value_paise: 100, // ₹1 a coin, to reach the window at all
       coin_max_percent_of_order: 100,
       coin_max_coins_per_order: 100_000,
@@ -593,13 +609,31 @@ async function main(): Promise<void> {
     /* ══ 8 · unset means unspendable, loudly ════════════════════════════ */
     section("8 · unset settings refuse redemption by name");
 
-    await setLoyalty({});
+    await setLoyalty({ enabled: true });
     const cartF = await makeCart(v[1]!.id);
     const unset = await place({ cartId: cartF, coinSpend: 5 });
     ok(
       "with no numbers typed, redemption answers 'coins_unset'",
       !unset.ok && unset.code === "CNRJT" && unset.message === "coins_unset",
       unset.ok ? "placed!" : `${unset.code}:${unset.message}`,
+    );
+
+    /* ══ 9 · the master switch is a wall, not a label ═══════════════════ */
+    section("9 · the master switch, off");
+
+    await setLoyalty({
+      coin_value_paise: 100,
+      coin_max_percent_of_order: 100,
+      coin_max_coins_per_order: 100_000,
+      coin_minimum_balance: 1,
+      // enabled deliberately absent: off is the resting state.
+    });
+    const cartG = await makeCart(v[2]!.id);
+    const off = await place({ cartId: cartG, coinSpend: 5 });
+    ok(
+      "with every number set but the programme off, redemption refuses 'programme_off'",
+      !off.ok && off.code === "CNRJT" && off.message === "programme_off",
+      off.ok ? "placed!" : `${off.code}:${off.message}`,
     );
   } finally {
     const { error: loyaltyRestore } = await admin

@@ -36,6 +36,29 @@ async function announcement(page: Page) {
     "announcement: still visible after dismissing",
   );
 
+  /*
+    The strip hides OPTIMISTICALLY (client state) while the cookie only
+    arrives with the dismiss action's response — so the visibility check
+    above can pass before the server knows anything. Reloading in that gap
+    re-renders the strip legitimately, and this gate red-flagged exactly
+    that on a heavily loaded machine (Phase 11): green when the round trip
+    won the race, red when the reload did. The dismissal is httpOnly, so
+    poll the context's jar rather than document.cookie.
+  */
+  {
+    const deadline = Date.now() + 15_000;
+    let cookieLanded = false;
+    while (Date.now() < deadline) {
+      const jar = await page.context().cookies();
+      if (jar.some((cookie) => cookie.name === "fv_announce")) {
+        cookieLanded = true;
+        break;
+      }
+      await page.waitForTimeout(100);
+    }
+    check(cookieLanded, "announcement: the dismissal cookie never arrived");
+  }
+
   await page.reload({ waitUntil: "load" });
   check(!(await bar.isVisible()), "announcement: came back after a reload");
 

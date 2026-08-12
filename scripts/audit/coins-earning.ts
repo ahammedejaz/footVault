@@ -69,7 +69,7 @@ async function main(): Promise<void> {
     throw new Error(`loyalty row unreadable: ${loyaltyReadError.message}`);
   }
 
-  async function setLoyalty(value: Record<string, number>) {
+  async function setLoyalty(value: Record<string, number | boolean>) {
     const { error } = await db
       .from("site_settings")
       .update({ value })
@@ -151,6 +151,7 @@ async function main(): Promise<void> {
 
   try {
     await setLoyalty({
+      enabled: true,
       earn_rupees_per_coin: RATE_RUPEES,
       coin_expiry_months: EXPIRY_MONTHS,
     });
@@ -325,6 +326,18 @@ async function main(): Promise<void> {
       userId: bystander.userId,
       subtotal: 500_000,
     });
+    const { data: offVerdict, error: offError } = await db.rpc(
+      "credit_order_coins",
+      { p_order_id: unsetOrder },
+    );
+    ok(
+      "with the master switch off (the resting state), nothing mints — 'programme_off'",
+      offError === null &&
+        offVerdict === "programme_off" &&
+        (await ledgerOf(unsetOrder)).length === 0,
+      offError?.message ?? String(offVerdict),
+    );
+    await setLoyalty({ enabled: true });
     const { data: unsetVerdict, error: unsetError } = await db.rpc(
       "credit_order_coins",
       { p_order_id: unsetOrder },
@@ -337,6 +350,7 @@ async function main(): Promise<void> {
       unsetError?.message ?? String(unsetVerdict),
     );
     await setLoyalty({
+      enabled: true,
       earn_rupees_per_coin: RATE_RUPEES,
       coin_expiry_months: EXPIRY_MONTHS,
     });
