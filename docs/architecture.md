@@ -396,6 +396,41 @@ action already reaches them through `createAdminClient()`, which bypasses RLS,
 so `DEFINER` would buy nothing and would cost the trap Phase 1 was bitten by —
 `current_user` resolving to the owner rather than the caller.
 
+#### Recreating a function recreates its ACL from nothing
+
+"Executable by `service_role` only" is a property of a *specific signature*, and
+it does not travel. Two migration facts make this load-bearing:
+
+- **Changing a function's arity creates a NEW function.** `CREATE OR REPLACE
+  FUNCTION` only replaces when the argument list matches exactly; add or drop a
+  parameter and Postgres keeps the old function and creates a second one beside
+  it. The new one starts with the *default* ACL — `EXECUTE` granted to `PUBLIC`
+  — inheriting nothing from the form it was meant to supersede. A `create_order`
+  that was locked to `service_role` becomes, at its new arity, callable by
+  `anon` and `authenticated` over PostgREST, silently.
+- **A revoke that names roles but not `PUBLIC` revokes nothing a role holds
+  *through* `PUBLIC`.** `revoke execute ... from anon, authenticated` leaves the
+  default `PUBLIC` grant standing, and both roles still execute through it. The
+  revoke has to name `public` (as `credit_order_coins` and friends do).
+
+**The rule: any migration that recreates a function — new arity, new return
+type, `CREATE OR REPLACE`, drop-and-recreate — must restate its grants in the
+same file.** Revoke from `public, anon, authenticated`, then grant to the one
+caller that needs it. Do not rely on a grant from an earlier migration; that
+grant belongs to a signature this migration may have just replaced. If the
+change is an arity change, also drop the old signature by its exact argument
+list in the same migration, or PostgREST is left with two candidates and cannot
+choose (the `drop_stale_*_overload` migrations exist because this was learned
+twice).
+
+Both halves shipped to production on 2026-08-13 and were caught by the privilege
+gate, not by review: `create_order_with_stock` gained `p_coin_spend` (new arity,
+default `PUBLIC` grant) and `reconcile_reviews` was revoked from the two roles
+but not `PUBLIC`. `20260813010000_function_grants_close_public_execute` restated
+both. `audit:security-advance` §3 now derives the live signature from the
+catalog via `function_execute_audit()` rather than naming a fixed argument
+shape, so the next arity change is asserted against, not walked past.
+
 ### The abandoned-order sweep
 
 Claiming stock at order creation has a cost, and Agent E priced it: an anonymous

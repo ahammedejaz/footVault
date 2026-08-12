@@ -157,23 +157,48 @@ async function main() {
     /* ═══ 3 · the function that decides the split ══════════════════════════ */
     section("3 · create_order_with_stock, called directly");
 
-    const { error: rpcError } = await attackerClient.rpc(
-      "create_order_with_stock",
-      {
-        p_cart_id: victimOrder.id,
-        p_shipping_address: {},
-        p_payment_method: "cod",
-        p_initial_status: "confirmed",
-        p_payment_status: "paid",
-        p_shipping_flat_fee: 0,
-        p_free_shipping_above: undefined,
-        p_advance_amount: 100,
-      },
+    /*
+      This check used to POST a fixed 25-argument shape as the attacker and read
+      any error as "refused". It could not tell a permission refusal from a
+      *signature mismatch*: when 20260811140000 added p_coin_spend, PostgREST
+      answered the old shape with PGRST202 ("no function matches") and the gate
+      counted that non-null error as a pass — while the new 26-argument function
+      sat executable by anon, because a new arity is a new function that inherits
+      no ACL. The door reopened and the gate stayed green for two days.
+
+      So the signature is now *derived from the catalog* rather than named:
+      function_execute_audit() returns every public create_order_with_stock that
+      exists and whether anon or authenticated can execute it. Two properties are
+      asserted — that there is exactly one (a second is the overload landmine of
+      20260809130000 / 20260811160000, which lets PostgREST pick either), and
+      that neither client role can execute the one that exists. An arity change
+      produces a new catalog row that this check reads, so it cannot walk past.
+    */
+    const { data: coStock, error: coStockError } = await admin.rpc(
+      "function_execute_audit",
+      { p_proname: "create_order_with_stock" },
+    );
+    if (coStockError)
+      throw new Error(
+        `could not read create_order_with_stock privileges: ${coStockError.message}`,
+      );
+    check(
+      "exactly one create_order_with_stock exists (no ambiguous overload)",
+      (coStock?.length ?? 0) === 1,
+      `signatures=${coStock?.length ?? 0}`,
+    );
+    const coStockOpen = (coStock ?? []).filter(
+      (r) => r.anon_execute || r.authenticated_execute,
     );
     check(
-      "a customer cannot call create_order_with_stock at all",
-      rpcError !== null,
-      `error=${rpcError?.code ?? "NONE"}`,
+      "no client role can execute create_order_with_stock (derived from catalog)",
+      coStockOpen.length === 0,
+      coStockOpen
+        .map(
+          (r) =>
+            `${r.signature} anon=${r.anon_execute} auth=${r.authenticated_execute}`,
+        )
+        .join("; ") || "none open",
     );
 
     /* ═══ 4 · the quote the order is priced from ═══════════════════════════ */

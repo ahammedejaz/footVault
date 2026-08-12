@@ -1925,86 +1925,46 @@ export type Database = {
           retry_after_seconds: number
         }[]
       }
-      create_order_with_stock:
-        | {
-            Args: {
-              p_advance_amount?: number
-              p_cart_id: string
-              p_cod_handling_fee?: number
-              p_contact_email?: string
-              p_contact_phone?: string
-              p_coupon_code?: string
-              p_customer_note?: string
-              p_discount_total?: number
-              p_free_shipping_above?: number
-              p_guest_token?: string
-              p_initial_status: Database["public"]["Enums"]["order_status"]
-              p_max_total_discount_bps?: number
-              p_payment_method: string
-              p_payment_status: Database["public"]["Enums"]["payment_status"]
-              p_prepaid_discount?: number
-              p_quote_source?: string
-              p_quoted_cod_fee_paise?: number
-              p_quoted_courier_id?: number
-              p_quoted_courier_name?: string
-              p_quoted_forward_paise?: number
-              p_quoted_rate_mode?: string
-              p_quoted_rto_paise?: number
-              p_shipping_address: Json
-              p_shipping_flat_fee: number
-              p_user_id?: string
-            }
-            Returns: {
-              advance_amount: number
-              balance_due: number
-              grand_total: number
-              item_count: number
-              order_id: string
-              order_number: string
-              shipping_fee: number
-              subtotal: number
-            }[]
-          }
-        | {
-            Args: {
-              p_advance_amount?: number
-              p_cart_id: string
-              p_cod_handling_fee?: number
-              p_coin_spend?: number
-              p_contact_email?: string
-              p_contact_phone?: string
-              p_coupon_code?: string
-              p_customer_note?: string
-              p_discount_total?: number
-              p_free_shipping_above?: number
-              p_guest_token?: string
-              p_initial_status: Database["public"]["Enums"]["order_status"]
-              p_max_total_discount_bps?: number
-              p_payment_method: string
-              p_payment_status: Database["public"]["Enums"]["payment_status"]
-              p_prepaid_discount?: number
-              p_quote_source?: string
-              p_quoted_cod_fee_paise?: number
-              p_quoted_courier_id?: number
-              p_quoted_courier_name?: string
-              p_quoted_forward_paise?: number
-              p_quoted_rate_mode?: string
-              p_quoted_rto_paise?: number
-              p_shipping_address: Json
-              p_shipping_flat_fee: number
-              p_user_id?: string
-            }
-            Returns: {
-              advance_amount: number
-              balance_due: number
-              grand_total: number
-              item_count: number
-              order_id: string
-              order_number: string
-              shipping_fee: number
-              subtotal: number
-            }[]
-          }
+      create_order_with_stock: {
+        Args: {
+          p_advance_amount?: number
+          p_cart_id: string
+          p_cod_handling_fee?: number
+          p_coin_spend?: number
+          p_contact_email?: string
+          p_contact_phone?: string
+          p_coupon_code?: string
+          p_customer_note?: string
+          p_discount_total?: number
+          p_free_shipping_above?: number
+          p_guest_token?: string
+          p_initial_status: Database["public"]["Enums"]["order_status"]
+          p_max_total_discount_bps?: number
+          p_payment_method: string
+          p_payment_status: Database["public"]["Enums"]["payment_status"]
+          p_prepaid_discount?: number
+          p_quote_source?: string
+          p_quoted_cod_fee_paise?: number
+          p_quoted_courier_id?: number
+          p_quoted_courier_name?: string
+          p_quoted_forward_paise?: number
+          p_quoted_rate_mode?: string
+          p_quoted_rto_paise?: number
+          p_shipping_address: Json
+          p_shipping_flat_fee: number
+          p_user_id?: string
+        }
+        Returns: {
+          advance_amount: number
+          balance_due: number
+          grand_total: number
+          item_count: number
+          order_id: string
+          order_number: string
+          shipping_fee: number
+          subtotal: number
+        }[]
+      }
       credit_order_coins: { Args: { p_order_id: string }; Returns: string }
       cron_health: {
         Args: never
@@ -2025,6 +1985,14 @@ export type Database = {
           category_name: string
           category_slug: string
           name: string
+        }[]
+      }
+      function_execute_audit: {
+        Args: { p_proname: string }
+        Returns: {
+          anon_execute: boolean
+          authenticated_execute: boolean
+          signature: string
         }[]
       }
       is_admin: { Args: never; Returns: boolean }
