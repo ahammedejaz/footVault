@@ -2,6 +2,7 @@ import { ProductImage } from "@/components/storefront/product-image";
 import Link from "next/link";
 
 import { Price } from "@/components/storefront/price";
+import { Stars } from "@/components/storefront/reviews/stars";
 import { SaveForLater } from "@/components/storefront/save-for-later";
 import { SizeRun } from "@/components/storefront/size-run";
 import type { ProductColor, ProductSummary } from "@/lib/catalog-types";
@@ -165,6 +166,21 @@ export function ProductCard({
       {colourway ? (
         <p className="text-muted-foreground mt-1.5 truncate text-sm">
           {colourway}
+        </p>
+      ) : null}
+      {/*
+        Stars only once real reviews exist — a card with none says nothing,
+        which on a shop whose entry condition is a delivered parcel is the
+        state at launch and for a while after. Five grey stars would be a
+        promise; silence is the truth. (Phase 11, same rule as the JSON-LD.)
+      */}
+      {product.reviewCount > 0 ? (
+        <p className="mt-1.5 flex items-center gap-1.5">
+          <Stars average={product.ratingSum / product.reviewCount} />
+          <span className="text-muted-foreground font-mono text-xs tabular-nums">
+            {(product.ratingSum / product.reviewCount).toFixed(1)} (
+            {product.reviewCount})
+          </span>
         </p>
       ) : null}
       <Price

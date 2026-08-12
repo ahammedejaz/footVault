@@ -39,6 +39,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 type RawItem = {
   id: string;
+  product_id: string | null;
   product_name: string;
   product_slug: string | null;
   size: string;
@@ -147,6 +148,7 @@ function toLines(items: RawItem[]): OrderLine[] {
       )
       .map((item) => ({
         id: item.id,
+        productId: item.product_id,
         productName: item.product_name,
         productSlug: item.product_slug,
         size: item.size,
@@ -195,7 +197,7 @@ export async function getOrderForViewer(
        shipping_address, contact_email, contact_phone, customer_note, user_id,
        quoted_estimated_days,
        items:order_items (
-         id, product_name, product_slug, size, color, sku,
+         id, product_id, product_name, product_slug, size, color, sku,
          unit_price, quantity, line_total, image_url
        ),
        history:order_status_history ( status, customer_note, created_at, changed_by )`,

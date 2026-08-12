@@ -58,6 +58,7 @@ const db = () => createStaticClient();
 export const PRODUCT_FIELDS = `
   id, slug, name, description, material, gender, footwear_type,
   base_price, sale_price, effective_price, meta_title, meta_description, created_at,
+  review_count, rating_sum,
   brand:brands ( name, slug ),
   category:categories ( name, slug ),
   images:product_images ( url, alt_text, sort_order, is_primary, color ),
@@ -78,6 +79,8 @@ export type RawProduct = {
   meta_title: string | null;
   meta_description: string | null;
   created_at: string;
+  review_count: number;
+  rating_sum: number;
   brand: { name: string; slug: string } | null;
   category: { name: string; slug: string } | null;
   images: Array<{
@@ -186,6 +189,8 @@ export function toSummary(row: RawProduct): ProductSummary {
     sizes,
     colors,
     inStock: sizes.some((s) => s.available),
+    reviewCount: row.review_count,
+    ratingSum: row.rating_sum,
   };
 }
 

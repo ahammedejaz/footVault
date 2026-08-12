@@ -263,6 +263,9 @@ export type PlacedOrder = {
 /** One line, as snapshotted. Never re-read from the catalog after the fact. */
 export type OrderLine = {
   id: string;
+  /** Survives a soft delete; null only after a hard delete of a never-ordered
+      product, which cannot coexist with this line existing. Reviews key on it. */
+  productId: string | null;
   productName: string;
   productSlug: string | null;
   size: string;

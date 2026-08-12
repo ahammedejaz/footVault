@@ -6,6 +6,7 @@ import { ArrowLeft } from "lucide-react";
 import { OrderDetail } from "@/components/checkout/order-detail";
 import { formatOrderDate } from "@/components/checkout/order-format";
 import { StatusChip } from "@/components/checkout/status-chip";
+import { ReviewPrompt } from "@/components/storefront/reviews/review-prompt";
 import { getOrderForViewer } from "@/lib/queries/orders";
 import { cachedSiteSettings } from "@/lib/queries/cached";
 import { setting, type ContactSettings } from "@/lib/queries/content";
@@ -59,6 +60,29 @@ export default async function AccountOrderPage({
         Placed on{" "}
         <time dateTime={order.placedAt}>{formatOrderDate(order.placedAt)}</time>
       </p>
+
+      {/*
+        Only once the parcel demonstrably arrived — deliveredAt is the same
+        evidence field the review action's binding check reads. Deduped by
+        product: two sizes of one shoe are one review.
+      */}
+      {order.deliveredAt ? (
+        <ReviewPrompt
+          products={[
+            ...new Map(
+              order.lines
+                .filter(
+                  (line): line is typeof line & { productId: string } =>
+                    line.productId !== null,
+                )
+                .map((line) => [
+                  line.productId,
+                  { id: line.productId, name: line.productName },
+                ]),
+            ).values(),
+          ]}
+        />
+      ) : null}
 
       <OrderDetail order={order} contact={await shopContact()} />
     </div>

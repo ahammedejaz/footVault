@@ -6,6 +6,8 @@ import { Breadcrumbs } from "@/components/storefront/breadcrumbs";
 import { ProductCard } from "@/components/storefront/product-card";
 import { ProductViewer } from "@/components/storefront/product-viewer";
 import { Rail } from "@/components/storefront/rail";
+import { ReviewsSection } from "@/components/storefront/reviews/reviews-section";
+import { liveReviewAggregate } from "@/lib/queries/reviews";
 import { listProductSlugs, type ProductDetail } from "@/lib/queries/catalog";
 import {
   cachedProduct,
@@ -82,6 +84,14 @@ export default async function ProductPage({
   const price = product.salePrice ?? product.basePrice;
 
   /**
+   * Live, not from `cachedProduct`: review writes call `revalidatePath` on
+   * this page, which regenerates it without dropping the hour-old
+   * `unstable_cache` entry — so the cached copy of these two numbers can lag
+   * a fresh review by an hour on the page it was just written about.
+   */
+  const reviewAggregate = await liveReviewAggregate(product.id);
+
+  /**
    * Product JSON-LD, built from the same numbers the page renders so the markup
    * cannot claim a price or an availability the customer is not being shown.
    *
@@ -104,6 +114,25 @@ export default async function ProductPage({
     image: product.images.map((image) =>
       new URL(image.url, SITE_URL).toString(),
     ),
+    /**
+     * Only once real reviews exist — never emitted at zero, never fabricated
+     * (the brief's rule, and Google's: an AggregateRating over nothing is a
+     * penalty waiting to be noticed). Built from the same live aggregate the
+     * page renders, so the markup cannot claim stars the customer is not
+     * being shown.
+     */
+    aggregateRating:
+      reviewAggregate.reviewCount > 0
+        ? {
+            "@type": "AggregateRating",
+            ratingValue: (
+              reviewAggregate.ratingSum / reviewAggregate.reviewCount
+            ).toFixed(1),
+            reviewCount: reviewAggregate.reviewCount,
+            bestRating: 5,
+            worstRating: 1,
+          }
+        : undefined,
     offers: {
       "@type": "AggregateOffer",
       priceCurrency: "INR",
@@ -218,6 +247,8 @@ export default async function ProductPage({
             </div>
           ) : null}
         </ProductViewer>
+
+        <ReviewsSection productId={product.id} />
       </div>
 
       <RelatedRail product={product} />

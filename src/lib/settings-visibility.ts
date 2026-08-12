@@ -70,6 +70,11 @@ export const SETTINGS_VISIBILITY: Record<string, SettingClassification> = {
     visibility: "public",
     reason: "what the checkout offers, which the customer is about to be shown anyway",
   },
+  reviews: {
+    visibility: "private",
+    reason:
+      "the moderation switch (require_approval). Operational policy read only by the review server action; a customer learns the moderation model from whether their review appears, not from a flag — and publishing the flag would tell a bad actor whether fakes surface instantly",
+  },
   return_window_days: {
     visibility: "public",
     reason:
