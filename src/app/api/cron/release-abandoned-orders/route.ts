@@ -1,7 +1,6 @@
-import { timingSafeEqual } from "node:crypto";
-
 import { NextResponse } from "next/server";
 
+import { authorisedCronRequest } from "@/lib/cron/auth";
 import { recordAndApply } from "@/lib/payments/apply";
 import { fetchOrderPayments } from "@/lib/payments/razorpay";
 import { decideForOrder } from "@/lib/payments/reconcile";
@@ -65,7 +64,7 @@ const MAX_ORDERS_PER_TICK = 50;
 const ABANDONED_AFTER_MINUTES = 30;
 
 export async function POST(request: Request): Promise<NextResponse> {
-  if (!authorised(request)) {
+  if (!authorisedCronRequest(request, "cron/release-abandoned")) {
     // No detail. The only correct client knows the secret already, and
     // everybody else learns nothing about whether the route or the token was
     // the problem.
@@ -226,38 +225,4 @@ export async function POST(request: Request): Promise<NextResponse> {
 
   console.info("[cron/release-abandoned] tick complete", tally);
   return NextResponse.json({ ok: true, ...tally });
-}
-
-/**
- * A bearer token compared in constant time.
- *
- * `===` on a secret leaks its prefix through timing. That is a marginal attack
- * over the public internet and it costs one function to remove, which is a
- * trade worth taking on the endpoint that can cancel orders.
- *
- * Absent `CRON_SECRET` denies everything. The alternative — an unset secret
- * meaning "open" — is how this endpoint would quietly become public the first
- * time an environment variable failed to copy across.
- */
-function authorised(request: Request): boolean {
-  const expected = process.env.CRON_SECRET?.trim();
-  if (!expected) {
-    console.error(
-      "[cron/release-abandoned] CRON_SECRET is not set, so every request is refused. " +
-        "Set it in the Vercel project and in the Vault secret pg_cron reads.",
-    );
-    return false;
-  }
-
-  const header = request.headers.get("authorization") ?? "";
-  const offered = header.startsWith("Bearer ") ? header.slice(7).trim() : "";
-  if (offered.length === 0) return false;
-
-  const a = Buffer.from(offered, "utf8");
-  const b = Buffer.from(expected, "utf8");
-  // `timingSafeEqual` throws on a length mismatch, which would itself be a
-  // length oracle and a 500. Compare lengths first and keep the comparison for
-  // the equal-length case, which is the one that matters.
-  if (a.length !== b.length) return false;
-  return timingSafeEqual(a, b);
 }

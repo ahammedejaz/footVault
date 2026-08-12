@@ -6,6 +6,7 @@ import { z } from "zod";
 import { adminAction, type AdminResult } from "@/lib/admin/guard";
 import { ORDER_TRANSITIONS, type OrderStatus } from "@/lib/orders/types";
 import { transitionOrder } from "@/lib/orders/transition";
+import { withinReplacementWindow } from "@/lib/orders/replacement-window";
 import {
   REPLACEMENT_REASONS,
   REPLACEMENT_REASON_LABEL,
@@ -286,14 +287,6 @@ export async function recordReplacement(
       return { ok: true, status: result.status };
     },
   );
-}
-
-/** 24 hours from delivery. Null when the order has no delivery timestamp. */
-function withinReplacementWindow(deliveredAt: string | null): boolean | null {
-  if (!deliveredAt) return null;
-  const at = new Date(deliveredAt).getTime();
-  if (Number.isNaN(at)) return null;
-  return Date.now() - at <= 24 * 60 * 60 * 1000;
 }
 
 /* --------------------------------------------------------- cash at the door -- */

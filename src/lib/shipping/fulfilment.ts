@@ -911,9 +911,15 @@ export type TrackingSnapshot = {
 /**
  * Where the parcel is.
  *
- * Polled on view, never in the background — the brief was explicit that this
- * phase does not build a poller, and a cron job hitting Shiprocket for every
- * live parcel is a quota bill for information nobody is looking at.
+ * Two callers since Phase 11: the admin's "Refresh tracking" button
+ * (`trackOrder`), and the delivery poller
+ * (`/api/cron/poll-deliveries`) — the Phase 10 header said "polled on view,
+ * never in the background", and Phase 11 reversed that deliberately, because
+ * a `delivered_at` that only exists when somebody presses a button turned out
+ * to be a `delivered_at` that never exists (zero non-null values across the
+ * shop's history, audit 11B). Both callers run this same function: two
+ * implementations of "has this parcel arrived" is how they drift, and RTO
+ * detection is wired in here too.
  */
 export async function fetchTracking(
   supabase: Db,
@@ -940,7 +946,38 @@ export async function fetchTracking(
   }
 
   const tracking = readTracking(result);
+  await applyTracking(supabase, orderId, shipment, tracking, result.data);
+  await clearShipmentError(supabase, orderId);
+  return { ok: true, tracking };
+}
 
+/**
+ * The courier's answer, applied — separated from the HTTP call so
+ * `audit:delivery-poll` can hand a synthetic payload to the *real* write
+ * path, the same seam-level simulation `audit:rto` uses. What Shiprocket's
+ * actual Delivered payload parses to has still never been seen (no parcel
+ * has ever been delivered); the first real delivery is the real test of
+ * `readTracking`, and this split keeps everything downstream of it proven.
+ */
+export async function applyTrackingSnapshot(
+  supabase: Db,
+  orderId: string,
+  tracking: TrackingSnapshot,
+  raw: unknown,
+): Promise<{ ok: boolean; message?: string }> {
+  const shipment = await getShipment(supabase, orderId);
+  if (!shipment) return { ok: false, message: "No shipment row." };
+  await applyTracking(supabase, orderId, shipment, tracking, raw);
+  return { ok: true };
+}
+
+async function applyTracking(
+  supabase: Db,
+  orderId: string,
+  shipment: NonNullable<Awaited<ReturnType<typeof getShipment>>>,
+  tracking: TrackingSnapshot,
+  raw: unknown,
+): Promise<void> {
   /**
    * The delivery timestamp, captured once and never moved.
    *
@@ -967,7 +1004,7 @@ export async function fetchTracking(
     .from("shipments")
     .update({
       status: tracking.status ?? shipment.status,
-      raw_tracking: result.data as never,
+      raw_tracking: raw as never,
       tracked_at: new Date().toISOString(),
       ...(deliveredAt && !shipment.delivered_at
         ? { delivered_at: deliveredAt }
@@ -983,11 +1020,17 @@ export async function fetchTracking(
   /**
    * Mirrored onto the order so the account page can count down without joining
    * to `shipments`, and so the window survives a shipment row being replaced.
+   *
+   * `delivered_source: 'courier'` beside it — this path's timestamp was parsed
+   * out of the courier's own activity line, and Phase 11 hangs review
+   * eligibility and coin credit on this field, so the evidence records whose
+   * word it rests on. The `.is("delivered_at", null)` guard covers the source
+   * too: an admin's earlier stamp is never relabelled as courier evidence.
    */
   if (deliveredAt && !shipment.delivered_at) {
     const { error: orderError } = await supabase
       .from("orders")
-      .update({ delivered_at: deliveredAt })
+      .update({ delivered_at: deliveredAt, delivered_source: "courier" })
       .eq("id", orderId)
       .is("delivered_at", null);
     if (orderError)
@@ -1022,9 +1065,38 @@ export async function fetchTracking(
       console.error("[shiprocket] RTO detection failed:", thrown);
     }
   }
+}
 
-  await clearShipmentError(supabase, orderId);
-  return { ok: true, tracking };
+/**
+ * The parcels the delivery poller should ask about, oldest first.
+ *
+ * Every filter is a reason not to spend a Shiprocket call: no AWB means
+ * nothing to track; a stamped `delivered_at` or `rto_at` means the question
+ * is answered; a status other than `shipped` means no transition could
+ * follow; and the 45-day age cap means a parcel lost in 2026 is not still
+ * being polled in 2027 — Shiprocket's quota is finite and it also moves the
+ * shop's real parcels. The cap bounds a tick after an outage for the same
+ * reason the reconciler's does: an unbounded backlog is a self-inflicted
+ * rate-limit incident.
+ */
+export async function inFlightDeliveryCandidates(
+  supabase: Db,
+  limit: number,
+): Promise<{ id: string; order_number: string }[]> {
+  const cutoff = new Date(Date.now() - 45 * 24 * 60 * 60_000).toISOString();
+  return rows<{ id: string; order_number: string }>(
+    "fulfilment.inFlightDeliveryCandidates",
+    supabase
+      .from("orders")
+      .select("id, order_number, shipments!inner(awb_code)")
+      .eq("status", "shipped")
+      .is("delivered_at", null)
+      .is("rto_at", null)
+      .gt("placed_at", cutoff)
+      .not("shipments.awb_code", "is", null)
+      .order("placed_at", { ascending: true })
+      .limit(limit),
+  );
 }
 
 /** Shiprocket's own words for "it arrived". Matched loosely; it varies by courier. */
