@@ -125,20 +125,32 @@ jobs:
           fi
 
       # A Client Component that imports a server-only module is a build error in
-      # Next, but only if the import is a *value* import. A type-only import is
-      # erased, compiles fine, and quietly invites the next edit to turn it into
-      # a real one. This keeps the boundary structural: shared view models live
-      # in src/lib/catalog-types.ts, which has no server dependency.
+      # Next, but only if the import is a *value* import. A type-only import
+      # (`import type { … } from`) is erased at compile time and reaches no
+      # server code, so it is allowed: query modules are where the shared view
+      # models are inferred from, and forcing every client file to re-declare
+      # them by hand is a worse boundary than letting the types flow. What this
+      # guard exists to stop is a *value* reaching the browser bundle.
+      #
+      # The old line-based grep could not tell the two apart — a multi-line
+      # `import type {\n …\n} from "@/lib/queries/…"` puts `from` on a line
+      # with no `import` on it, and the guard sat red on main for two days over
+      # exactly that (appearance-editor.tsx, Phase 10 C2). So the check reads
+      # the whole file as one record (-z) and matches an import/export
+      # statement that is NOT `import type` / `export type` up to its `from`
+      # clause. `[^;]*?` cannot cross a statement boundary because Prettier
+      # ends every statement with a semicolon. An inline-mixed
+      # `import { type A, b } from` is still a value import and still flagged.
       - name: Assert client components do not reach server-only modules
         run: |
           offenders=""
           for f in $(grep -rln '"use client"' src || true); do
-            if grep -qE 'from "@/lib/supabase/(server|admin|static)"|from "@/lib/queries/' "$f"; then
+            if grep -Pzq '\b(import|export)\s+(?!type\b)[^;]*?from\s+"@/lib/(supabase/(server|admin|static)"|queries/)' "$f"; then
               offenders="$offenders$f\n"
             fi
           done
           if [ -n "$offenders" ]; then
-            echo "Client components importing a server-only module:"
+            echo "Client components importing a server-only module (value import):"
             printf "$offenders"
             exit 1
           fi
