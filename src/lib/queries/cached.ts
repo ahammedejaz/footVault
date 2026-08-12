@@ -86,7 +86,7 @@ export const CHROME_CACHE_TAG = "chrome";
  * mechanism was built for, and it is the reason it is a version rather than a
  * comment.
  */
-const SHAPE_VERSION = "v4";
+const SHAPE_VERSION = "v5";
 
 /**
  * Which database the entry was read from.
