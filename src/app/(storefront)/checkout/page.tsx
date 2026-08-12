@@ -65,7 +65,9 @@ export default async function CheckoutPage() {
     // on the payment method, which is chosen two steps after this render.
     discountTotal: 0,
     prepaidDiscount: 0,
+    couponDiscount: 0,
     shippingFee: 0,
+    forwardShippingFee: 0,
     codHandlingFee: 0,
     taxTotal: 0,
     grandTotal: cart.subtotal,

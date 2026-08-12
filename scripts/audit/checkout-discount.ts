@@ -40,7 +40,10 @@
 import "./clients";
 
 import { chromium, type Page } from "playwright";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 
+import { Totals } from "../../src/components/checkout/totals";
 import type { Json } from "../../src/lib/database.types";
 import { adminClient, addToBag, createAccount, sessionCookies } from "./fixtures";
 import { BASE_URL } from "./routes";
@@ -106,7 +109,63 @@ async function amountFor(page: Page, label: string): Promise<string | null> {
   }, label);
 }
 
+/**
+ * **Every money row reads its own field — the component itself, proven.**
+ *
+ * Pure, no browser: `Totals` is rendered directly with a fixture where every
+ * part is distinct, non-zero, and — the part that matters — `discountTotal`
+ * carries ₹300 belonging to neither the coupon nor the prepaid line, the shape
+ * a third discount part (coins) would have. The retired derivation
+ * `discountTotal − prepaidDiscount` would print the coupon as ₹700; the field
+ * says ₹400. A fixture where parts can alias proves nothing (11C.2's whole
+ * mechanism), so no two figures here format alike.
+ */
+function assertNamedLines() {
+  console.log("\n\x1b[1m0 · every rendered row is a field, not arithmetic\x1b[0m");
+  const html = renderToStaticMarkup(
+    createElement(Totals, {
+      couponCode: "SAVE400",
+      totals: {
+        subtotal: 974_600,
+        discountTotal: 130_000,
+        prepaidDiscount: 60_000,
+        couponDiscount: 40_000,
+        shippingFee: 16_000,
+        forwardShippingFee: 11_000,
+        codHandlingFee: 5_000,
+        taxTotal: 0,
+        grandTotal: 860_600,
+        advanceAmount: 30_000,
+        balanceDueOnDelivery: 830_600,
+      },
+    }),
+  );
+  for (const [label, value] of [
+    ["Subtotal", "₹9,746"],
+    ["Shipping (forward leg, not the fee total)", "₹110"],
+    ["Cash-handling fee", "₹50"],
+    ["Paying online", "−₹600"],
+    ["Coupon SAVE400", "−₹400"],
+    ["Order total", "₹8,606"],
+    ["Pay now", "₹300"],
+    ["Pay in cash on delivery", "₹8,306"],
+  ] as const) {
+    check(`${label} renders its own field's value ${value}`, html.includes(value));
+  }
+  check("Coupon SAVE400 is the row's label", html.includes("Coupon SAVE400"));
+  check(
+    "nothing renders the ₹700 the retired subtraction would derive",
+    !html.includes("₹700"),
+  );
+  check(
+    "nothing renders the ₹160 fee total in Shipping's place",
+    !html.includes("₹160"),
+  );
+}
+
 async function main() {
+  assertNamedLines();
+
   const admin = adminClient();
 
   const { data: originalRow, error: readError } = await admin

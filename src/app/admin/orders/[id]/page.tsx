@@ -97,9 +97,11 @@ export default async function AdminOrderDetailPage({
     : null;
 
   const paysOnDelivery = order.balanceDueOnDelivery > 0;
-  const forwardLeg = order.shippingFee - order.codHandlingFee;
-  /** Everything off the goods that was not the prepaid incentive. */
-  const otherDiscount = Math.max(0, order.discountTotal - order.prepaidDiscount);
+  // Named fields, never arithmetic — this page was the third derivation site
+  // the Phase 11 audit's "two surfaces" missed, and a coin settlement would
+  // have rendered here under the coupon's label.
+  const forwardLeg = order.forwardShippingFee;
+  const otherDiscount = order.couponDiscount;
 
   return (
     <AdminPage>

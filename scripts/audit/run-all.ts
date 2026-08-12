@@ -52,11 +52,14 @@ const GATES = [
   "shapes",
   "audit:literals",
   "audit:fixtures-guard",
+  "audit:signup-closed",
   "audit:emails",
   "audit:inbound-email",
   "audit:error-reporting",
   "audit:refund-message",
   "audit:customer-copy",
+  "audit:settings-visibility",
+  "audit:homepage-tokens",
   // Database-backed, read-mostly.
   "audit:refunds",
   "audit:coupons",
@@ -64,6 +67,7 @@ const GATES = [
   "audit:rto",
   "audit:reconciler",
   "audit:payment-health",
+  "audit:images",
   // Browser. Slow, and the reason this file exists.
   "audit:overflow",
   "audit:a11y",
@@ -75,6 +79,7 @@ const GATES = [
   "audit:hydration",
   "audit:interactions",
   "audit:links",
+  "audit:reachability",
   "audit:auth",
   "audit:cart",
   "audit:cart-limit",
@@ -85,11 +90,15 @@ const GATES = [
   "audit:admin",
   "audit:admin-pages",
   "audit:settings-controls",
+  "audit:appearance",
+  "audit:image-upload",
   "audit:security-advance",
   "audit:shipping",
+  "audit:courier-choice",
   "audit:totals",
   "audit:checkout-discount",
   "audit:delivery",
+  "audit:delivery-estimate",
   "audit:parcel",
 ] as const;
 
@@ -101,6 +110,14 @@ const EXCLUDED: Record<string, string> = {
   "audit:actions": "superseded by audit:security-advance",
   "audit:security": "superseded by audit:security-advance",
   "audit:zero-stock": "a seeding helper, not an assertion",
+  "audit:build-smoke":
+    "the DEPLOY gate, not a suite member. It runs a full production build " +
+    "against PRODUCTION data and serves the artifact — putting it in the " +
+    "suite would add minutes to every run and point a build at the live " +
+    "database on every `npm run audit`. It is required before every merge " +
+    "to main (= before every deploy); the sequence is written in " +
+    "docs/staging.md §4.4. Excluded must not mean forgotten: that section " +
+    "is the wiring, and the deploy checklist names this script explicitly.",
 };
 
 type Outcome = { gate: string; code: number; ms: number };

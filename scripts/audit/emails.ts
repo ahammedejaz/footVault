@@ -72,7 +72,9 @@ const TOTALS = {
   subtotal: 974_600,
   discountTotal: 100_000,
   prepaidDiscount: 100_000,
+  couponDiscount: 0,
   shippingFee: 13_000,
+  forwardShippingFee: 13_000,
   codHandlingFee: 0,
   taxTotal: 0,
   grandTotal: 887_600,
@@ -283,6 +285,65 @@ check(
   "the discount is drawn as its own line when there is one",
   confirmation.text.includes("Paying online"),
 );
+/*
+ * **Every money line reads its own field — proven with parts that cannot alias.**
+ *
+ * A subtraction bug survives any fixture where two parts happen to be equal or
+ * zero, and `discountTotal = coupon + prepaid` holds on every real order, so a
+ * derived coupon line is *numerically correct* right up until a third discount
+ * part exists. This fixture is that future: `discountTotal` carries ₹300 that
+ * belongs to neither the coupon nor the prepaid line (the shape a coin
+ * settlement would have had under the discount model — the exact 11C.2 hazard).
+ * The old `discountTotal − prepaidDiscount` derivation would print the coupon
+ * as ₹700; the field says ₹400. Every other line is distinct and non-zero too,
+ * so a swap or a re-derivation of any of them has nowhere to hide.
+ */
+const distinct = buildOrderConfirmationEmail({
+  orderNumber: "FV-2026-00699",
+  to: "a@b.c",
+  customerName: "Ada",
+  paymentMethod: "cod",
+  lines: LINES,
+  couponCode: "SAVE400",
+  totals: {
+    subtotal: 974_600,
+    discountTotal: 130_000,
+    prepaidDiscount: 60_000,
+    couponDiscount: 40_000,
+    shippingFee: 16_000,
+    forwardShippingFee: 11_000,
+    codHandlingFee: 5_000,
+    taxTotal: 0,
+    grandTotal: 860_600,
+    advanceAmount: 30_000,
+    balanceDueOnDelivery: 830_600,
+  },
+  shippingAddress: ADDRESS,
+});
+for (const [line, value] of [
+  ["Subtotal", "₹9,746"],
+  ["Paying online", "−₹600"],
+  ["Coupon SAVE400", "−₹400"],
+  ["Shipping", "₹110"],
+  ["Pay-on-delivery fee", "₹50"],
+  ["Order total", "₹8,606"],
+  ["Paid now", "₹300"],
+  ["To pay on delivery", "₹8,306"],
+] as const) {
+  const row = distinct.text
+    .split("\n")
+    .find((textLine) => textLine.trimStart().startsWith(line));
+  check(
+    `"${line}" prints its own field's value ${value}`,
+    row !== undefined && row.includes(value),
+    row ?? "(line absent)",
+  );
+}
+check(
+  "no line prints the ₹700 the old subtraction would have derived",
+  !distinct.text.includes("₹700") && !distinct.html.includes("₹700"),
+);
+
 const noDiscount = buildOrderConfirmationEmail({
   orderNumber: "FV-2026-00661",
   to: "a@b.c",

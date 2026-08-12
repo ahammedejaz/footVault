@@ -46,10 +46,6 @@ export type CheckoutTotals = OrderTotals & {
   basis: "free" | "live" | "flat" | "unavailable";
   /** The pricing mode in force, frozen onto the order beside the quote. */
   rateMode: "live" | "flat";
-  /** What was passed back for paying online. A named line; zero on Pay on Delivery. */
-  prepaidDiscount: number;
-  /** The coupon's part of the combined discount. Zero when there is none. */
-  couponDiscount: number;
   /** Which discounts are in force, for the surface that has to name them. */
   discountApplied: "coupon" | "prepaid" | "both" | null;
   /**
@@ -175,6 +171,9 @@ export async function computeOrderTotals(input: {
    */
   const shippingFee = quote.feePaise;
   const codHandlingFee = quote.codHandlingPaise;
+  // The one place the forward leg is computed. Render sites read the field;
+  // the no-derived-money-line lint rule keeps them that way.
+  const forwardShippingFee = shippingFee - codHandlingFee;
   const grandTotal = input.subtotalPaise - discountTotal + shippingFee;
 
   /**
@@ -265,6 +264,7 @@ export async function computeOrderTotals(input: {
     subtotal: input.subtotalPaise,
     discountTotal,
     shippingFee,
+    forwardShippingFee,
     codHandlingFee,
     taxTotal: 0,
     grandTotal,

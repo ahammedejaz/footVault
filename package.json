@@ -76,7 +76,8 @@
     "audit:homepage-tokens": "tsx scripts/audit/homepage-tokens.ts",
     "audit:appearance": "tsx scripts/audit/appearance.ts",
     "audit:hero-media": "tsx scripts/audit/hero-media.ts",
-    "audit:build-smoke": "tsx scripts/audit/build-smoke.ts"
+    "audit:build-smoke": "tsx scripts/audit/build-smoke.ts",
+    "audit:signup-closed": "tsx scripts/audit/signup-closed.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.7.1",

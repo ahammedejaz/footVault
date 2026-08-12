@@ -118,6 +118,18 @@ async function main() {
   page.on("pageerror", (e) => errs.push("pageerror: " + e.message));
 
   await page.goto(`${BASE}/wishlist`, { waitUntil: "load" });
+  /*
+    The list streams in behind loading.tsx, and dev hydration can put that
+    fallback back up for a beat after first paint — an immediate count() here
+    was reading "Loading your saved items" and reporting the buttons missing
+    (caught in Phase 11: three straight reds, page provably fine). Wait for
+    the settled row, then assert.
+  */
+  await page
+    .getByRole("button", { name: /move to bag/i })
+    .first()
+    .waitFor({ state: "visible", timeout: 15_000 })
+    .catch(() => {});
   ok(
     "the saved list renders the saved product",
     (await page.getByText(product.name).count()) > 0,

@@ -57,6 +57,22 @@ and `SUPABASE_SERVICE_ROLE_KEY`. That is not tidiness: several harnesses parse
 the write-back a run that imported `adminClient()` _and_ read
 `process.env.NEXT_PUBLIC_SUPABASE_URL` would talk to two databases at once.
 
+### The one setting the two projects deliberately disagree on
+
+**Email signup is OFF in production and ON in staging**, and that is not
+drift. Production's only door is Google (`external.email = false`, closed by
+the owner on 2026-08-11 — Phase 11 finding 11D.1: with email+autoconfirm on,
+anyone holding the public anon key could mint confirmed accounts against
+addresses they do not own, which makes every per-account loyalty grant free
+to farm). Staging keeps the email provider on because `scripts/audit/
+fixtures.ts` signs up its QA accounts with email and password, and every
+browser gate in the suite builds on those fixtures. Staging is a database no
+customer can reach, so the door costs nothing there.
+
+`npm run audit:signup-closed` asserts both halves on every suite run: if
+production's door reopens, or staging's closes, the gate names which — before
+ten minutes of Playwright fail for a reason that looks like a defect.
+
 ### Checking which database you are about to measure
 
 ```
@@ -238,6 +254,25 @@ retries and then fails the build rather than shipping the landmine. CI is the
 one deliberate exception (`STATIC_PARAMS_ALLOW_EMPTY=1` in ci.yml): its
 placeholder credentials make every collection fail by design, and its artifact
 never serves a request.
+
+### The deploy sequence, explicitly
+
+`audit:build-smoke` is named in `run-all.ts`'s `EXCLUDED` — it is the deploy
+gate, not a suite member, and excluded must not come to mean forgotten. The
+trigger is different: the suite runs *before a merge is considered*; this runs
+*before the merge happens*, because merging to main is deploying. In order:
+
+1. `npm run audit` — the full suite, green, against staging.
+2. `npm run audit:build-smoke` — the outage drill, a real production build
+   against live data, the manifest assertion, the served smoke. Green.
+3. Merge to main. Vercel deploys.
+4. Verify the deploy is *serving*, not merely READY — fetch an identifier that
+   exists only in the new tree, against `www`, not the apex
+   (docs/admin-guide.md has the procedure).
+
+On a failed smoke check after a deploy: **revert immediately, never
+forward-fix.** Two failed deploys in a row means stop deploying and leave it
+for a human.
 
 ---
 

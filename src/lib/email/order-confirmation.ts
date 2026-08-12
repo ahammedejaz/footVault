@@ -111,12 +111,13 @@ export function buildOrderConfirmationEmail(
     .join("\n");
 
   /**
-   * `shippingFee` is the whole delivery charge; `codHandlingFee` is the part of
-   * it that is the Pay-on-Delivery extra. Drawn apart here for the same reason
-   * the checkout does it — the owner's condition for keeping the surcharge was
-   * that a customer can see it as its own line.
+   * The forward leg and the coupon line are **named fields**, not arithmetic.
+   * This file used to derive both — the coupon as `discountTotal −
+   * prepaidDiscount`, which would have relabelled any third discount part as
+   * "Coupon" on the one document a customer keeps. Every money line below
+   * reads its own field; `footvault/no-derived-money-line` holds it there.
    */
-  const forwardLeg = input.totals.shippingFee - input.totals.codHandlingFee;
+  const forwardLeg = input.totals.forwardShippingFee;
   const paysOnDelivery = input.totals.balanceDueOnDelivery > 0;
 
   /**
@@ -133,10 +134,7 @@ export function buildOrderConfirmationEmail(
    * than as a different document about the same order.
    */
   const prepaidDiscount = input.totals.prepaidDiscount;
-  const otherDiscount = Math.max(
-    0,
-    input.totals.discountTotal - prepaidDiscount,
-  );
+  const otherDiscount = input.totals.couponDiscount;
 
   const text = [
     `Thanks, ${input.customerName}. Your order is confirmed.`,
