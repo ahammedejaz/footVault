@@ -42,6 +42,14 @@ import { readFileSync } from "node:fs";
 /** Every gate, in the order they should run. */
 const GATES = [
   // Pure: no browser, no network. Seconds, and they catch the cheap mistakes.
+  //
+  // `shapes` is not an `audit:*` script, but it is a gate: it fails when a
+  // cached return type changed and SHAPE_VERSION did not. Until 2026-08-12 it
+  // ran only in ci.yml, so a real shape change (ratings, Phase 11 Batch A)
+  // gated green on staging and went red on the PR — a check that only runs
+  // where nobody looks. The drift check below polices only `audit:*` names,
+  // so this entry is kept by hand, next to the pure gates it belongs with.
+  "shapes",
   "audit:literals",
   "audit:fixtures-guard",
   "audit:emails",
