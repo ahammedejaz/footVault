@@ -292,3 +292,110 @@ Estimated shape: one migration, ~4 new files, ~6 modified, 2 new gate scripts.
 - I have not yet read `node_modules/next/dist/docs/` for the App Router
   specifics this panel will touch, per `AGENTS.md`. That happens before the
   first line of feature code, not before this report.
+
+---
+
+# Progress after the audit — 2026-08-13
+
+Your four decisions are recorded in §6 above as taken: fill measured by longest
+side with 85% default and the definition stated in the settings hint; cap raised
+to 3000px first; `CANONICAL_EDGE` left at 1600; orphaned derivatives left to
+`unusedCount`.
+
+## Step 1 · Upload headroom — **live in production**
+
+Merged as `3053a205`, deployed, and verified by alias rather than by build
+state: `www.footvault.in` resolves to `dpl_8XHMYaHkWLRzyXkdNjJaDJTNd5eR`, whose
+commit is that merge, aliased to both the apex and `www`, serving from `bom1`.
+
+- `UPLOAD_EDGE_LADDER` = 3000 → 2400 → 2000 → 1600. First rung that fits under
+  the bucket's 5MB ceiling wins; each rung re-encodes from the bitmap rather
+  than from the rung above, so stepping down costs time and no quality.
+- `MAX_UPLOAD_BYTES` moved out of the panel into `constants.ts`, and
+  `audit:images` asserts it equals `file_size_limit` in the storage migration.
+- `audit:image-upload` now builds a fixture at `UPLOAD_EDGE + 200`, downloads
+  the stored original and measures it: **2250×3000 from a 2400×3200 source**,
+  where yesterday it would have been 1200×1600. That check fails if the cap is
+  ever lowered back, which nothing else in either gate would have noticed.
+
+**You can shoot.** Anything uploaded from now keeps 3000px in `originals/`.
+
+## Step 2 · The crop model — built, gated, **not merged**
+
+`src/lib/images/crop.ts`, pure and import-free. Six numbers, every one a
+fraction of the frame rather than a pixel, for three reasons that are each a
+bug that now cannot happen: the preview is 320px while the source is 3000; a
+re-crop may read an original at a different resolution; and neither side has to
+predict how libvips rounds a rotated bounding box, because each resolves against
+the frame it actually has.
+
+`DEFAULT_CROP` is exactly the framing the pipeline has always produced, and a
+**null** crop takes the untouched branch — so existing rows recompute the same
+content hashes and therefore the same paths. The migration has no backfill and
+should never get one.
+
+Threaded through `normaliseProductImage` → `normaliseUpload` (which echoes back
+what it applied, the way `originalPath` does) → `addProductImage` → and
+`scripts/reprocess-images.ts`, which was the finding: a reprocessor that ignored
+the column would have un-framed the whole catalogue on the next
+`PIPELINE_VERSION` bump and reported a confident green while doing it.
+
+`audit:images` is 67/67, up from 51. Two things it taught me, both now written
+into the file so they are not re-learned:
+
+- **sharp runs `extract` before `extend`** whatever order the calls are written
+  in. Chaining them threw `bad extract area` on every default crop of a
+  non-square photograph; the padding is its own buffer pass now.
+- **The crop path and the untouched path are byte-identical** when the
+  photograph's own edge is already the pad colour, and differ by 0.87% of
+  subpixels (max delta 31) along the seam when it is not. Enough to change a
+  content hash, which is exactly why null keeps the old branch.
+
+Three of the checks in that section were wrong before they were right, and the
+corrections are the interesting part: one compared *compressed* WebP bytes and
+reported "100% differing, max delta 255" about two nearly identical pictures;
+one asserted an exact pad colour that a lossy encoder is entitled to move by a
+level; and one passed while proving nothing, because a flat fixture has no
+content at its edge and therefore no seam to blend. That last one is the
+failure mode this codebase keeps naming — a check that can only report zero.
+
+## What is blocking, and it is yours to run
+
+`supabase db push` against staging was **refused by the tool classifier**. Per
+the standing rule I did not route around it with a different tool.
+
+```
+npm run push:stage          # applies 20260813040000 to staging
+npm run push:stage -- --list   # what is pending, without applying
+```
+
+`scripts/db-push.ts` is new and staging-only by construction — it is the same
+`db push --db-url` that `rebuild:stage` runs, without the drop-and-reseed, so a
+one-column migration no longer costs a full rebuild.
+
+**Two consequences until that runs:**
+
+1. `audit:image-upload` cannot be re-run end to end. `addProductImage` now
+   writes `product_images.crop`, and staging has no such column.
+2. **Branch `image-editor-2-crop-model` must not merge until the migration is
+   on _production_.** Merging is deploying, and deploying a write to a column
+   production does not have breaks every upload — while you are photographing.
+   Step 1 is separately merged and live precisely so this one can wait.
+
+`src/lib/database.types.ts` carries the `crop` column by hand, because the
+generator reads staging. Re-run `npm run types:stage` after the push to confirm
+the generated shape matches what I wrote.
+
+## Still to build
+
+Steps 3–6 from §5: auto-frame as a server action with the threshold ladder and
+an honest "couldn't find the shoe — centred instead"; the crop step in the panel
+with the fill guide and live readout; straighten and brightness/contrast; the
+target-fill setting; re-crop from `original_path`; the contact sheet; and
+`audit:image-editor` with screenshots at the four widths.
+
+**On gate coverage, restated because it would otherwise read as coverage:**
+`audit:reachability` walks `src/app/(storefront)` only. Keeping it green proves
+nothing whatsoever about whether the crop step can be found in the admin. The
+new gate has to assert that itself, the way `audit:settings-controls` does for
+`/admin/settings`, and I will not report the former as evidence of the latter.
