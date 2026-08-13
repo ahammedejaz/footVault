@@ -65,6 +65,64 @@ export const MIN_RECOMMENDED_EDGE = 800;
 export const RECOMMENDED_EDGE = 2000;
 
 /**
+ * The long edge the browser shrinks an upload down to before it leaves the
+ * tablet — and the ladder it steps down if the result will not fit the bucket.
+ *
+ * ## Why this is not `CANONICAL_EDGE`, which is what it used to be
+ *
+ * Shrinking to the canonical edge was right while the server always contained
+ * the *whole* frame: every pixel above 1600 was one the pipeline was going to
+ * throw away, and throwing it away on the tablet saved a four-megabyte upload
+ * on shop wifi.
+ *
+ * The crop step changes what those pixels are for. A crop is a zoom, and the
+ * pixels it zooms into have to exist. A shoe photographed on a table typically
+ * occupies about 40% of the frame's long edge; framing it to the target fill
+ * means keeping roughly half the frame, so a 1600px upload puts about 750px
+ * into a 1600px canvas — a 2.1x enlargement, which is precisely the softness
+ * this whole area exists to remove.
+ *
+ * It is also **irreversible**. `originals/` is what a re-crop and a
+ * `PIPELINE_VERSION` bump both read, so a photograph uploaded under a 1600px
+ * cap carries that ceiling for as long as it is in the catalogue. That is why
+ * this constant moved before the crop UI was built rather than alongside it:
+ * every photograph taken in the meantime would have been capped forever.
+ *
+ * ## Why 3000, and why a ladder rather than a number
+ *
+ * The bucket refuses anything over `MAX_UPLOAD_BYTES`. At 1600 that limit was
+ * unreachable and the panel's over-size branch was effectively dead code; at
+ * 3000 it is merely unlikely, which is a different thing to design for.
+ * Measured 2026-08-13 against a full-frame gaussian-noise fixture — which
+ * compresses far worse than any photograph of a shoe on a table — WebP q82
+ * lands at 0.86MB at 1600, 1.93MB at 2400 and 3.02MB at 3000, all inside the
+ * 5MB ceiling. A real photograph will be well under half of those.
+ *
+ * So 3000 is the size that fits the worst input I could construct, and the
+ * ladder is what happens if a real one beats it: the panel re-encodes one step
+ * smaller rather than refusing a photograph the owner is standing in the shop
+ * holding. Refusing is still possible at the bottom of the ladder, and it is
+ * the honest end state — but it now takes a file that cannot be squeezed under
+ * 5MB at 1600px, which is not a photograph, it is a problem.
+ */
+export const UPLOAD_EDGE_LADDER = [3000, 2400, 2000, 1600] as const;
+
+/** The size an upload is stored at when nothing goes wrong. */
+export const UPLOAD_EDGE = UPLOAD_EDGE_LADDER[0];
+
+/**
+ * The bucket's own ceiling, in the one file both the panel and the gates read.
+ *
+ * It must equal `file_size_limit` on the `product-images` bucket, set in
+ * `supabase/migrations/20260807120600_storage.sql`. It lived as a private
+ * constant in the upload panel until the ladder above started depending on it,
+ * and a limit the client believes in while the server enforces a different one
+ * is a refusal message that lies — or worse, an upload that passes the panel's
+ * check and is rejected by Storage after the owner has waited for it.
+ */
+export const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
+
+/**
  * A ceiling per emitted variant, in bytes.
  *
  * The 1600 is the one that matters — it is what a product page fetches — and
