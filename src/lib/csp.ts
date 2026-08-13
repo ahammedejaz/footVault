@@ -28,6 +28,17 @@
  * **Do not flip it until a real end-to-end payment has completed under
  * Report-Only with no violation reported against a Razorpay origin.**
  *
+ * That condition was met on 2026-08-13. A real UPI payment completed on
+ * production under Report-Only: correct receipt, correct order, and **zero**
+ * violations against any `razorpay.com` origin. The bake reported exactly one
+ * thing, on `/checkout` only, and it was ours rather than theirs — Zod's
+ * `allowsEval` probe, a `new Function("")` it runs once to pick a validator.
+ * That is now switched off at source with `config({ jitless: true })` in
+ * `validations/z.ts`, measured against a production build by toggling only
+ * that call: one violation without it, none with it.
+ *
+ * So this is now `enforce`.
+ *
  * ## Where the origins came from
  *
  * Measured, not guessed. A real browser was driven across `/`,
@@ -97,7 +108,7 @@ export type CspMode = "report-only" | "enforce";
   somebody flipped it, which is backwards. The assertion keeps the declared
   type wide so both branches stay type-checked in both modes.
 */
-export const CSP_MODE = "report-only" as CspMode;
+export const CSP_MODE = "enforce" as CspMode;
 
 /** The header name that matches the mode. Never emit both. */
 export const CSP_HEADER_NAME =
