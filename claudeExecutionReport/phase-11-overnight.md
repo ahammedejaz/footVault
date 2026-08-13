@@ -159,8 +159,9 @@ made; no dashboard was touched.
 
 - Full suite, first complete run: **40/49 green in 15.9 min**; all 9 reds
   root-caused above — none was a shop defect; re-runs green.
-- Definitive suite on the final tree: **see the last line of this section** —
-  it was still running at writing time and its result is appended below.
+- Definitive suite on the final tree: **47/53 in 16.1 min**, every red run to
+  ground (see the appended section — two were mine, one was a gate race older
+  than tonight, one is the expected production-settings red).
 - New gates: `delivery-poll` 26/26 · `reviews` 21/21 (incl. against a
   production build) · `coins-earning` 20/20 · `coins-redemption` 32/32 (run
   twice) · `loyalty` 10/10 · `signup-closed` 6/6.
@@ -226,10 +227,13 @@ made; no dashboard was touched.
 
 ## MY MORNING LIST, in order
 
-1. **Read PR #41 (Batch 0) and merge it.** Everything is green at that commit.
-   Then: `npm run audit:build-smoke` before the merge if you want the letter of
-   the rule (the sequence is staging.md §4.4), verify the deploy is *serving*
-   (an identifier absent from the old tree, against www).
+1. **Read PR #41 (Batch 0) and merge it.** Everything is green at that commit
+   (one caveat: the announcement-gate race fix from the definitive run lives at
+   the head of the stack in `37d0762`, so `audit:interactions` can still flap
+   on a loaded machine until the stack lands — it is a gate defect, not a shop
+   one). Run `npm run audit:build-smoke` before the merge (the sequence is
+   staging.md §4.4), and verify the deploy is *serving* — an identifier absent
+   from the old tree, against www.
 2. **Apply the two delivery migrations to production** (procedure per
    docs/admin-guide.md §12 + your recorded steps: content-verified dump,
    dry-run, PostgREST gates):
@@ -261,4 +265,29 @@ are documented as read-only against it.
 
 ### Appended after the definitive suite run finished
 
-(placeholder — filled in below by the run that was in flight at writing time)
+**47/53 gates green in 16.1 min** on the final tree (the run itself took much
+longer on the wall clock — the laptop kept sleeping between this session's
+turns until I pinned it awake with `caffeinate`; run the morning suite on AC
+or awake and it is a 16-minute suite). All six reds run to ground, fixed in
+`37d0762` at the head of the stack:
+
+| Red | Verdict |
+|---|---|
+| `literals` | **mine** — ₹ figures in the loyalty explanations; reworded in words |
+| `focus` | **mine** — the review form's `outline-none`; dropped, halo inherited, 23/23 |
+| `interactions` | **a gate race older than tonight** — the strip hides optimistically before the dismissal cookie lands; the gate reloaded into that gap and flapped with machine load. It now polls the cookie jar; green ×3 |
+| `admin` | the recurring staging noise — one orphaned `unspecified` movement; repaired, reconcile = 0; the `checkout-orders.ts:442` lead stands |
+| `reachability` | every /account link vanished at once — the run's signed-in context under the sleeping machine, not the pages; green on re-run |
+| `settings-visibility` | **EXPECTED, and the one red that should outlive tonight**: it reads production, where the reviews/loyalty settings rows do not exist until your morning migrations |
+
+After the fixes, every gate that failed was re-run individually green (the
+suite was not re-run whole — at tonight's machine behaviour that is an hour
+for information the individual runs already gave; run it once in the morning
+before merging #41 if you want the single number, expecting 52/53 with
+`settings-visibility` as the known red until step 3 of your list).
+
+New-gate timings from the definitive run: `delivery-poll` 5.2s ·
+`reviews` 7.1s · `coins-earning` 4.1s · `coins-redemption` 8.6s ·
+`loyalty` 6.3s · `signup-closed` 0.5s — the whole phase adds ~32s to the suite.
+
+Final battery after the last edit: `tsc --noEmit` clean, full `eslint .` clean.
