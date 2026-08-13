@@ -83,6 +83,12 @@ const GATES = [
   "audit:hydration",
   "audit:interactions",
   "audit:links",
+  /*
+    HTTP, not a browser. Sections 1-3 run against dev:stage; section 4 drives a
+    real Server Action and needs a built artifact, so it skips loudly under dev
+    and is exercised in full by the deploy sequence.
+  */
+  "audit:rate-limit-public",
   "audit:reachability",
   "audit:auth",
   "audit:cart",

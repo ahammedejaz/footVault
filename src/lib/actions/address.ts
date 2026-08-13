@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import { getCurrentUser } from "@/lib/auth";
+import { callerIdentity, consumeRateLimit } from "@/lib/rate-limit";
 import { maybeRow } from "@/lib/queries/run";
 import { createClient } from "@/lib/supabase/server";
 import {
@@ -55,6 +56,17 @@ export async function saveAddress(
 
   const user = await getCurrentUser();
   if (!user) return { ok: false, message: SIGNED_OUT };
+
+  const throttle = await consumeRateLimit(
+    "addressWrite",
+    await callerIdentity(user.id),
+  );
+  if (!throttle.allowed) {
+    return {
+      ok: false,
+      message: "That is a lot of changes at once. Give it a minute.",
+    };
+  }
 
   try {
     const supabase = await createClient();
@@ -146,6 +158,17 @@ export async function updateAddress(
 
   const user = await getCurrentUser();
   if (!user) return { ok: false, message: SIGNED_OUT };
+
+  const throttle = await consumeRateLimit(
+    "addressWrite",
+    await callerIdentity(user.id),
+  );
+  if (!throttle.allowed) {
+    return {
+      ok: false,
+      message: "That is a lot of changes at once. Give it a minute.",
+    };
+  }
 
   try {
     const supabase = await createClient();
@@ -265,6 +288,17 @@ export async function deleteAddress(
   const user = await getCurrentUser();
   if (!user) return { ok: false, message: SIGNED_OUT };
 
+  const throttle = await consumeRateLimit(
+    "addressWrite",
+    await callerIdentity(user.id),
+  );
+  if (!throttle.allowed) {
+    return {
+      ok: false,
+      message: "That is a lot of changes at once. Give it a minute.",
+    };
+  }
+
   try {
     const supabase = await createClient();
 
@@ -342,6 +376,17 @@ export async function setDefaultAddress(
 
   const user = await getCurrentUser();
   if (!user) return { ok: false, message: SIGNED_OUT };
+
+  const throttle = await consumeRateLimit(
+    "addressWrite",
+    await callerIdentity(user.id),
+  );
+  if (!throttle.allowed) {
+    return {
+      ok: false,
+      message: "That is a lot of changes at once. Give it a minute.",
+    };
+  }
 
   try {
     const supabase = await createClient();

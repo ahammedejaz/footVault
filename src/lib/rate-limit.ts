@@ -130,6 +130,53 @@ export const RATE_LIMITS = {
   imageProcessing: [120, 60],
   cartWrite: [90, 60],
   /**
+   * Type-ahead search — the only public GET that reaches the database on a
+   * keystroke cadence.
+   *
+   * Keyed on IP, because there is no session to key on: the overlay is open to
+   * anonymous visitors, and resolving a user would mean an auth round trip on
+   * every keystroke, which costs more than the limit saves.
+   *
+   * Sixty a minute against a 220ms debounce (`search-panel.tsx`) is roughly
+   * fifteen times what a person typing continuously produces, so it is a
+   * ceiling on a script rather than a budget a shopper can feel. It fails
+   * softly: no suggestions appear, and pressing Enter still reaches /search,
+   * which renders server-side and does not touch this endpoint.
+   *
+   * It is a ceiling on **database load**, not on money or a third-party quota,
+   * which is why it is generous. `catalog_query` is a trigram search and it is
+   * indexed; the failure being guarded against is saturation, and a saturated
+   * database looks exactly like a working one right up until it does not.
+   *
+   * Worth knowing: `export const revalidate = 60` used to sit on that route and
+   * read like protection. It cached nothing — the route is dynamic and was
+   * absent from the prerender manifest, so every request, including repeated
+   * identical ones, was already a query. There was no cache for a varying `q`
+   * to bypass, so this limit is the first ceiling the endpoint has ever had.
+   */
+  searchSuggest: [60, 60],
+  /**
+   * Reading the bag. `/api/cart` is a four-table join behind `force-dynamic`
+   * and `no-store`, opened every time the drawer is.
+   *
+   * Cheap and per-customer, so this is a ceiling rather than a budget: the
+   * drawer can be opened twice a second all minute and never feel it. Keyed on
+   * IP for the same reason `cartWrite` is — a guest's only handle is a token
+   * they can reset, so keying on it would bound nothing.
+   */
+  cartRead: [120, 60],
+  /**
+   * Writing to the address book. Authenticated, RLS-scoped, and schema-bounded
+   * already; what is missing is any cap on *how many*, and an address book is
+   * the one customer-owned table with no natural ceiling — the wishlist has a
+   * unique (user, product) constraint that bounds it to the catalogue, and
+   * this has nothing equivalent.
+   *
+   * Twenty a minute is a person correcting a typo and re-saving several times
+   * over; it is not a script writing rows until the table is a problem.
+   */
+  addressWrite: [20, 60],
+  /**
    * Trying a coupon code. The refusal messages deliberately collapse "no such
    * code" and "not for you" into one sentence so codes cannot be told apart —
    * this bounds how fast anyone can try telling anyway. Ten a minute is a

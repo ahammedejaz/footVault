@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { getCart } from "@/lib/queries/cart";
+import { callerIp, consumeRateLimit } from "@/lib/rate-limit";
 
 /**
  * The bag, as JSON, for the drawer.
@@ -18,6 +19,24 @@ import { getCart } from "@/lib/queries/cart";
 export const dynamic = "force-dynamic";
 
 export async function GET(): Promise<NextResponse> {
+  /*
+    A ceiling on the join, not on the customer. `no-store` means every open is
+    a real read, so this is the one place the drawer can be made expensive.
+  */
+  const throttle = await consumeRateLimit("cartRead", await callerIp());
+  if (!throttle.allowed) {
+    return NextResponse.json(
+      { message: "Your bag could not be loaded." },
+      {
+        status: 429,
+        headers: {
+          "Cache-Control": "private, no-store",
+          "retry-after": String(throttle.retryAfterSeconds),
+        },
+      },
+    );
+  }
+
   try {
     const cart = await getCart();
     return NextResponse.json(cart, {

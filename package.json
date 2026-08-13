@@ -80,6 +80,7 @@
     "audit:hero-media": "tsx scripts/audit/hero-media.ts",
     "audit:build-smoke": "tsx scripts/audit/build-smoke.ts",
     "audit:signup-closed": "tsx scripts/audit/signup-closed.ts",
+    "audit:rate-limit-public": "tsx scripts/audit/rate-limit-public.ts",
     "audit:delivery-poll": "NODE_OPTIONS=--conditions=react-server tsx scripts/audit/delivery-poll.ts",
     "audit:reviews": "NODE_OPTIONS=--conditions=react-server tsx scripts/audit/reviews.ts",
     "audit:coins-earning": "NODE_OPTIONS=--conditions=react-server tsx scripts/audit/coins-earning.ts",
