@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from "./z";
 
 import { shippingAddressSchema } from "@/lib/validations/checkout";
 

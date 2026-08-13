@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from "./z";
 
 /**
  * What the browser is allowed to say about a bag.

@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from "./z";
 
 import { PAYMENT_METHODS } from "@/lib/payments/types";
 

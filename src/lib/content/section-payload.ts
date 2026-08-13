@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from "@/lib/validations/z";
 
 /**
  * One schema per homepage section type, shared by the editor form and the
