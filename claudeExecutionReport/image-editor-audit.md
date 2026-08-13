@@ -292,3 +292,240 @@ Estimated shape: one migration, ~4 new files, ~6 modified, 2 new gate scripts.
 - I have not yet read `node_modules/next/dist/docs/` for the App Router
   specifics this panel will touch, per `AGENTS.md`. That happens before the
   first line of feature code, not before this report.
+
+---
+
+# Progress after the audit — 2026-08-13
+
+Your four decisions are recorded in §6 above as taken: fill measured by longest
+side with 85% default and the definition stated in the settings hint; cap raised
+to 3000px first; `CANONICAL_EDGE` left at 1600; orphaned derivatives left to
+`unusedCount`.
+
+## Step 1 · Upload headroom — **live in production**
+
+Merged as `3053a205`, deployed, and verified by alias rather than by build
+state: `www.footvault.in` resolves to `dpl_8XHMYaHkWLRzyXkdNjJaDJTNd5eR`, whose
+commit is that merge, aliased to both the apex and `www`, serving from `bom1`.
+
+- `UPLOAD_EDGE_LADDER` = 3000 → 2400 → 2000 → 1600. First rung that fits under
+  the bucket's 5MB ceiling wins; each rung re-encodes from the bitmap rather
+  than from the rung above, so stepping down costs time and no quality.
+- `MAX_UPLOAD_BYTES` moved out of the panel into `constants.ts`, and
+  `audit:images` asserts it equals `file_size_limit` in the storage migration.
+- `audit:image-upload` now builds a fixture at `UPLOAD_EDGE + 200`, downloads
+  the stored original and measures it: **2250×3000 from a 2400×3200 source**,
+  where yesterday it would have been 1200×1600. That check fails if the cap is
+  ever lowered back, which nothing else in either gate would have noticed.
+
+**You can shoot.** Anything uploaded from now keeps 3000px in `originals/`.
+
+## Step 2 · The crop model — built, gated, **not merged**
+
+`src/lib/images/crop.ts`, pure and import-free. Six numbers, every one a
+fraction of the frame rather than a pixel, for three reasons that are each a
+bug that now cannot happen: the preview is 320px while the source is 3000; a
+re-crop may read an original at a different resolution; and neither side has to
+predict how libvips rounds a rotated bounding box, because each resolves against
+the frame it actually has.
+
+`DEFAULT_CROP` is exactly the framing the pipeline has always produced, and a
+**null** crop takes the untouched branch — so existing rows recompute the same
+content hashes and therefore the same paths. The migration has no backfill and
+should never get one.
+
+Threaded through `normaliseProductImage` → `normaliseUpload` (which echoes back
+what it applied, the way `originalPath` does) → `addProductImage` → and
+`scripts/reprocess-images.ts`, which was the finding: a reprocessor that ignored
+the column would have un-framed the whole catalogue on the next
+`PIPELINE_VERSION` bump and reported a confident green while doing it.
+
+`audit:images` is 67/67, up from 51. Two things it taught me, both now written
+into the file so they are not re-learned:
+
+- **sharp runs `extract` before `extend`** whatever order the calls are written
+  in. Chaining them threw `bad extract area` on every default crop of a
+  non-square photograph; the padding is its own buffer pass now.
+- **The crop path and the untouched path are byte-identical** when the
+  photograph's own edge is already the pad colour, and differ by 0.87% of
+  subpixels (max delta 31) along the seam when it is not. Enough to change a
+  content hash, which is exactly why null keeps the old branch.
+
+Three of the checks in that section were wrong before they were right, and the
+corrections are the interesting part: one compared *compressed* WebP bytes and
+reported "100% differing, max delta 255" about two nearly identical pictures;
+one asserted an exact pad colour that a lossy encoder is entitled to move by a
+level; and one passed while proving nothing, because a flat fixture has no
+content at its edge and therefore no seam to blend. That last one is the
+failure mode this codebase keeps naming — a check that can only report zero.
+
+## What is blocking, and it is yours to run
+
+`supabase db push` against staging was **refused by the tool classifier**. Per
+the standing rule I did not route around it with a different tool.
+
+```
+npm run push:stage          # applies 20260813040000 to staging
+npm run push:stage -- --list   # what is pending, without applying
+```
+
+`scripts/db-push.ts` is new and staging-only by construction — it is the same
+`db push --db-url` that `rebuild:stage` runs, without the drop-and-reseed, so a
+one-column migration no longer costs a full rebuild.
+
+**Two consequences until that runs:**
+
+1. `audit:image-upload` cannot be re-run end to end. `addProductImage` now
+   writes `product_images.crop`, and staging has no such column.
+2. **Branch `image-editor-2-crop-model` must not merge until the migration is
+   on _production_.** Merging is deploying, and deploying a write to a column
+   production does not have breaks every upload — while you are photographing.
+   Step 1 is separately merged and live precisely so this one can wait.
+
+`src/lib/database.types.ts` carries the `crop` column by hand, because the
+generator reads staging. Re-run `npm run types:stage` after the push to confirm
+the generated shape matches what I wrote.
+
+## Still to build
+
+Steps 3–6 from §5: auto-frame as a server action with the threshold ladder and
+an honest "couldn't find the shoe — centred instead"; the crop step in the panel
+with the fill guide and live readout; straighten and brightness/contrast; the
+target-fill setting; re-crop from `original_path`; the contact sheet; and
+`audit:image-editor` with screenshots at the four widths.
+
+**On gate coverage, restated because it would otherwise read as coverage:**
+`audit:reachability` walks `src/app/(storefront)` only. Keeping it green proves
+nothing whatsoever about whether the crop step can be found in the admin. The
+new gate has to assert that itself, the way `audit:settings-controls` does for
+`/admin/settings`, and I will not report the former as evidence of the latter.
+
+---
+
+# The crop step — built, gated, still unmerged
+
+## What is on the branch now
+
+`image-editor-2-crop-model` carries everything: the crop model, auto-frame, the
+panel, the two adjustments, the target-fill setting, re-crop, the contact sheet
+and `audit:image-editor`.
+
+**The flow is choose → frame → describe → commit**, and the original now uploads
+the moment a file is chosen rather than at the end. That is not a detail: auto-
+frame runs server-side, so the bytes have to be somewhere the server can read
+before there is anything to propose. Uploading at choose time means the network
+works while the human does, and the proposal is on screen before the first drag
+is over.
+
+**Auto-frame** is `sharp`'s trim over a threshold ladder — 10, 20, 30, then 5.
+There is no single threshold, and that is measured, not assumed: 20 and above is
+needed for uneven light across a table, and 8 and above loses a white shoe on a
+fog background. When nothing plausible comes back, the panel says *"couldn't
+find the shoe against that background — centred instead"* and falls back to the
+whole photograph rather than a guessed zoom. Both halves of that are deliberate:
+a confident wrong crop looks like a decision and gets approved, and inventing a
+zoom would look exactly like a successful auto-frame.
+
+**The target fill is a settings row** and the control's hint states what the
+number measures — the subject's longest side, not area. That sentence is
+load-bearing rather than decorative: 85% by area is not a demanding target for a
+shoe, it is an unreachable one, so an owner assuming the area reading would
+conclude the tool was broken and turn the number down until it "worked".
+
+**Re-crop** runs the pipeline again from `original_path` with different numbers.
+Old derivatives stay in the bucket as unused files, per your decision.
+
+## Three bugs the gates found, two of them invisible to every predicate
+
+1. **Straightening switched auto-frame off.** Rotation pads the new corners, and
+   the corner is exactly where the background colour is inferred from — so
+   padding a warm wooden table with fog made every pixel of the photograph
+   "not background" and the detector correctly reported nothing. Measuring now
+   pads with the photograph's own corner colour; the output still pads with
+   `CARD_SURFACE`, and both frames come out the same size so the fractions hold.
+   `audit:images` asserts both directions, including that the old behaviour
+   fails.
+
+2. **The contact sheet took the product page down.** It passed `loader` — a
+   function — from a Server Component to `next/image`, which throws *Functions
+   cannot be passed directly to Client Components*. Every render after a refresh
+   died. It is a Client Component now.
+
+3. **The crop stage rendered empty while every assertion passed.** The readout
+   said 85%, the stored asset was correct at 85%, the recorded crop was correct
+   — and the photograph was translated clean out of the square, because CSS
+   translate percentages are relative to the element's own size and the code
+   treated them as relative to the container. **A screenshot caught it.** The
+   gate now screenshots the stage itself and fails if the pixels are a flat
+   colour.
+
+And a fourth, from the 390px screenshot: adding the Re-frame button pushed the
+per-photograph control row past its own card border — "Re-frame" clipped,
+"Delete" hanging outside the box. That is the third time a screenshot has caught
+a defect in this area that every predicate passed, which is the entire argument
+for taking them.
+
+## Gates
+
+| Gate | Result |
+|---|---|
+| `audit:images` | **76/76** — pure; crop maths, determinism, and what auto-frame fails on |
+| `audit:image-upload` | **26/26** on a production build |
+| `audit:image-editor` | **32/32** on a production build — new |
+| `audit:settings-controls` | blocked: needs `20260813050000` |
+
+`audit:image-editor` operates every control by its visible label **and by
+keyboard** — Zoom, Straighten, Brightness, Contrast, Frame it for me, Whole
+photograph, Re-frame, Save this framing — drags the square with a real pointer,
+then measures the stored object against what the panel promised: 85% shown, 85%
+stored. It drives the busy-background fallback through the real panel, re-frames
+end to end and asserts the derivative changed, and writes screenshots at 390,
+768, 1024 and 1440.
+
+Two assertions in `audit:image-upload` had gone stale and one of them was
+**passing for the wrong reason** — it looked for the old 4:5 preview and matched
+the contact sheet's tiles, which use the same three classes. A check that
+matches something else on the page reports coverage of a control that no longer
+exists, so it now asserts the framing square by its accessible name.
+
+## The gate-coverage statement, restated because it would otherwise read as coverage
+
+`audit:reachability` derives its page list from `src/app/(storefront)` and plays
+a customer clicking around the shop. **It says nothing whatsoever about whether
+the crop step can be found in the admin.** Keeping it green is a storefront
+regression check and is reported as exactly that; the only evidence that this
+feature is reachable and operable is `audit:image-editor`, which prints that
+disclaimer at the end of every run.
+
+## What is queued for you
+
+Two migrations, in order, then the merge decision:
+
+```
+npm run push:stage      # 20260813040000 (crop column) is already on staging;
+                        # 20260813050000 (images settings row) is not
+```
+
+`20260813050000` inserts the `images` settings row. Until it is applied,
+`audit:settings-controls` cannot operate the target-fill control — and saving it
+returns an honest *"there is no photograph settings row to save into yet"*
+rather than the silent no-op an `update ... where key = 'images'` would
+otherwise be against a database with no such row.
+
+**Neither migration is on production, and the branch must not merge until both
+are.** The panel writes `product_images.crop` and the settings screen writes the
+`images` row; deploying either against a database without them breaks uploads —
+while you are photographing. Tell me when you want to land it and I will run
+`audit:build-smoke`, merge, and verify by alias.
+
+## Still not built
+
+Nothing from the brief. Everything in §5 of the audit is built and gated. What
+is *deliberately* absent is what the brief excluded: filters, saturation, colour
+temperature, background removal, blemish tools.
+
+One thing to flag as an assumption rather than a finding: the auto-frame
+tolerances are set against constructed fixtures — flat blocks on flat and noisy
+fields. They bound the behaviour honestly, but the first real photograph of a
+shoe on your actual table may sit anywhere inside those bounds. Upload two or
+three and I will tighten the ladder against what they actually show.

@@ -227,10 +227,27 @@ async function main() {
     const commit = page.getByRole("button", { name: /add this photograph/i });
     await commit.waitFor({ state: "visible", timeout: 20_000 });
 
+    /**
+     * **This check used to assert the wrong thing, and then passed for the
+     * wrong reason.**
+     *
+     * It looked for `.bg-fog.aspect-4/5` — the old 4:5 preview, which the crop
+     * step replaced with a square framing stage. It kept passing anyway,
+     * because the contact sheet further down the same page renders its tiles in
+     * exactly those classes. A check that matches something else on the page is
+     * worse than a red one: it reports coverage of a control that no longer
+     * exists.
+     *
+     * What matters now is that the owner is shown the square the pipeline will
+     * receive, so that is what is asserted, by the accessible name a person and
+     * a screen reader both get.
+     */
+    const stage = page.getByRole("group", { name: /Framing/i });
+    await stage.waitFor({ state: "visible", timeout: 30_000 });
     check(
-      "the preview is drawn in the card's own frame",
-      await page.locator(".bg-fog.aspect-4\\/5").first().isVisible(),
-      "aspect-4/5 over bg-fog — the same three the storefront card uses",
+      "the framing square is what the owner is shown",
+      await stage.isVisible(),
+      "the square is the crop the pipeline receives — audit:image-editor operates it",
     );
 
     /**
@@ -247,9 +264,22 @@ async function main() {
 
     const description = page.getByLabel(/describe this photograph/i);
     await description.fill(`${product.name}, three-quarter view`);
+
+    /**
+     * A description is no longer sufficient on its own: the original now
+     * uploads while the owner frames, and committing before it lands would
+     * process a file that is not there yet. So the button waits for the upload
+     * *and* the description, and this waits with it rather than asserting
+     * against a race it would win about half the time.
+     */
+    const deadline = Date.now() + 90_000;
+    while (Date.now() < deadline && !(await commit.isEnabled())) {
+      await page.waitForTimeout(500);
+    }
     check(
-      "and enabled once it is filled in",
+      "and enabled once it is filled in and the original has landed",
       await commit.isEnabled(),
+      "the upload runs behind the framing, so both have to be done",
     );
 
     console.log("\n\x1b[1m3 · committing produces a catalogue asset\x1b[0m");

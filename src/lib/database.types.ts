@@ -1158,6 +1158,7 @@ export type Database = {
           alt_text: string | null
           color: string | null
           created_at: string
+          crop: Json | null
           id: string
           is_primary: boolean
           original_path: string | null
@@ -1170,6 +1171,7 @@ export type Database = {
           alt_text?: string | null
           color?: string | null
           created_at?: string
+          crop?: Json | null
           id?: string
           is_primary?: boolean
           original_path?: string | null
@@ -1182,6 +1184,7 @@ export type Database = {
           alt_text?: string | null
           color?: string | null
           created_at?: string
+          crop?: Json | null
           id?: string
           is_primary?: boolean
           original_path?: string | null

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
+import { ContactSheet } from "@/components/admin/products/contact-sheet";
 import { ImageManager } from "@/components/admin/products/image-manager";
 import { ProductForm } from "@/components/admin/products/product-form";
 import { RestoreButton } from "@/components/admin/products/restore-button";
@@ -11,7 +12,10 @@ import {
   getAdminProduct,
   getCatalogOptions,
   getParcelDefaults,
+  listCatalogueImages,
 } from "@/lib/queries/admin/products";
+import { getAdminSettings } from "@/lib/queries/admin/settings";
+import { targetFillFraction } from "@/lib/images/target-fill";
 
 export const dynamic = "force-dynamic";
 
@@ -51,11 +55,14 @@ export default async function AdminProductPage({
   // surface as a 500 on a URL somebody merely mistyped.
   if (!UUID.test(id)) notFound();
 
-  const [product, { brands, categories }, parcel] = await Promise.all([
-    getAdminProduct(id),
-    getCatalogOptions(),
-    getParcelDefaults(),
-  ]);
+  const [product, { brands, categories }, parcel, settings, sheet] =
+    await Promise.all([
+      getAdminProduct(id),
+      getCatalogOptions(),
+      getParcelDefaults(),
+      getAdminSettings(),
+      listCatalogueImages(),
+    ]);
 
   if (!product) notFound();
 
@@ -119,6 +126,19 @@ export default async function AdminProductPage({
           productId={product.id}
           productName={product.name}
           images={product.images}
+          targetFill={targetFillFraction(settings.images)}
+        />
+
+        {/*
+          Last on the page, deliberately. It answers a question the owner asks
+          *after* framing something — "does this sit with the rest?" — and
+          putting a grid of the whole catalogue above the product's own controls
+          would bury the thing they came here to edit.
+        */}
+        <ContactSheet
+          images={sheet.images}
+          currentProductId={product.id}
+          total={sheet.total}
         />
       </AdminPage>
     </>
