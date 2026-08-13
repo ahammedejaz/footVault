@@ -735,7 +735,20 @@ The owner ruled on 2026-08-13: **proceed, with `audit:admin` and `audit:focus` d
 known-red**, and fix them as their own change afterwards. Their reasoning on the point that
 mattered: *"You were right not to edit a security gate green during a production deploy."*
 
-### 8.2 The owner's test payment — STILL OUTSTANDING
+### 8.2 The owner's test payment — DONE 2026-08-13
+
+Completed via UPI on production: **successful, order paid, receipt correct, and not one
+`razorpay.com` origin blocked.** One violation surfaced — a Zod feature probe, unrelated to
+Razorpay — and is investigated in full in
+[csp-bake-eval-and-frame-attribution.md](./csp-bake-eval-and-frame-attribution.md).
+
+**Note that §4.4's claim "the storefront produces zero real violations" was measured against
+`next dev`, where a dev-only `'unsafe-eval'` masked the probe. It was true of that environment
+and false of production.** The corrected measurement is in the bake report.
+
+`CSP_MODE` remains `report-only`.
+
+### 8.2a (superseded) The original instruction
 
 Complete a real payment on `www.footvault.in` with DevTools open. Watch the console for
 anything naming a `razorpay.com` origin. **The console is the primary instrument** — see
