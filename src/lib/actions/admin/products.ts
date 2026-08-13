@@ -5,6 +5,7 @@ import { z } from "zod";
 
 import { FOOTWEAR_TYPES, GENDERS } from "@/components/admin/products/types";
 import { adminAction, type AdminResult } from "@/lib/admin/guard";
+import { normaliseCrop } from "@/lib/images/crop";
 import { isDerivative } from "@/lib/images/srcset";
 import { CATALOG_CACHE_TAG } from "@/lib/queries/cached";
 import type { createClient } from "@/lib/supabase/server";
@@ -786,6 +787,12 @@ const addImageSchema = z.object({
    * this image later. A path inside the bucket, never a URL — see the migration.
    */
   originalPath: z.string().trim().max(400).optional().nullable(),
+  /**
+   * The framing the stored asset was cut with, as echoed back by
+   * `normaliseUpload`. Absent means the whole photograph, which is what every
+   * row written before crops existed means too.
+   */
+  crop: z.unknown().optional(),
   altText: z
     .string()
     .trim()
@@ -815,6 +822,15 @@ export async function addProductImage(
           product_id: parsed.data.productId,
           url: parsed.data.url,
           original_path: parsed.data.originalPath ?? null,
+          /**
+           * Normalised again on the way in, cheaply and deliberately. The value
+           * arrives from the pipeline's own echo and should already be in
+           * range; running it through the same clamp means the column cannot
+           * hold something the reader would have to defend against, whatever
+           * calls this next.
+           */
+          crop:
+            parsed.data.crop == null ? null : normaliseCrop(parsed.data.crop),
           alt_text: parsed.data.altText,
           sort_order: gallery.images.length,
           is_primary: gallery.images.length === 0,

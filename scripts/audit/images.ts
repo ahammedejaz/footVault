@@ -37,6 +37,17 @@ import {
   UPLOAD_EDGE,
   UPLOAD_EDGE_LADDER,
 } from "../../src/lib/images/constants";
+import {
+  DEFAULT_CROP,
+  MAX_ROTATION,
+  MAX_SIZE,
+  MIN_SIZE,
+  fillOf,
+  frameSubject,
+  normaliseCrop,
+  paddingFor,
+  resolveCrop,
+} from "../../src/lib/images/crop";
 import { isDerivative, snapWidth } from "../../src/lib/images/srcset";
 
 let failed = 0;
@@ -499,6 +510,297 @@ async function main() {
     `${MAX_UPLOAD_BYTES} bytes, stated in the storage migration`,
   );
 
+  /* ------------------------------------------------------ 8 · the crop --- */
+
+  console.log(
+    "\n\x1b[1m8 · the framing the owner chose is what gets stored\x1b[0m",
+  );
+
+  /* ---- the arithmetic, which both sides of the wire depend on ---- */
+
+  check(
+    "junk in the crop column resolves to the whole photograph",
+    JSON.stringify(normaliseCrop(null)) === JSON.stringify(DEFAULT_CROP) &&
+      JSON.stringify(normaliseCrop("a crop")) === JSON.stringify(DEFAULT_CROP),
+    "a half-written jsonb value must not take a product page down",
+  );
+  check(
+    "out-of-range values are clamped rather than refused",
+    normaliseCrop({ size: 99 }).size === MAX_SIZE &&
+      normaliseCrop({ size: -4 }).size === MIN_SIZE &&
+      normaliseCrop({ rotation: 90 }).rotation === MAX_ROTATION,
+    `size → [${MIN_SIZE}, ${MAX_SIZE}], rotation → ±${MAX_ROTATION}°`,
+  );
+  check(
+    "a partial crop keeps what it does say",
+    normaliseCrop({ cx: 0.25 }).cx === 0.25 &&
+      normaliseCrop({ cx: 0.25 }).size === DEFAULT_CROP.size,
+    "a crop written by an older panel is not discarded wholesale",
+  );
+
+  /**
+   * The rect is square by construction, not by luck. A 1599x1600 extract is not
+   * a rounding detail to the resize that follows — it is one shoe a pixel
+   * taller than the next, in a catalogue whose whole purpose is that they
+   * match.
+   */
+  const rects = [
+    resolveCrop(2401, 1801, DEFAULT_CROP),
+    resolveCrop(3000, 2251, { ...DEFAULT_CROP, size: 0.37, cx: 0.31 }),
+    resolveCrop(999, 1777, { ...DEFAULT_CROP, size: 0.611, cy: 0.09 }),
+  ];
+  check(
+    "every resolved crop is exactly square, on odd frames too",
+    rects.every((rect) => Number.isInteger(rect.size) && rect.size > 0),
+    rects.map((r) => `${r.size}px at (${r.left},${r.top})`).join("; "),
+  );
+
+  const wide = resolveCrop(2400, 1800, DEFAULT_CROP);
+  const widePad = paddingFor(2400, 1800, wide);
+  check(
+    "the default crop's overhang is the fog padding, top and bottom only",
+    widePad.left === 0 &&
+      widePad.right === 0 &&
+      widePad.top > 0 &&
+      widePad.bottom > 0,
+    `${widePad.top}px above, ${widePad.bottom}px below — the letterboxing the pipeline has always added`,
+  );
+
+  /* ---- the pipeline, with a crop actually applied ---- */
+
+  /** A wide, low, off-centre subject on a plain table. A shoe, in other words. */
+  const SCENE_W = 2400;
+  const SCENE_H = 1800;
+  const SUBJECT = { left: 200, top: 1100, width: 900, height: 420 };
+  const scene = await sharp({
+    create: {
+      width: SCENE_W,
+      height: SCENE_H,
+      channels: 3,
+      background: "#eef1f5",
+    },
+  })
+    .composite([
+      {
+        input: await sharp({
+          create: {
+            width: SUBJECT.width,
+            height: SUBJECT.height,
+            channels: 3,
+            background: "#2b2b33",
+          },
+        })
+          .png()
+          .toBuffer(),
+        top: SUBJECT.top,
+        left: SUBJECT.left,
+      },
+    ])
+    .jpeg({ quality: 92 })
+    .toBuffer();
+
+  const untouched = await normaliseProductImage(scene);
+  const asDefault = await normaliseProductImage(scene, DEFAULT_CROP);
+
+  /**
+   * **Stated rather than implied: these are not byte-identical, and that is
+   * why the untouched branch exists.**
+   *
+   * Contain-resizing a 2400x1800 photograph and extending it to 2400x2400
+   * before resizing produce the same *framing* and slightly different
+   * resampling at the edges — measured here at about 1.5% of subpixels, none of
+   * them anywhere a human would look. Close enough that the crop path is
+   * correct; not close enough to route the existing catalogue through it, which
+   * would rewrite every content hash and therefore every derivative path in the
+   * shop. So a null crop takes the old branch, and this check is what keeps
+   * that decision honest rather than forgotten.
+   */
+  const defaultBounds = await subjectBounds(asDefault.variants[3]!.data);
+  const untouchedBounds = await subjectBounds(untouched.variants[3]!.data);
+  check(
+    "an explicit default crop frames the picture where the untouched branch does",
+    defaultBounds !== null &&
+      untouchedBounds !== null &&
+      Math.abs(defaultBounds.x - untouchedBounds.x) < 0.01 &&
+      Math.abs(defaultBounds.width - untouchedBounds.width) < 0.01,
+    untouchedBounds && defaultBounds
+      ? `subject at ${(untouchedBounds.x * 100).toFixed(1)}% vs ${(defaultBounds.x * 100).toFixed(1)}%, same width to within 1%`
+      : "subject not found",
+  );
+  /**
+   * How closely the two paths agree, measured rather than assumed — and the
+   * answer is "exactly, until something has to blend at the seam".
+   *
+   * On this fixture they are byte-identical: the photograph's own background is
+   * already `CARD_SURFACE`, so the extended border is the same colour as the
+   * pixels beside it and the resize filter has nothing to blend. Give the same
+   * crop a photograph shot on white and the two disagree along the seam by a
+   * few levels, because contain-padding and extend-then-resize sample that
+   * boundary differently.
+   *
+   * Neither is wrong. It is the reason a null crop keeps the untouched branch
+   * anyway: "almost always identical" would still rewrite the content hash —
+   * and therefore the derivative path — of every photograph in the shop whose
+   * background is not fog, to arrive at the same picture.
+   */
+  /**
+   * Content **against the edge**, which is the only thing that makes the two
+   * paths disagree.
+   *
+   * The first version of this fixture was a flat white field, and it came back
+   * "0.00% of bytes, max delta 0" — the check passed while demonstrating
+   * nothing, because with nothing varying at the border there is no seam to
+   * blend and both paths trivially agree. A block running into the top-left
+   * corner is what actually exercises the difference.
+   */
+  const onWhite = await sharp({
+    create: { width: SCENE_W, height: SCENE_H, channels: 3, background: "#ffffff" },
+  })
+    .composite([
+      {
+        input: await sharp({
+          create: {
+            width: Math.round(SCENE_W / 3),
+            height: Math.round(SCENE_H / 3),
+            channels: 3,
+            background: "#d81e05",
+          },
+        })
+          .png()
+          .toBuffer(),
+        top: 0,
+        left: 0,
+      },
+    ])
+    .jpeg({ quality: 92 })
+    .toBuffer();
+  const whiteUntouched = await normaliseProductImage(onWhite);
+  const whiteDefault = await normaliseProductImage(onWhite, DEFAULT_CROP);
+  const seam = await comparePixels(
+    whiteUntouched.variants[3]!.data,
+    whiteDefault.variants[3]!.data,
+  );
+
+  check(
+    "the two paths agree exactly when the photograph's own edge is the pad colour",
+    untouched.variants[3]!.data.equals(asDefault.variants[3]!.data),
+    "nothing to blend at the seam, so contain-padding and extend-then-resize land on the same bytes",
+  );
+  check(
+    "and differ only along the seam when it is not — which is why null keeps the old branch",
+    seam.differing > 0 && seam.differing < 0.05 && seam.maxDelta <= 64,
+    `${(seam.differing * 100).toFixed(2)}% of bytes, max delta ${seam.maxDelta} — enough to change a content hash, which would repath the whole catalogue`,
+  );
+
+  /* ---- auto-frame's arithmetic, end to end ---- */
+
+  const TARGET_FILL = 0.85;
+  const bbox = {
+    x: SUBJECT.left / SCENE_W,
+    y: SUBJECT.top / SCENE_H,
+    width: SUBJECT.width / SCENE_W,
+    height: SUBJECT.height / SCENE_H,
+  };
+  const proposed = frameSubject(bbox, TARGET_FILL, SCENE_W, SCENE_H);
+
+  check(
+    "the fill before framing is what the panel would report",
+    Math.abs(fillOf(bbox, DEFAULT_CROP, SCENE_W, SCENE_H) - 0.375) < 0.001,
+    `${(fillOf(bbox, DEFAULT_CROP, SCENE_W, SCENE_H) * 100).toFixed(1)}% — a shoe adrift in a table`,
+  );
+  check(
+    "and the proposed crop puts it at the target",
+    Math.abs(fillOf(bbox, proposed, SCENE_W, SCENE_H) - TARGET_FILL) < 0.005,
+    `${(fillOf(bbox, proposed, SCENE_W, SCENE_H) * 100).toFixed(1)}% predicted`,
+  );
+
+  /**
+   * The claim the arithmetic is making, checked against the pixels it produced.
+   *
+   * Measured from the subject's own colour rather than by trimming from a
+   * corner: a crop that reaches past the photograph is padded in `CARD_SURFACE`,
+   * so on any background that is not already fog the corner and the pad differ
+   * and a trim measures nothing at all. That confound cost an hour; it is
+   * written down here so it does not cost a second one.
+   */
+  const framed = await normaliseProductImage(scene, proposed);
+  const framedBounds = await subjectBounds(framed.variants[3]!.data);
+  const achieved = framedBounds
+    ? Math.max(framedBounds.width, framedBounds.height)
+    : 0;
+  check(
+    "the stored asset really is filled to the target, within 2%",
+    Math.abs(achieved - TARGET_FILL) < 0.02,
+    `${(achieved * 100).toFixed(1)}% measured against a ${(TARGET_FILL * 100).toFixed(0)}% target`,
+  );
+
+  const framedMeta = await sharp(framed.variants[3]!.data).metadata();
+  check(
+    "and it is still square at the canonical edge",
+    framedMeta.width === CANONICAL_EDGE && framedMeta.height === CANONICAL_EDGE,
+    `${framedMeta.width}×${framedMeta.height}`,
+  );
+
+  /* ---- reproducibility, which is what makes re-crop and reprocess safe ---- */
+
+  const tilted = { ...DEFAULT_CROP, rotation: -7, size: 0.7, brightness: 15 };
+  const once = await normaliseProductImage(scene, tilted);
+  const repeated = await normaliseProductImage(scene, tilted);
+  check(
+    "the same crop run twice is byte-identical",
+    once.contentHash === repeated.contentHash &&
+      once.variants[3]!.data.equals(repeated.variants[3]!.data),
+    `${once.contentHash} — a reprocess overwrites with what is already there`,
+  );
+
+  const nudged = await normaliseProductImage(scene, { ...tilted, cx: 0.55 });
+  check(
+    "a different crop is a different asset, at a different path",
+    nudged.contentHash !== once.contentHash,
+    "so a re-crop cannot overwrite the photograph it is replacing",
+  );
+
+  const tiltedMeta = await sharp(once.variants[3]!.data).metadata();
+  check(
+    "straightening keeps the asset square",
+    tiltedMeta.width === CANONICAL_EDGE && tiltedMeta.height === CANONICAL_EDGE,
+    `${tiltedMeta.width}×${tiltedMeta.height} at -7°`,
+  );
+
+  /**
+   * A crop dragged hard against a corner is padded, not refused. This is the
+   * case that threw `extract_area: bad extract area` until the padding became
+   * its own pass — sharp runs extract before extend whatever order they are
+   * written in.
+   */
+  const cornered = await normaliseProductImage(scene, {
+    ...DEFAULT_CROP,
+    cx: 0.02,
+    cy: 0.98,
+    size: 0.5,
+  });
+  const corneredPixel = await sharp(cornered.variants[3]!.data)
+    .extract({ left: 0, top: 0, width: 4, height: 4 })
+    .raw()
+    .toBuffer();
+  /**
+   * Within two levels per channel rather than exactly: the variant is WebP at
+   * quality 82, and a lossy encoder is entitled to move a flat field by a level
+   * or two. Asserting the exact bytes here would be asserting a property of the
+   * encoder, and it would go red on the day that encoder is upgraded — for a
+   * reason having nothing to do with whether the padding is the right colour.
+   */
+  const padOff = Math.max(
+    Math.abs(corneredPixel[0]! - 0xee),
+    Math.abs(corneredPixel[1]! - 0xf1),
+    Math.abs(corneredPixel[2]! - 0xf5),
+  );
+  check(
+    "a crop that runs off the edge is padded in the card's colour",
+    padOff <= 2,
+    `#${corneredPixel.subarray(0, 3).toString("hex")} against #eef1f5, off by ${padOff} — CARD_SURFACE within the encoder's tolerance, so the seam does not exist`,
+  );
+
   /* --------------------------------------------------------- report ------ */
 
   console.log(
@@ -513,3 +815,71 @@ void main().catch((error: unknown) => {
   console.error(error);
   process.exit(1);
 });
+
+/**
+ * The bounding box of the dark subject, as fractions of the image.
+ *
+ * By colour rather than by trimming from a corner, for the reason section 8
+ * gives: a padded crop has a different colour in its corner from its
+ * background, and trim then measures the padding rather than the shoe.
+ */
+async function subjectBounds(
+  image: Buffer,
+): Promise<{ x: number; y: number; width: number; height: number } | null> {
+  const { data, info } = await sharp(image)
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+
+  let minX = info.width;
+  let minY = info.height;
+  let maxX = -1;
+  let maxY = -1;
+
+  for (let i = 0; i < info.width * info.height; i += 1) {
+    const offset = i * info.channels;
+    // Anything markedly darker than the fog surface is subject.
+    if (data[offset]! < 120 && data[offset + 1]! < 120 && data[offset + 2]! < 120) {
+      const x = i % info.width;
+      const y = Math.floor(i / info.width);
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+    }
+  }
+
+  if (maxX < 0) return null;
+  return {
+    x: minX / info.width,
+    y: minY / info.height,
+    width: (maxX - minX + 1) / info.width,
+    height: (maxY - minY + 1) / info.height,
+  };
+}
+
+/**
+ * How far apart two variants are, **per decoded subpixel**.
+ *
+ * Decoded, not compressed. Two WebP files that draw a near-identical picture
+ * differ in length, and a byte-wise diff of compressed data reports 100% at
+ * delta 255 — which is what the first version of this said, and it is not a
+ * fact about the pictures at all.
+ */
+async function comparePixels(
+  first: Buffer,
+  second: Buffer,
+): Promise<{ differing: number; maxDelta: number }> {
+  const a = await sharp(first).raw().toBuffer();
+  const b = await sharp(second).raw().toBuffer();
+  if (a.length !== b.length) return { differing: 1, maxDelta: 255 };
+  let differing = 0;
+  let maxDelta = 0;
+  for (let i = 0; i < a.length; i += 1) {
+    const delta = Math.abs(a[i]! - b[i]!);
+    if (delta > 0) {
+      differing += 1;
+      if (delta > maxDelta) maxDelta = delta;
+    }
+  }
+  return { differing: differing / a.length, maxDelta };
+}

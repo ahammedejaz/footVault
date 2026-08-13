@@ -2,7 +2,7 @@ import "server-only";
 
 import { createHash } from "node:crypto";
 
-import sharp from "sharp";
+import sharp, { type Sharp } from "sharp";
 
 import {
   CANONICAL_EDGE,
@@ -12,6 +12,12 @@ import {
   PIPELINE_VERSION,
   VARIANT_BUDGET_BYTES,
 } from "./constants";
+import {
+  MAX_ADJUSTMENT,
+  paddingFor,
+  resolveCrop,
+  type Crop,
+} from "./crop";
 
 /**
  * Turning whatever the owner photographed into an asset the catalogue can use.
@@ -171,6 +177,19 @@ export async function inspect(input: Buffer): Promise<SourceInfo> {
  */
 export async function normaliseProductImage(
   input: Buffer,
+  /**
+   * The owner's framing, or null for "the whole photograph" — which is what
+   * every row written before this existed means, and what the untouched branch
+   * below reproduces **byte for byte**.
+   *
+   * Null rather than `DEFAULT_CROP` as the default parameter, deliberately. The
+   * derivative path is a hash of the output, so a null crop recomputes the
+   * paths a row already points at and a reprocess stays the no-op it has always
+   * been. Routing the existing catalogue through new arithmetic to arrive at
+   * "probably the same pixels" would rewrite every path in the shop to prove a
+   * point about tidiness.
+   */
+  crop: Crop | null = null,
 ): Promise<NormalisedImage> {
   const source = await inspect(input);
 
@@ -203,15 +222,17 @@ export async function normaliseProductImage(
    * choosing the file: `belowRecommended` drives a warning under
    * `MIN_RECOMMENDED_EDGE` in the admin, before the owner commits.
    */
-  const square = await sharp(input, { failOn: "none" })
-    .rotate()
-    .flatten({ background: CARD_SURFACE })
-    .resize(CANONICAL_EDGE, CANONICAL_EDGE, {
-      fit: "contain",
-      background: CARD_SURFACE,
-    })
-    .png()
-    .toBuffer();
+  const square = crop
+    ? await croppedSquare(input, crop)
+    : await sharp(input, { failOn: "none" })
+        .rotate()
+        .flatten({ background: CARD_SURFACE })
+        .resize(CANONICAL_EDGE, CANONICAL_EDGE, {
+          fit: "contain",
+          background: CARD_SURFACE,
+        })
+        .png()
+        .toBuffer();
 
   const variants: Variant[] = [];
   for (const width of CANONICAL_WIDTHS) {
@@ -242,6 +263,130 @@ export async function normaliseProductImage(
       source.width < MIN_RECOMMENDED_EDGE ||
       source.height < MIN_RECOMMENDED_EDGE,
   };
+}
+
+/**
+ * The owner's framing, applied — orientation, straighten, crop, adjustments.
+ *
+ * ## Measured, never predicted
+ *
+ * The crop is a set of fractions, and fractions need a frame to be fractions
+ * *of*. That frame is the photograph after its EXIF orientation and after any
+ * straightening, and its exact dimensions are libvips' business: a 3000x2250
+ * picture rotated 4 degrees comes out some particular size that depends on how
+ * the rotation library rounds its bounding box.
+ *
+ * So this renders the frame first and **asks it how big it is**, rather than
+ * computing what it ought to be. The browser does the same thing with the frame
+ * it rendered. Neither side has to model the other's rounding, which is the
+ * only arrangement where the preview and the asset cannot drift.
+ *
+ * ## The overhang is the padding
+ *
+ * A crop square is allowed to reach past the edge of the photograph, and at
+ * `size: 1` on anything not already square it always does. That overhang is
+ * exactly the fog padding this pipeline has added since it was written — so it
+ * is extended in `CARD_SURFACE` before the extract, and the default crop is
+ * the same picture the untouched branch produces rather than a near miss.
+ *
+ * ## Two decodes
+ *
+ * `rotate()` for the EXIF tag and `rotate(angle)` for the straighten are
+ * separate passes over separate buffers rather than two calls on one pipeline.
+ * sharp applies one rotation per pipeline, and which of the two would win is
+ * exactly the kind of thing that works in a test and silently drops the EXIF
+ * correction on the one photograph somebody took in portrait. The cost is a
+ * decode, once per upload, on an operation the owner is already waiting on.
+ */
+async function croppedSquare(input: Buffer, crop: Crop): Promise<Buffer> {
+  const oriented = await sharp(input, { failOn: "none" })
+    .rotate()
+    .flatten({ background: CARD_SURFACE })
+    .png()
+    .toBuffer();
+
+  const framed =
+    crop.rotation === 0
+      ? oriented
+      : await sharp(oriented)
+          .rotate(crop.rotation, { background: CARD_SURFACE })
+          .png()
+          .toBuffer();
+
+  const meta = await sharp(framed).metadata();
+  if (!meta.width || !meta.height) {
+    throw new ImagePipelineError(
+      "That photograph could not be re-read after straightening it.",
+    );
+  }
+
+  const rect = resolveCrop(meta.width, meta.height, crop);
+  const pad = paddingFor(meta.width, meta.height, rect);
+
+  /**
+   * The padding is its own pass, and it has to be.
+   *
+   * sharp runs a **fixed** pipeline order regardless of the order the calls are
+   * written in, and `extract` comes before `extend` in it. Chaining
+   * `.extend().extract()` therefore extracts from the *unpadded* frame and
+   * fails with "bad extract area" the moment a crop reaches past an edge —
+   * which, at the default size on any non-square photograph, is always. Two
+   * buffers is the cost of not depending on an ordering that is not ours.
+   */
+  const padded =
+    pad.left || pad.top || pad.right || pad.bottom
+      ? await sharp(framed)
+          .extend({ ...pad, background: CARD_SURFACE })
+          .png()
+          .toBuffer()
+      : framed;
+
+  const pipeline = sharp(padded).extract({
+    left: rect.left + pad.left,
+    top: rect.top + pad.top,
+    width: rect.size,
+    height: rect.size,
+  });
+
+  return adjusted(pipeline, crop)
+    .resize(CANONICAL_EDGE, CANONICAL_EDGE, {
+      fit: "contain",
+      background: CARD_SURFACE,
+    })
+    .png()
+    .toBuffer();
+}
+
+/**
+ * Brightness and contrast, and nothing else — the two the brief allows.
+ *
+ * The ranges are deliberately conservative: the ends of both sliders are ±40%,
+ * not ±100%. **Colour accuracy beats looking good here.** A customer who
+ * receives a shoe darker than the photograph has a "not as described" claim,
+ * and this shop replaces rather than refunds, so an over-flattering picture is
+ * a physical parcel going back and forth at the shop's expense.
+ *
+ * Contrast pivots on mid-grey (`128`) rather than on black, because scaling
+ * from zero brightens as it stretches and the owner reaching for contrast is
+ * not asking for that.
+ */
+function adjusted(pipeline: Sharp, crop: Crop): Sharp {
+  let out: Sharp = pipeline;
+  if (crop.brightness !== 0) {
+    out = out.modulate({
+      brightness: 1 + clampAdjustment(crop.brightness) / (MAX_ADJUSTMENT * 2.5),
+    });
+  }
+  if (crop.contrast !== 0) {
+    const slope =
+      1 + clampAdjustment(crop.contrast) / (MAX_ADJUSTMENT * 2.5);
+    out = out.linear(slope, 128 * (1 - slope));
+  }
+  return out;
+}
+
+function clampAdjustment(value: number): number {
+  return Math.min(MAX_ADJUSTMENT, Math.max(-MAX_ADJUSTMENT, value));
 }
 
 /**

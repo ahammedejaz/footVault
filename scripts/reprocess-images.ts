@@ -52,6 +52,7 @@ import {
   derivativePath,
   normaliseProductImage,
 } from "../src/lib/images/pipeline";
+import { normaliseCrop } from "../src/lib/images/crop";
 
 for (const line of readFileSync(".env.local", "utf8").split("\n")) {
   const match = /^([A-Z0-9_]+)=(.*)$/.exec(line.trim());
@@ -132,13 +133,14 @@ async function main() {
 
   const { data: rows, error } = await supabase
     .from("product_images")
-    .select("id, url, product_id, original_path")
+    .select("id, url, product_id, original_path, crop")
     .overrideTypes<
       {
         id: string;
         url: string;
         product_id: string;
         original_path: string | null;
+        crop: unknown;
       }[]
     >();
 
@@ -190,10 +192,27 @@ async function main() {
       continue;
     }
 
+    /**
+     * **The owner's framing is part of the input, not a decoration on it.**
+     *
+     * This script exists so a PIPELINE_VERSION bump can rebuild the catalogue
+     * from originals. The moment crops existed, rebuilding *without* them
+     * meant a bump would silently un-frame every photograph the owner had
+     * framed — and report a confident green while doing it, because every
+     * other assertion here is about paths and bytes, and both would be
+     * perfectly consistent with the wrong picture.
+     *
+     * Null stays null: a row with no crop takes the pipeline's untouched
+     * branch and recomputes the paths it already points at, which is what
+     * makes re-running this a no-op.
+     */
+    const crop = row.crop == null ? null : normaliseCrop(row.crop);
+
     let result;
     try {
       result = await normaliseProductImage(
         Buffer.from(await file.arrayBuffer()),
+        crop,
       );
     } catch (caught) {
       failures += 1;
@@ -216,7 +235,7 @@ async function main() {
     if (DRY_RUN) {
       processed += 1;
       console.log(
-        `  \x1b[36m→\x1b[0m ${path}\n      would become ${canonical}` +
+        `  \x1b[36m→\x1b[0m ${path}${crop ? " (framed)" : ""}\n      would become ${canonical}` +
           `${result.belowRecommended ? "  \x1b[33m(source is small; it will be upscaled)\x1b[0m" : ""}`,
       );
       continue;
@@ -267,7 +286,7 @@ async function main() {
 
     processed += 1;
     console.log(
-      `  \x1b[32m✓\x1b[0m ${path}${source.fromColumn ? " (from original_path)" : ""}\n      → ${canonical}` +
+      `  \x1b[32m✓\x1b[0m ${path}${source.fromColumn ? " (from original_path)" : ""}${crop ? " (the owner's framing applied)" : ""}\n      → ${canonical}` +
         `  ${result.variants.map((v) => `${v.width}:${(v.bytes / 1024).toFixed(0)}KB`).join(" ")}`,
     );
   }

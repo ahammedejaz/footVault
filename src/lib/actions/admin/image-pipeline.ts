@@ -8,6 +8,7 @@ import {
   derivativePath,
   normaliseProductImage,
 } from "@/lib/images/pipeline";
+import { normaliseCrop, type Crop } from "@/lib/images/crop";
 import { PRODUCT_IMAGE_BUCKET } from "@/lib/queries/admin/media";
 
 /**
@@ -47,6 +48,17 @@ const schema = z.object({
     .min(1, "That is not a file.")
     .max(400)
     .refine((value) => !value.includes(".."), "That is not a file."),
+  /**
+   * The owner's framing, or absent for "the whole photograph".
+   *
+   * Typed as unknown on purpose: the validator is `normaliseCrop`, which
+   * clamps every field into range and fills in the missing ones rather than
+   * refusing. A zod shape here would give the same six numbers a *second*
+   * opinion about what is acceptable, and the browser calls `normaliseCrop`
+   * too — so a crop the panel considered fine could be rejected by a rule only
+   * this file knows, which is the drift this codebase keeps paying for.
+   */
+  crop: z.unknown().optional(),
 });
 
 export type NormalisedUpload = {
@@ -73,6 +85,16 @@ export type NormalisedUpload = {
   belowRecommended: boolean;
   /** Widths that came out over budget. Reported, never silently shipped. */
   overBudget: number[];
+  /**
+   * The framing that was actually applied, normalised, or null for the whole
+   * photograph.
+   *
+   * Echoed back for the same reason `originalPath` is: the caller thinks it
+   * knows what it sent, and a second copy of that belief is a second place it
+   * can be wrong. The row must record the crop the stored asset was cut with,
+   * not the one the panel had in a state variable when it posted.
+   */
+  crop: Crop | null;
 };
 
 export async function normaliseUpload(
@@ -118,9 +140,12 @@ export async function normaliseUpload(
 
       const original = Buffer.from(await file.arrayBuffer());
 
+      const crop =
+        parsed.data.crop == null ? null : normaliseCrop(parsed.data.crop);
+
       let result;
       try {
-        result = await normaliseProductImage(original);
+        result = await normaliseProductImage(original, crop);
       } catch (error) {
         console.error(
           "[images] normalisation failed:",
@@ -184,6 +209,7 @@ export async function normaliseUpload(
         overBudget: result.variants
           .filter((variant) => variant.overBudget)
           .map((variant) => variant.width),
+        crop,
       };
     },
   );
