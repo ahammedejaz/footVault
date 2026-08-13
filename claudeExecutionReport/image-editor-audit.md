@@ -399,3 +399,133 @@ target-fill setting; re-crop from `original_path`; the contact sheet; and
 nothing whatsoever about whether the crop step can be found in the admin. The
 new gate has to assert that itself, the way `audit:settings-controls` does for
 `/admin/settings`, and I will not report the former as evidence of the latter.
+
+---
+
+# The crop step — built, gated, still unmerged
+
+## What is on the branch now
+
+`image-editor-2-crop-model` carries everything: the crop model, auto-frame, the
+panel, the two adjustments, the target-fill setting, re-crop, the contact sheet
+and `audit:image-editor`.
+
+**The flow is choose → frame → describe → commit**, and the original now uploads
+the moment a file is chosen rather than at the end. That is not a detail: auto-
+frame runs server-side, so the bytes have to be somewhere the server can read
+before there is anything to propose. Uploading at choose time means the network
+works while the human does, and the proposal is on screen before the first drag
+is over.
+
+**Auto-frame** is `sharp`'s trim over a threshold ladder — 10, 20, 30, then 5.
+There is no single threshold, and that is measured, not assumed: 20 and above is
+needed for uneven light across a table, and 8 and above loses a white shoe on a
+fog background. When nothing plausible comes back, the panel says *"couldn't
+find the shoe against that background — centred instead"* and falls back to the
+whole photograph rather than a guessed zoom. Both halves of that are deliberate:
+a confident wrong crop looks like a decision and gets approved, and inventing a
+zoom would look exactly like a successful auto-frame.
+
+**The target fill is a settings row** and the control's hint states what the
+number measures — the subject's longest side, not area. That sentence is
+load-bearing rather than decorative: 85% by area is not a demanding target for a
+shoe, it is an unreachable one, so an owner assuming the area reading would
+conclude the tool was broken and turn the number down until it "worked".
+
+**Re-crop** runs the pipeline again from `original_path` with different numbers.
+Old derivatives stay in the bucket as unused files, per your decision.
+
+## Three bugs the gates found, two of them invisible to every predicate
+
+1. **Straightening switched auto-frame off.** Rotation pads the new corners, and
+   the corner is exactly where the background colour is inferred from — so
+   padding a warm wooden table with fog made every pixel of the photograph
+   "not background" and the detector correctly reported nothing. Measuring now
+   pads with the photograph's own corner colour; the output still pads with
+   `CARD_SURFACE`, and both frames come out the same size so the fractions hold.
+   `audit:images` asserts both directions, including that the old behaviour
+   fails.
+
+2. **The contact sheet took the product page down.** It passed `loader` — a
+   function — from a Server Component to `next/image`, which throws *Functions
+   cannot be passed directly to Client Components*. Every render after a refresh
+   died. It is a Client Component now.
+
+3. **The crop stage rendered empty while every assertion passed.** The readout
+   said 85%, the stored asset was correct at 85%, the recorded crop was correct
+   — and the photograph was translated clean out of the square, because CSS
+   translate percentages are relative to the element's own size and the code
+   treated them as relative to the container. **A screenshot caught it.** The
+   gate now screenshots the stage itself and fails if the pixels are a flat
+   colour.
+
+And a fourth, from the 390px screenshot: adding the Re-frame button pushed the
+per-photograph control row past its own card border — "Re-frame" clipped,
+"Delete" hanging outside the box. That is the third time a screenshot has caught
+a defect in this area that every predicate passed, which is the entire argument
+for taking them.
+
+## Gates
+
+| Gate | Result |
+|---|---|
+| `audit:images` | **76/76** — pure; crop maths, determinism, and what auto-frame fails on |
+| `audit:image-upload` | **26/26** on a production build |
+| `audit:image-editor` | **32/32** on a production build — new |
+| `audit:settings-controls` | blocked: needs `20260813050000` |
+
+`audit:image-editor` operates every control by its visible label **and by
+keyboard** — Zoom, Straighten, Brightness, Contrast, Frame it for me, Whole
+photograph, Re-frame, Save this framing — drags the square with a real pointer,
+then measures the stored object against what the panel promised: 85% shown, 85%
+stored. It drives the busy-background fallback through the real panel, re-frames
+end to end and asserts the derivative changed, and writes screenshots at 390,
+768, 1024 and 1440.
+
+Two assertions in `audit:image-upload` had gone stale and one of them was
+**passing for the wrong reason** — it looked for the old 4:5 preview and matched
+the contact sheet's tiles, which use the same three classes. A check that
+matches something else on the page reports coverage of a control that no longer
+exists, so it now asserts the framing square by its accessible name.
+
+## The gate-coverage statement, restated because it would otherwise read as coverage
+
+`audit:reachability` derives its page list from `src/app/(storefront)` and plays
+a customer clicking around the shop. **It says nothing whatsoever about whether
+the crop step can be found in the admin.** Keeping it green is a storefront
+regression check and is reported as exactly that; the only evidence that this
+feature is reachable and operable is `audit:image-editor`, which prints that
+disclaimer at the end of every run.
+
+## What is queued for you
+
+Two migrations, in order, then the merge decision:
+
+```
+npm run push:stage      # 20260813040000 (crop column) is already on staging;
+                        # 20260813050000 (images settings row) is not
+```
+
+`20260813050000` inserts the `images` settings row. Until it is applied,
+`audit:settings-controls` cannot operate the target-fill control — and saving it
+returns an honest *"there is no photograph settings row to save into yet"*
+rather than the silent no-op an `update ... where key = 'images'` would
+otherwise be against a database with no such row.
+
+**Neither migration is on production, and the branch must not merge until both
+are.** The panel writes `product_images.crop` and the settings screen writes the
+`images` row; deploying either against a database without them breaks uploads —
+while you are photographing. Tell me when you want to land it and I will run
+`audit:build-smoke`, merge, and verify by alias.
+
+## Still not built
+
+Nothing from the brief. Everything in §5 of the audit is built and gated. What
+is *deliberately* absent is what the brief excluded: filters, saturation, colour
+temperature, background removal, blemish tools.
+
+One thing to flag as an assumption rather than a finding: the auto-frame
+tolerances are set against constructed fixtures — flat blocks on flat and noisy
+fields. They bound the behaviour honestly, but the first real photograph of a
+shoe on your actual table may sit anywhere inside those bounds. Upload two or
+three and I will tighten the ladder against what they actually show.
