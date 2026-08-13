@@ -3,9 +3,10 @@
 **Date:** 2026-08-13
 **Scope:** four launch-checklist items the Stage 1/2 security audit did not cover, then the
 implementation of the two that were actionable, then a production deploy attempt.
-**Status at time of writing:** **not deployed.** Nothing has been committed, no migration
-applied, `www.footvault.in` still serves `6d498b4`. One decision is waiting on the owner —
-see [§8](#8-what-is-waiting-on-you).
+**Status:** **DEPLOYED 2026-08-13.** `www.footvault.in` serves commit `261e5a0` via
+`dpl_84iLi2robdZMArRJfv6sJ9FXpTvx`. Migration `20260813150000` applied to production.
+`CSP_MODE` is still `report-only` and must stay there until the owner's test payment is clean —
+see [§10](#10-deploy-record--2026-08-13).
 
 ---
 
@@ -725,39 +726,24 @@ policy lines from this one, in one file.
 
 ---
 
-## 8 · What is waiting on you
+## 8 · Follow-ups and deferred work
 
-### 8.1 The open decision
+### 8.1 The decision that was taken
 
-Three gates are red for reasons that are understood and **none of which implicate Group 1,
-Group 2 or Stage 2**:
+Three gates were red for understood reasons, **none implicating Group 1, Group 2 or Stage 2**.
+The owner ruled on 2026-08-13: **proceed, with `audit:admin` and `audit:focus` documented as
+known-red**, and fix them as their own change afterwards. Their reasoning on the point that
+mattered: *"You were right not to edit a security gate green during a production deploy."*
 
-- `audit:admin` — pre-existing gate bug (miscount + self-inflicted drift)
-- `audit:focus` — two failures on already-live code
+### 8.2 The owner's test payment — STILL OUTSTANDING
 
-**Proceed to `audit:actions` and `build-smoke` with those documented as known-red, or stop and
-fix them first?**
-
-### 8.2 Still to run, once that is answered
-
-1. `npm run audit:actions` — needs `build:stage` + `start:stage`, has never run against a real
-   deploy
-2. `npm run audit:build-smoke` — the outage drill, a production build against production data
-3. Apply `20260813150000` to production, confirm PostgREST
-4. Merge and deploy
-5. **Verify by alias, not a 200.** Before-state captured:
-   `www.footvault.in → dpl_9njZpqzCsrmwCdBrGNAhmUrvXfaf`, commit `6d498b4`
-6. Confirm on the wire: four headers, `Secure` on the auth cookie, Report-Only CSP
-
-### 8.3 Then, your test payment
-
-Complete a real payment with DevTools open. Watch the console for anything naming a
-`razorpay.com` origin. **The console is the primary instrument** — see
+Complete a real payment on `www.footvault.in` with DevTools open. Watch the console for
+anything naming a `razorpay.com` origin. **The console is the primary instrument** — see
 [§4.7](#47-what-could-not-be-proven-browser--sink-delivery).
 
 **`CSP_MODE` has not been flipped and must not be until that payment is clean.**
 
-### 8.4 Queued as their own change, after this deploy lands
+### 8.3 Queued as their own change, now that the deploy has landed
 
 Both were found by this session's suite run and both are **pre-existing**, not part of what is
 being shipped. The owner ruled on 2026-08-13 that they are fixed separately rather than folded
@@ -807,7 +793,7 @@ every production path does. Note that the security assertion above it —
 `a customer cannot write a movement row — refused by table grant (42501)` — passes and must
 keep passing; only the hygiene check is wrong.
 
-### 8.5 Deferred by agreement
+### 8.4 Deferred by agreement
 
 - **Group 3** — Vercel BotID at `basic` on the checkout and coupon-check actions only, tied to
   the `SITE_INDEXABLE` flip
@@ -828,3 +814,165 @@ keep passing; only the hygiene check is wrong.
 - [Vercel — WAF rate limiting SDK](https://vercel.com/docs/vercel-firewall/vercel-waf/rate-limiting-sdk)
 - Next 16 CSP guide, read locally from
   `node_modules/next/dist/docs/01-app/02-guides/content-security-policy.md` per `AGENTS.md`
+
+---
+
+## 10 · Deploy record — 2026-08-13
+
+**Deployed.** `www.footvault.in` → `dpl_84iLi2robdZMArRJfv6sJ9FXpTvx`, commit `261e5a0`.
+
+### 10.1 The sequence, as executed
+
+| step | result |
+|---|---|
+| 1 · Snapshot + content-verify | 21/21 orders, 36 tables, 37 functions, pre-change `DEFAULT 30` captured |
+| 2 · `npm run audit` | 54/57 — 3 fixed, 2 known-red by the owner's ruling |
+| 2b · `npm run audit:actions` | **128 / 0, exit 0** |
+| 3 · `npm run audit:build-smoke` | **15 / 0, exit 0** |
+| 4 · Apply `20260813150000` to production | applied |
+| 4b · PostgREST | healthy, cache carries the new definition |
+| 5 · Merge + deploy | `6d498b4..261e5a0`, deployment created |
+| 6 · Verify by alias | confirmed, alias moved |
+| 7 · Wire checks | all present |
+| 8 · Smoke | all 200; `/admin` 404 |
+
+### 10.2 `audit:actions` — the gate that had never run against a real deploy
+
+```
+1 · Positive control: an admin session runs the action
+  ✓ admin + loadMovements(realVariant) returns ok:true
+...
+6 · Which layer refused
+    route-hidden 120   guard-refused 0   ran 0   unattributed 0
+  ✓ every refusal is attributable to a named layer
+    note  adminAction was not exercised by this run — the proxy hid every
+          /admin route first, so the POSTs never reached it.
+
+128 passed, 0 failed
+```
+
+The positive control passing is what makes the 120 refusals meaningful rather than
+"the request never arrived". The gate's own note about `adminAction` not being exercised is the
+documented shipped behaviour, not a new finding.
+
+### 10.3 `audit:build-smoke`
+
+```
+PASS  a build that cannot collect slugs fails instead of shipping — exited 1   (outage drill)
+PASS  production build passes — exited 0
+PASS  /product/[slug] /collection/[slug] /page/[slug] /shop/[category] — not SSG-with-zero-paths
+PASS  next start serves the artifact — all four slug families 200 as document AND RSC
+audit:build-smoke PASS
+```
+
+### 10.4 The migration, and the exception that authorised it
+
+`docs/foot-vault-security-brief.md:27` says **"No production migration is applied by you."**
+That was surfaced to the owner before applying anything, with the dry-run output. The owner
+overruled it **for this migration only**, knowingly, and asked that the exception be recorded
+as non-generalising. It is now a block quote under that line in the brief.
+
+Their reasoning, recorded: `create or replace` at the same arity so the ACL survives; one
+integer default changed; verified on staging first; and the snapshot provably captured
+`DEFAULT 30`, so the rollback is one statement.
+
+Post-apply verification on production:
+
+```
+release_abandoned_orders | p_older_than_minutes integer DEFAULT 10 | {postgres=X/postgres,service_role=X/postgres}
+copies: 1                                    (no overload landmine)
+release-abandoned-orders | */10 * * * * | select public.release_abandoned_orders() | active
+migrations recorded: 20260813150000
+```
+
+### 10.5 PostgREST after the DDL
+
+```
+anon read /products                       200      (cache reloaded cleanly)
+/rpc/release_abandoned_orders in cache    true
+  description: "…Default cutoff 10 minutes (was 30 until 2026-08-13…"   ← the NEW comment
+anon POST /rpc/release_abandoned_orders   401      (grants held through the reload)
+```
+
+The description proves PostgREST picked up the new definition rather than serving a stale
+cache. **The function was deliberately not invoked** — calling it would sweep real production
+orders.
+
+### 10.6 Verified by alias, not by a 200
+
+The specific failure being guarded against — a merge producing no deployment — did not recur.
+
+```
+before   www.footvault.in → dpl_9njZpqzCsrmwCdBrGNAhmUrvXfaf   commit 6d498b4
+after    www.footvault.in → dpl_84iLi2robdZMArRJfv6sJ9FXpTvx   commit 261e5a0
+         state READY, target production, aliasError null
+```
+
+The wait was keyed on the **Report-Only CSP header**, an identifier that exists only in the new
+tree, rather than on a 200.
+
+### 10.7 On the wire, www.footvault.in
+
+```
+x-content-type-options      nosniff
+x-frame-options             DENY
+referrer-policy             strict-origin-when-cross-origin
+permissions-policy          camera=(), microphone=(), geolocation=(), payment=(self "https://api.razorpay.com")
+x-powered-by                absent
+strict-transport-security   max-age=63072000            (Vercel's, untouched)
+
+content-security-policy-report-only: default-src 'self'; script-src 'self' 'unsafe-inline'
+  https://checkout.razorpay.com …; media-src 'self' https://*.supabase.co; connect-src 'self'
+  https://*.supabase.co wss://*.supabase.co …; frame-src https://api.razorpay.com …;
+  frame-ancestors 'none'; report-uri /api/csp-report; report-to csp
+Reporting-Endpoints: csp="/api/csp-report"
+
+enforcing CSP present            no   — report-only only, correct
+'unsafe-eval' present            no   — production build, correct
+upgrade-insecure-requests        no   — correct for report-only
+POST /api/csp-report             204  — endpoint live
+```
+
+**The auth cookie, measured on production:**
+
+```
+sb-ahumjhwqgmskjsitctcj-auth-token=<session>; Path=/; Expires=Fri, 17 Sep 2027;
+  Max-Age=34560000; Secure; SameSite=lax
+```
+
+`Secure` present. `HttpOnly` correctly absent by design (§2.2).
+
+> **A first attempt at this check failed and is recorded because it looked like it worked.**
+> Sending a malformed `sb-…-auth-token` was expected to make `@supabase/ssr` emit a removal
+> `Set-Cookie` carrying the same `cookieOptions`. It emitted **nothing** — the library treats an
+> undecodable value as simply absent. A less careful reading of "no Set-Cookie" plus the earlier
+> staging measurement would have produced a confident, unverified claim. The real check minted a
+> session for an **existing** inert QA fixture (`fv-signedin.mslmmhlv@example.com` — no account
+> created), backdated its stored expiry so production's proxy had to refresh, and read what the
+> live app emitted. The fixture was signed out afterwards.
+
+### 10.8 Smoke
+
+```
+/  /shop  /product/nike-air-max-90-mens  /cart  /checkout  /collection/new-in  /page/about   all 200
+/admin                    404
+/definitely-not-a-route   404      (indistinguishable, which is the point)
+/admin with RSC: 1        404
+
+crons active: poll-deliveries, prune-rate-limits, prune-shipping-quotes,
+              reconcile-abandoned-orders, release-abandoned-orders
+```
+
+### 10.9 What is live now that was not before
+
+- Four security headers, and `x-powered-by` gone
+- `Secure` on the session cookie
+- A Report-Only CSP with a working report endpoint
+- A 10-minute abandoned-order reclaim window (was 30)
+- A 50-megapixel decode ceiling on admin image uploads (Stage 2)
+- Eight audit gates converted off the vacuous-assertion shape, plus `audit:headers`
+
+### 10.10 The one thing still outstanding
+
+**The owner's test payment.** Real payment, DevTools open, watching for a blocked
+`razorpay.com` origin. Until that is clean, `CSP_MODE` stays `report-only`.
