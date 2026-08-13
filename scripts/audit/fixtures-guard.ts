@@ -15,6 +15,7 @@
  * Read-only. It writes nothing, anywhere, by construction — it never builds a
  * client at all.
  */
+import { spawnSync } from "node:child_process";
 import { readdirSync, readFileSync } from "node:fs";
 
 import {
@@ -81,31 +82,58 @@ if (isProductionUrl(current)) {
 }
 
 /**
- * **Every harness that can write must go through `clients.ts`.**
+ * **Every harness that can write must be refused if it points at production.**
  *
- * The guard above proves `clients.ts` recognises production. It cannot prove
- * that the harnesses actually *ask* it — and for the whole of Phases 7 and 8
- * three of them did not. `checkout-orders.ts`, `cart-merge.ts` and
- * `zero-stock.ts` each read `.env.local` themselves, built a service-role
- * client from `NEXT_PUBLIC_SUPABASE_URL`, and therefore wrote guest carts,
- * orders, payments, refunds and stock movements into the **live shop** on every
- * run of `npm run audit`. Nothing failed. The suite reported a pass. It was
- * found in Phase 9 only because a new migration was missing from the database
- * a run was really talking to.
+ * ## What this rule used to be, and why it was the wrong rule
  *
- * That is the same shape as this phase's headline finding: a gate that proves a
- * property of a helper, and never proves the callers use the helper. So this
- * check reads the directory rather than trusting anyone to remember.
+ * It used to read: *a file that names a raw Supabase credential must import
+ * `./clients`*. That caught the Phase 9 wave — `checkout-orders.ts`,
+ * `cart-merge.ts` and `zero-stock.ts` reading `.env.local` themselves and
+ * writing carts, orders and refunds into the **live shop** on every `npm run
+ * audit` — and it was believed complete after four waves of fixes.
  *
- * The rule: a file in `scripts/audit/` that names a raw Supabase credential must
- * import `./clients`, which repoints the process at staging and gives
- * `assertNotProduction` somewhere to stand. `clients.ts` itself is exempt — it
- * is the thing being imported.
+ * It was not complete, because it checked the wrong property. Importing
+ * `./clients` **repoints** the process at staging; it does not **refuse**
+ * anything. The only automatic refusal was `assertNotProduction` at
+ * `fixtures.ts`'s module scope. So a harness that imported `./clients` and
+ * never touched `./fixtures` scored a clean pass here while being entirely
+ * unprotected: with `AUDIT_TARGET=env-local`, or on any checkout where
+ * `SUPABASE_STAGE_*` is unset and resolution falls back to `.env.local`, it
+ * would write to production. Four harnesses were in that state —
+ * `server-actions.ts`, which creates accounts and promotes one to **admin**;
+ * `admin-security.ts`; `auth-rls.ts`; and `signed-in.ts` — plus
+ * `security-checkout.ts` among the excluded gates.
+ *
+ * The recurring shape, now three times over: **a gate that proves a property of
+ * a helper and never proves the callers get the benefit of it.** The old rule
+ * was one more instance of it.
+ *
+ * ## The rule now
+ *
+ * A harness that can write must be unable to obtain a production client. There
+ * are exactly two ways to satisfy that, and the first is the one that scales:
+ *
+ *   1. take clients only from `adminClient()` / `anonClient()`, which now refuse
+ *      production themselves unless the call says `allowProduction` — so the
+ *      protection is a property of the credential and nobody has to remember
+ *      it; or
+ *   2. if the harness hand-rolls its own `createClient`, and several do for
+ *      reasons of their own, call `assertNotProduction()` itself.
+ *
+ * A writing harness that builds its own client and does neither is the hole
+ * this phase found, and it is what fails below.
+ *
+ * The static check is still only as good as its regexes, so it is no longer the
+ * only check: the runtime one underneath actually resolves a process to
+ * production and proves the factories throw.
  */
-console.log("\n every harness that can write goes through ./clients:");
+console.log("\n every harness that can write is refused against production:");
 {
-  /** `clients.ts` is the thing being imported; it cannot import itself. */
-  const exempt = new Set(["clients.ts"]);
+  /**
+   * `clients.ts` defines the refusal; `refusal-probe.ts` exists to be spawned
+   * with the refusal deliberately provoked. Neither can be held to the rule.
+   */
+  const exempt = new Set(["clients.ts", "refusal-probe.ts"]);
   /**
    * Anything that can change a row. `.rpc(` counts: most of them mutate.
    *
@@ -121,18 +149,27 @@ console.log("\n every harness that can write goes through ./clients:");
   const CREDENTIAL =
     /NEXT_PUBLIC_SUPABASE_URL|SUPABASE_SERVICE_ROLE_KEY|NEXT_PUBLIC_SUPABASE_ANON_KEY|createAdminClient|adminClient\(/;
   /**
-   * `./clients` directly, or `./fixtures` — which is not a loophole.
+   * Does this file build a Supabase client with its own hands?
    *
-   * `fixtures.ts` imports `./clients` and calls `assertNotProduction("build QA
-   * fixtures")` at **module scope**, so importing it throws on load against the
-   * live shop. A harness that gets its client from `fixtures` therefore carries
-   * the same guard, and demanding a redundant second import would train people
-   * to add imports to satisfy a checker rather than to be safe.
+   * `createClient` from `@supabase/supabase-js` (and the SSR variant) takes a
+   * URL and a key and asks nothing. A harness calling it directly is outside
+   * the factories' refusal and has to carry its own.
    */
-  const IMPORTS_CLIENTS =
-    /(^|\n)import\s+(?:[^;]*\sfrom\s+)?["']\.\/(clients|fixtures)["']/;
+  const HAND_ROLLED = /\bcreateClient[<(]/;
+  /**
+   * Calls the refusal itself, at any scope.
+   *
+   * Importing `./fixtures` counts and is not a loophole: `fixtures.ts` calls
+   * `assertNotProduction("build QA fixtures")` at **module scope**, so importing
+   * it throws on load against the live shop. A harness that gets its client
+   * from `fixtures` therefore carries the same guard, and demanding a redundant
+   * second call would train people to satisfy a checker rather than to be safe.
+   */
+  const GUARDED =
+    /assertNotProduction\(|(^|\n)import\s+(?:[^;]*\sfrom\s+)?["']\.\/fixtures["']/;
 
   const readOnly: string[] = [];
+  const viaFactories: string[] = [];
   for (const file of readdirSync("scripts/audit").sort()) {
     if (!file.endsWith(".ts") || exempt.has(file)) continue;
     const source = readFileSync(`scripts/audit/${file}`, "utf8");
@@ -151,7 +188,24 @@ console.log("\n every harness that can write goes through ./clients:");
       if (CREDENTIAL.test(source)) readOnly.push(file);
       continue;
     }
-    check(file, IMPORTS_CLIENTS.test(source), true);
+    /*
+      A harness that takes every client from the factories is already refused by
+      the factories themselves — that is the whole point of moving the guard
+      into the credential. Reporting it rather than asserting on it keeps the
+      failing list to the files that genuinely have to carry their own guard.
+    */
+    if (!HAND_ROLLED.test(source)) {
+      viaFactories.push(file);
+      continue;
+    }
+    check(`${file} (hand-rolled client)`, GUARDED.test(source), true);
+  }
+
+  if (viaFactories.length > 0) {
+    console.log(
+      `  —     ${viaFactories.length} harnesses take clients only from the ` +
+        `factories\n        and are refused by those, not by this list.`,
+    );
   }
 
   /*
@@ -168,6 +222,59 @@ console.log("\n every harness that can write goes through ./clients:");
       `  —     read-only, exempt: ${readOnly.join(", ")}\n` +
         "        these may reach production; they never write.",
     );
+  }
+}
+
+/**
+ * **The factories actually refuse — proved by running them, not by reading.**
+ *
+ * Everything above this line is a regex over source text, and every wave of
+ * this bug so far has been a regex that was satisfied by a file that was not
+ * safe. So the last check spawns a process whose credential resolution really
+ * does land on the production project and asserts that the client factories
+ * throw rather than hand it a live connection.
+ *
+ * A child process because `clients.ts` resolves credentials once at import into
+ * module constants: this process resolved to staging, and no amount of
+ * reassigning `process.env` afterwards changes what it already decided. See
+ * `refusal-probe.ts`.
+ *
+ * This is the check that can fail. Delete the guard in `adminClient` and it
+ * goes red immediately, which is the property the static rules never had.
+ */
+console.log("\n the factories refuse a production credential (live check):");
+{
+  const probe = spawnSync(
+    "npx",
+    ["tsx", "scripts/audit/refusal-probe.ts"],
+    {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        // Force resolution onto production: `env-local` takes `.env.local` at
+        // its word, and this value is set so it does not matter what that file
+        // happens to hold on this machine.
+        AUDIT_TARGET: "env-local",
+        NEXT_PUBLIC_SUPABASE_URL: `https://${PRODUCTION_PROJECT_REF}.supabase.co`,
+      },
+    },
+  );
+  checks++;
+  const passed = probe.status === 0;
+  if (!passed) {
+    failures++;
+    console.log(
+      `  FAIL  a process resolved to production was NOT refused\n` +
+        (probe.stderr ?? "")
+          .trim()
+          .split("\n")
+          .map((line) => `          ${line}`)
+          .join("\n"),
+    );
+  } else {
+    console.log("  ok    adminClient() and anonClient() both threw");
+    console.log("  ok    adminClient({ allowProduction: true }) still works");
+    checks++; // the probe asserts the teardown exemption too
   }
 }
 

@@ -36,7 +36,6 @@ import type { Browser, Cookie, Page } from "playwright";
 import type { Database } from "../../src/lib/database.types";
 import {
   adminClient,
-  anonClient,
   anonKey,
   assertNotProduction,
   QA_EMAIL_PREFIX,
@@ -55,13 +54,13 @@ import { BASE_URL } from "./routes";
  */
 assertNotProduction("build QA fixtures");
 
-const PASSWORD = "correct-horse-battery-staple-42";
-
 export {
   QA_EMAIL_PREFIX,
   anonClient,
   adminClient,
+  anonKey,
   assertNotProduction,
+  supabaseUrl,
 } from "./clients";
 
 /** The address every fixture ships to. Real enough to pass `checkoutSchema`. */
@@ -76,28 +75,20 @@ export const QA_ADDRESS = {
 
 /* ------------------------------------------------------------- identities -- */
 
-export type Account = { email: string; userId: string; session: Session };
-
 /**
- * A throwaway account, created through the real sign-up path.
- *
- * Email confirmation is off on this project, so `signUp` hands back a session
- * and the whole thing is testable over HTTP without an inbox.
+ * Account minting lives in `./accounts`, shared with the harnesses that do not
+ * want the rest of this module (and its Playwright import) dragged in. It is
+ * re-exported here so the many callers that already say
+ * `import { createAccount } from "./fixtures"` keep working.
  */
-export async function createAccount(label: string): Promise<Account> {
-  const email = `${QA_EMAIL_PREFIX}${label}.${Date.now().toString(36)}@example.com`;
-  const { data, error } = await anonClient().auth.signUp({
-    email,
-    password: PASSWORD,
-    options: { data: { full_name: "Quality Runner" } },
-  });
-  if (error || !data.session || !data.user) {
-    throw new Error(
-      `sign-up failed for ${email}: ${error?.message ?? "no session"}`,
-    );
-  }
-  return { email, userId: data.user.id, session: data.session };
-}
+import { createAccount } from "./accounts";
+
+export {
+  createAccount,
+  createAccountWithEmail,
+  openSession,
+  type Account,
+} from "./accounts";
 
 /**
  * Session cookies in the format the app actually reads.

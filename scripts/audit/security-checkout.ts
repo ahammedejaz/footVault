@@ -30,21 +30,69 @@
  * this" is a result, not a pass.
  */
 // clients first, before any other import and before anything reads
-// process.env: importing it repoints this process at staging and refuses to
-// run against production. This file used to read .env.local itself and
+// process.env: importing it repoints this process at staging. It does not, on its
+// own, refuse anything — the refusal is assertNotProduction, which the client
+// factories in clients.ts now call for you. This file used to read .env.local itself and
 // therefore built its accounts and admin promotions on the LIVE shop while
 // the app under test pointed at staging — found in Batch 3, the exact
 // near-miss clients.ts exists to stop. See the batch 3 report.
-import "./clients";
+import { assertNotProduction } from "./clients";
+import { createAccountWithEmail } from "./accounts";
 
 import { readFileSync } from "node:fs";
 import { createHmac, randomUUID } from "node:crypto";
 
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import {
+  createClient,
+  type Session,
+  type SupabaseClient,
+} from "@supabase/supabase-js";
 
 import type { Database } from "../../src/lib/database.types";
 import { rows, maybeRow } from "../../src/lib/queries/run";
 import { checkoutSchema } from "../../src/lib/validations/checkout";
+
+/**
+ * Nothing below this line may run against the live shop.
+ *
+ * This harness builds its own Supabase client rather than taking one from the
+ * factories in `./clients`, so the refusal those factories now carry does not
+ * reach it. It used to `import "./clients"` for the side effect, which repoints
+ * the process at staging but asserts nothing — under `AUDIT_TARGET=env-local`,
+ * or on a checkout with no `SUPABASE_STAGE_*`, it would have written to
+ * production and said nothing. `audit:fixtures-guard` now fails on any writing
+ * harness that hand-rolls a client without this call.
+ */
+assertNotProduction("run this harness");
+
+/**
+ * `signUp`-shaped account minting, so the `skip()` branches below keep working.
+ *
+ * The mechanism moved to `./accounts` (service-role `createUser` +
+ * `generateLink` + `verifyOtp`) when staging disabled email signups and took
+ * every account-minting harness down with it. The result shape is preserved
+ * deliberately: the call sites read `.data.session` and fall back to `skip()`
+ * when it is absent, and that is still exactly the behaviour wanted if minting
+ * ever fails for a different reason.
+ */
+async function mintAccount(email: string): Promise<{
+  data: { session: Session | null; user: { id: string } | null };
+  error: { message: string } | null;
+}> {
+  try {
+    const account = await createAccountWithEmail(email);
+    return {
+      data: { session: account.session, user: { id: account.userId } },
+      error: null,
+    };
+  } catch (error) {
+    return {
+      data: { session: null, user: null },
+      error: { message: error instanceof Error ? error.message : String(error) },
+    };
+  }
+}
+
 
 /* ------------------------------------------------------------------ setup -- */
 
@@ -66,7 +114,6 @@ const BASE = (process.env.FV_BASE_URL ?? "http://localhost:3210").replace(
   "",
 );
 const WEBHOOK_SECRET = (process.env.RAZORPAY_WEBHOOK_SECRET ?? "").trim();
-const PASSWORD = "correct-horse-battery-staple-42";
 const GUEST_COOKIE = "fv_guest";
 
 const ADDRESS = {
@@ -954,8 +1001,8 @@ async function main() {
     // Two throwaway accounts, so the signed-in half of the question is real.
     const emailA = `fv-sec-a.${Date.now().toString(36)}@example.com`;
     const emailB = `fv-sec-b.${Date.now().toString(36)}@example.com`;
-    const signA = await anon.auth.signUp({ email: emailA, password: PASSWORD });
-    const signB = await anon.auth.signUp({ email: emailB, password: PASSWORD });
+    const signA = await mintAccount(emailA);
+    const signB = await mintAccount(emailB);
     if (
       signA.error ||
       !signA.data.session ||
@@ -1374,7 +1421,7 @@ async function main() {
     // A signed-in caller asking merge_guest_cart to fold in a bag whose token
     // they are not carrying must be refused by the function, not by the client.
     const email = `fv-sec-m.${Date.now().toString(36)}@example.com`;
-    const signed = await anon.auth.signUp({ email, password: PASSWORD });
+    const signed = await mintAccount(email);
     if (signed.error || !signed.data.session) {
       skip(
         "merge_guest_cart parameter spoofing",
@@ -1918,7 +1965,7 @@ async function main() {
     );
 
     const email = `fv-sec-g.${Date.now().toString(36)}@example.com`;
-    const signUp = await anon.auth.signUp({ email, password: PASSWORD });
+    const signUp = await mintAccount(email);
     if (signUp.error || !signUp.data.session) {
       skip(
         "the sign-in half of the orphaned-order chain",
@@ -2161,7 +2208,7 @@ async function main() {
     // the correct design, and it is exactly why it has to be exercised rather
     // than assumed — a missing policy here is a free pair of shoes.
     const email = `fv-sec-w.${Date.now().toString(36)}@example.com`;
-    const signUp = await anon.auth.signUp({ email, password: PASSWORD });
+    const signUp = await mintAccount(email);
     if (signUp.error || !signUp.data.session) {
       skip(
         "direct writes to the money tables",

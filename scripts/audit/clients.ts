@@ -226,13 +226,57 @@ export function assertNotProduction(action: string): void {
   );
 }
 
-export function anonClient(): SupabaseClient<Database> {
+/**
+ * Options both factories take.
+ *
+ * ## Why the guard moved in here
+ *
+ * For four waves, the rule was "a harness that writes must import
+ * `./clients`", and `audit:fixtures-guard` policed it by reading the directory.
+ * That rule was checking the wrong property, and the fifth wave found out how.
+ *
+ * Importing this module **repoints** the process at staging. It does not
+ * **refuse** anything. The refusal was `assertNotProduction`, and the only place
+ * it ran automatically was `fixtures.ts`'s module scope — so a harness that
+ * imported `./clients` and never touched `./fixtures` passed the guard while
+ * being completely unprotected. `server-actions.ts` was in exactly that state:
+ * under `AUDIT_TARGET=env-local`, or on any checkout with no `SUPABASE_STAGE_*`
+ * where resolution falls back to `.env.local`, it would have created accounts
+ * and promoted one to **admin** on the live shop. `cart-limit.ts` and
+ * `refunds.ts` were in the same position.
+ *
+ * A static rule of that shape can only ever be as complete as the last person to
+ * think about it, and it had been believed complete four times. So the guard is
+ * no longer a property of the *file* — it is a property of the *credential*. You
+ * cannot obtain a client from this module that points at production without
+ * saying so in the call. Nobody has to remember, no regex has to notice, and a
+ * harness added next year is covered on the day it is written.
+ */
+export type ClientOptions = {
+  /**
+   * Permit this client to point at the live shop.
+   *
+   * Exactly one caller sets it: `teardown.ts`, which only ever deletes rows
+   * whose email carries a QA prefix and is the tool you reach for when this
+   * guard was added a day too late. It is spelled out at the call site so that
+   * "this one talks to production" is visible in the diff that introduces it,
+   * which is the only property that matters for a flag like this.
+   */
+  allowProduction?: boolean;
+};
+
+export function anonClient(options: ClientOptions = {}): SupabaseClient<Database> {
+  if (!options.allowProduction) assertNotProduction("open an anon client");
   return createClient<Database>(SUPABASE_URL, ANON_KEY, {
     auth: { persistSession: false },
   });
 }
 
-export function adminClient(): SupabaseClient<Database> {
+export function adminClient(
+  options: ClientOptions = {},
+): SupabaseClient<Database> {
+  if (!options.allowProduction)
+    assertNotProduction("open a service-role client");
   if (!SERVICE_KEY)
     throw new Error(
       `${

@@ -17,7 +17,9 @@
  * proved is that verification and parsing agree, not what the secret is.
  */
 // clients first, before any src import: it repoints this process at staging
-// and refuses to run against production. Order matters.
+// Order matters. Note that importing it
+// repoints only; the refusal is assertNotProduction, which the client factories
+// in clients.ts now call for you.
 import { adminClient } from "./clients";
 
 import { createHmac, randomUUID } from "node:crypto";

@@ -18,7 +18,9 @@
  * Run as: NODE_OPTIONS=--conditions=react-server tsx scripts/audit/transitions.ts
  */
 // clients first, before any src import: it repoints this process at staging
-// and refuses to run against production. Order matters.
+// Order matters. Note that importing it
+// repoints only; the refusal is assertNotProduction, which the client factories
+// in clients.ts now call for you.
 import "./clients";
 
 import { randomUUID } from "node:crypto";

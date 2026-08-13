@@ -113,7 +113,23 @@ const EXCLUDED: Record<string, string> = {
   "audit:teardown": "deletes fixtures — a tool, and destructive",
   "audit:shots": "writes screenshots for a human to look at",
   "audit:lighthouse": "needs its own server flags and reports numbers, not pass/fail",
-  "audit:actions": "superseded by audit:security-advance",
+  "audit:actions":
+    "a DEPLOY gate, not a suite member — and the reason it was excluded used " +
+    "to say 'superseded by audit:security-advance', which was false in both " +
+    "directions. It is not superseded: security-advance attacks the data " +
+    "layer with a customer JWT and its own header says the forged Server " +
+    "Action post 'remains the most valuable test still missing'. They test " +
+    "different layers. It was also not runnable at all until Stage 2 — it " +
+    "died at account creation, so 'superseded' was covering for a gate that " +
+    "had never once executed. What actually keeps it out of the suite is the " +
+    "server it needs: it reads action ids out of .next/static/chunks and " +
+    "routes out of .next/server/server-reference-manifest.json, so it " +
+    "requires `npm run build:stage` + `npm run start:stage`, while the suite " +
+    "drives `npm run dev:stage`. Run against dev its positive control fails " +
+    "with 'Server action not found' — correctly, because every refusal it " +
+    "reported would mean 'the request never reached the action'. Excluded " +
+    "must not mean forgotten: it is in the deploy sequence in " +
+    "docs/staging.md §4.4 beside audit:build-smoke.",
   "audit:security": "superseded by audit:security-advance",
   "audit:zero-stock": "a seeding helper, not an assertion",
   "audit:build-smoke":

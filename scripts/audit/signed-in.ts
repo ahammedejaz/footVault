@@ -18,12 +18,14 @@
  * teardown is in docs/rls-tests.md §8.
  */
 // clients first, before any other import and before anything reads
-// process.env: importing it repoints this process at staging and refuses to
-// run against production. This file used to read .env.local itself and
+// process.env: importing it repoints this process at staging. It does not, on its
+// own, refuse anything — the refusal is assertNotProduction, which the client
+// factories in clients.ts now call for you. This file used to read .env.local itself and
 // therefore built its accounts and admin promotions on the LIVE shop while
 // the app under test pointed at staging — found in Batch 3, the exact
 // near-miss clients.ts exists to stop. See the batch 3 report.
-import "./clients";
+import { assertNotProduction } from "./clients";
+import { createAccountWithEmail } from "./accounts";
 
 import { readFileSync } from "node:fs";
 import { createServerClient } from "@supabase/ssr";
@@ -32,6 +34,20 @@ import { chromium } from "playwright";
 
 import { maybeRow } from "../../src/lib/queries/run";
 import { BASE_URL } from "./routes";
+
+/**
+ * Nothing below this line may run against the live shop.
+ *
+ * This harness builds its own Supabase client rather than taking one from the
+ * factories in `./clients`, so the refusal those factories now carry does not
+ * reach it. It used to `import "./clients"` for the side effect, which repoints
+ * the process at staging but asserts nothing — under `AUDIT_TARGET=env-local`,
+ * or on a checkout with no `SUPABASE_STAGE_*`, it would have written to
+ * production and said nothing. `audit:fixtures-guard` now fails on any writing
+ * harness that hand-rolls a client without this call.
+ */
+assertNotProduction("run this harness");
+
 
 for (const line of readFileSync(".env.local", "utf8").split("\n")) {
   const m = /^([A-Z0-9_]+)=(.*)$/.exec(line.trim());
@@ -72,14 +88,10 @@ async function main() {
     console.log(`  ${p ? "PASS" : "FAIL"}  ${n}${d ? "  — " + d : ""}`);
   };
 
-  const anon = createClient(URL_, ANON, { auth: { persistSession: false } });
   const email = `fv-signedin.${Date.now().toString(36)}@example.com`;
-  const { data: up, error } = await anon.auth.signUp({
-    email,
-    password: "correct-horse-battery-staple-42",
-    options: { data: { full_name: "Signed In Tester" } },
+  const up = await createAccountWithEmail(email, {
+    full_name: "Signed In Tester",
   });
-  if (error || !up.session) throw new Error(String(error?.message));
 
   // Save a product as this user, so the wishlist has something in it.
   const asUser = createClient(URL_, ANON, {
@@ -98,7 +110,7 @@ async function main() {
   if (!product) throw new Error("no active products to save");
   const { error: saveErr } = await asUser
     .from("wishlist_items")
-    .insert({ user_id: up.user!.id, product_id: product.id });
+    .insert({ user_id: up.userId, product_id: product.id });
   ok(
     "a signed-in customer can save a product",
     !saveErr,

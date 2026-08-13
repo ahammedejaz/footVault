@@ -17,14 +17,16 @@
  * paper over it.
  */
 // clients first, before any other import and before anything reads
-// process.env: importing it repoints this process at staging and refuses to
-// run against production. This file builds its own clients from .env.local and
+// process.env: importing it repoints this process at staging. It does not, on its
+// own, refuse anything — the refusal is assertNotProduction, which the client
+// factories in clients.ts now call for you. This file builds its own clients from .env.local and
 // therefore wrote guest carts, orders, payments and stock movements into the
 // LIVE shop every time it ran — the exact failure clients.ts exists to stop,
 // caught in Phase 9 when a new migration was missing from the database the run
 // was actually talking to. See scripts/audit/clients.ts.
 import "./clients";
 import { assertNotProduction } from "./clients";
+import { createAccountWithEmail } from "./accounts";
 
 assertNotProduction("run cart-merge");
 
@@ -43,7 +45,6 @@ for (const line of readFileSync(".env.local", "utf8").split("\n")) {
 }
 const URL_ = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-const PASSWORD = "correct-horse-battery-staple-42";
 
 let failures = 0;
 function check(name: string, passed: boolean, detail = "") {
@@ -142,14 +143,10 @@ async function main() {
 
   /* ── the customer signs in, with an account bag already going ──────────── */
   const email = `fv-merge.${Date.now().toString(36)}@example.com`;
-  const { data: signUp, error: signUpError } = await anon.auth.signUp({
-    email,
-    password: PASSWORD,
-    options: { data: { full_name: "Merge Test" } },
+  const signUp = await createAccountWithEmail(email, {
+    full_name: "Merge Test",
   });
-  if (signUpError || !signUp.session)
-    throw new Error(`signUp: ${signUpError?.message}`);
-  const userId = signUp.user!.id;
+  const userId = signUp.userId;
 
   const asUser = createClient<Database>(URL_, ANON, {
     auth: { persistSession: false },
@@ -283,12 +280,8 @@ async function main() {
   if (filled) throw new Error(`fill the second guest cart: ${filled.message}`);
 
   const email2 = `fv-merge2.${Date.now().toString(36)}@example.com`;
-  const { data: signUp2 } = await anon.auth.signUp({
-    email: email2,
-    password: PASSWORD,
-  });
-  if (!signUp2?.session) throw new Error("second signUp failed");
-  const user2 = signUp2.user!.id;
+  const signUp2 = await createAccountWithEmail(email2);
+  const user2 = signUp2.userId;
 
   const asUser2 = createClient<Database>(URL_, ANON, {
     auth: { persistSession: false },

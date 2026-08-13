@@ -29,12 +29,14 @@
  * in `raw_user_meta_data`, and check 1 is exactly that.
  */
 // clients first, before any other import and before anything reads
-// process.env: importing it repoints this process at staging and refuses to
-// run against production. This file used to read .env.local itself and
+// process.env: importing it repoints this process at staging. It does not, on its
+// own, refuse anything — the refusal is assertNotProduction, which the client
+// factories in clients.ts now call for you. This file used to read .env.local itself and
 // therefore built its accounts and admin promotions on the LIVE shop while
 // the app under test pointed at staging — found in Batch 3, the exact
 // near-miss clients.ts exists to stop. See the batch 3 report.
-import "./clients";
+import { assertNotProduction } from "./clients";
+import { createAccountWithEmail, openSession } from "./accounts";
 
 import { readFileSync } from "node:fs";
 
@@ -42,6 +44,20 @@ import { createServerClient } from "@supabase/ssr";
 import { createClient, type Session } from "@supabase/supabase-js";
 
 import { maybeRow, rows } from "../../src/lib/queries/run";
+
+/**
+ * Nothing below this line may run against the live shop.
+ *
+ * This harness builds its own Supabase client rather than taking one from the
+ * factories in `./clients`, so the refusal those factories now carry does not
+ * reach it. It used to `import "./clients"` for the side effect, which repoints
+ * the process at staging but asserts nothing — under `AUDIT_TARGET=env-local`,
+ * or on a checkout with no `SUPABASE_STAGE_*`, it would have written to
+ * production and said nothing. `audit:fixtures-guard` now fails on any writing
+ * harness that hand-rolls a client without this call.
+ */
+assertNotProduction("run this harness");
+
 
 /* ------------------------------------------------------------------ env --- */
 
@@ -66,9 +82,12 @@ if (!URL_ || !ANON) {
  * Elevated access is optional.
  *
  * `.env.local` ships SUPABASE_SERVICE_ROLE_KEY declared but empty, which looks
- * configured at a glance. Creating users no longer needs it — signUp returns a
- * session directly now that email confirmation is off — but *promoting* one to
- * admin and deleting users afterwards still do.
+ * configured at a glance. Promoting an account to admin and deleting accounts
+ * afterwards need it — and since the signup toggle took every harness down and
+ * minting moved to the service-role admin API (`./accounts`), *creating* them
+ * needs it too. There is no longer an unelevated path through this gate: with
+ * no service key it fails at the first account rather than running a reduced
+ * set of checks, which is the honest outcome.
  *
  * So the checks that need it are named and reported as skipped rather than
  * quietly not run. A gate that silently covers less than it claims is worse
@@ -114,29 +133,22 @@ const STAMP = process.env.AUTH_RLS_STAMP ?? Date.now().toString(36);
 const CUSTOMER = `fv-test-customer.${STAMP}@example.com`;
 const OTHER = `fv-test-other.${STAMP}@example.com`;
 const ADMIN = `fv-test-admin.${STAMP}@example.com`;
-const PASSWORD = "correct-horse-battery-staple-42";
 
 /**
- * A fresh account, created the way a customer's is: through the public signup
- * endpoint with the anon key. Email confirmation is off, so this returns a
- * usable session immediately and no elevated key is involved.
+ * A fresh account with a real session.
+ *
+ * Minted through the service-role admin API rather than the public signup
+ * endpoint — see `./accounts` for why. The metadata still travels the way a
+ * provider's would (`user_metadata`), which is the whole point of check 1
+ * below: `handle_new_user()` must ignore a `role` claim regardless of who put
+ * it there.
  */
 async function makeUser(
   email: string,
   metadata: Record<string, unknown>,
 ): Promise<{ id: string; session: Session }> {
-  const client = createClient(URL_, ANON, { auth: { persistSession: false } });
-  const { data, error } = await client.auth.signUp({
-    email,
-    password: PASSWORD,
-    options: { data: metadata },
-  });
-  if (error || !data.session || !data.user) {
-    throw new Error(
-      `signUp(${email}): ${error?.message ?? "no session returned"}`,
-    );
-  }
-  return { id: data.user.id, session: data.session };
+  const account = await createAccountWithEmail(email, metadata);
+  return { id: account.userId, session: account.session };
 }
 
 /** A cookie jar filled by @supabase/ssr itself, so the format is not guessed. */
@@ -158,14 +170,7 @@ async function sessionCookies(session: Session): Promise<string> {
 }
 
 async function signIn(email: string): Promise<Session> {
-  const client = createClient(URL_, ANON, { auth: { persistSession: false } });
-  const { data, error } = await client.auth.signInWithPassword({
-    email,
-    password: PASSWORD,
-  });
-  if (error || !data.session)
-    throw new Error(`signIn(${email}): ${error?.message}`);
-  return data.session;
+  return openSession(email);
 }
 
 /* ------------------------------------------------------------------ main --- */

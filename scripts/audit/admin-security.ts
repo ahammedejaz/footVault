@@ -23,18 +23,34 @@
  */
 
 // clients first, before any other import and before anything reads
-// process.env: importing it repoints this process at staging and refuses to
-// run against production. This file used to read .env.local itself and
+// process.env: importing it repoints this process at staging. It does not, on its
+// own, refuse anything — the refusal is assertNotProduction, which the client
+// factories in clients.ts now call for you. This file used to read .env.local itself and
 // therefore built its accounts and admin promotions on the LIVE shop while
 // the app under test pointed at staging — found in Batch 3, the exact
 // near-miss clients.ts exists to stop. See the batch 3 report.
-import "./clients";
+import { assertNotProduction } from "./clients";
+import { createAccountWithEmail } from "./accounts";
 
 import { readFileSync } from "node:fs";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 import type { Database } from "../../src/lib/database.types";
 import { maybeRow } from "../../src/lib/queries/run";
+
+/**
+ * Nothing below this line may run against the live shop.
+ *
+ * This harness builds its own Supabase client rather than taking one from the
+ * factories in `./clients`, so the refusal those factories now carry does not
+ * reach it. It used to `import "./clients"` for the side effect, which repoints
+ * the process at staging but asserts nothing — under `AUDIT_TARGET=env-local`,
+ * or on a checkout with no `SUPABASE_STAGE_*`, it would have written to
+ * production and said nothing. `audit:fixtures-guard` now fails on any writing
+ * harness that hand-rolls a client without this call.
+ */
+assertNotProduction("run this harness");
+
 
 for (const line of readFileSync(".env.local", "utf8").split("\n")) {
   const match = /^([A-Z0-9_]+)=(.*)$/.exec(line.trim());
@@ -44,7 +60,6 @@ for (const line of readFileSync(".env.local", "utf8").split("\n")) {
 const URL_ = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 const SERVICE = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const PASSWORD = "correct-horse-battery-staple-42";
 
 let passed = 0;
 let failed = 0;
@@ -75,16 +90,17 @@ const madeUsers: string[] = [];
 
 async function makeCustomer(): Promise<SupabaseClient<Database> | null> {
   const email = `fv-admin-probe.${Date.now().toString(36)}@example.com`;
-  const anon = createClient<Database>(URL_, ANON, {
-    auth: { persistSession: false },
-  });
-  const { data, error } = await anon.auth.signUp({ email, password: PASSWORD });
-  if (error || !data.session) return null;
-  madeUsers.push(data.session.user.id);
+  let account;
+  try {
+    account = await createAccountWithEmail(email);
+  } catch {
+    return null;
+  }
+  madeUsers.push(account.userId);
   return createClient<Database>(URL_, ANON, {
     auth: { persistSession: false },
     global: {
-      headers: { Authorization: `Bearer ${data.session.access_token}` },
+      headers: { Authorization: `Bearer ${account.session.access_token}` },
     },
   });
 }

@@ -36,7 +36,8 @@
  */
 
 // clients first, before anything reads process.env: importing it repoints this
-// process at staging and refuses to run against production.
+// process at staging. The refusal is
+// assertNotProduction, which the client factories in clients.ts now call.
 import "./clients";
 
 import { chromium, type Page } from "playwright";

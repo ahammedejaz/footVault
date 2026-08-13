@@ -30,14 +30,15 @@
  * are left behind, same as scripts/audit/cart-merge.ts.
  */
 // clients first, before any other import and before anything reads
-// process.env: importing it repoints this process at staging and refuses to
-// run against production. This file builds its own clients from .env.local and
+// process.env: importing it repoints this process at staging. It does not, on its
+// own, refuse anything — the refusal is assertNotProduction, which the client
+// factories in clients.ts now call for you. This file builds its own clients from .env.local and
 // therefore wrote guest carts, orders, payments and stock movements into the
 // LIVE shop every time it ran — the exact failure clients.ts exists to stop,
 // caught in Phase 9 when a new migration was missing from the database the run
 // was actually talking to. See scripts/audit/clients.ts.
-import "./clients";
 import { assertNotProduction } from "./clients";
+import { createAccountWithEmail } from "./accounts";
 
 assertNotProduction("run checkout-orders");
 
@@ -83,7 +84,6 @@ const emailLog: string[] = [];
 const URL_ = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 const SERVICE = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const PASSWORD = "correct-horse-battery-staple-42";
 
 const ADDRESS = {
   recipientName: "Audit Runner",
@@ -391,13 +391,8 @@ async function main() {
   check("nor an anonymous caller with no token at all", tokenless.length === 0);
 
   const email = `fv-checkout.${Date.now().toString(36)}@example.com`;
-  const { data: signUp, error: signUpError } = await anon.auth.signUp({
-    email,
-    password: PASSWORD,
-  });
-  if (signUpError || !signUp.session)
-    throw new Error(`signUp: ${signUpError?.message}`);
-  madeAccounts.push({ id: signUp.session.user.id, email });
+  const signUp = await createAccountWithEmail(email);
+  madeAccounts.push({ id: signUp.userId, email });
   const stranger = createClient<Database>(URL_, ANON, {
     auth: { persistSession: false },
     global: {
@@ -991,13 +986,8 @@ async function main() {
     placedOrders.push(guestOrder.order.orderId);
 
     const emailG = `fv-adopt.${Date.now().toString(36)}@example.com`;
-    const { data: signUpG, error: signUpGError } = await anon.auth.signUp({
-      email: emailG,
-      password: PASSWORD,
-    });
-    if (signUpGError || !signUpG.session)
-      throw new Error(`adoption signUp: ${signUpGError?.message}`);
-    madeAccounts.push({ id: signUpG.session.user.id, email: emailG });
+    const signUpG = await createAccountWithEmail(emailG);
+    madeAccounts.push({ id: signUpG.userId, email: emailG });
 
     // Exactly the client /auth/callback holds: the new session *and* the guest
     // header it was constructed with.
@@ -1013,12 +1003,9 @@ async function main() {
 
     // A stranger holding a *different* token must not be able to take it first.
     const thiefEmail = `fv-thief.${Date.now().toString(36)}@example.com`;
-    const { data: thief } = await anon.auth.signUp({
-      email: thiefEmail,
-      password: PASSWORD,
-    });
+    const thief = await createAccountWithEmail(thiefEmail);
     if (thief?.session) {
-      madeAccounts.push({ id: thief.session.user.id, email: thiefEmail });
+      madeAccounts.push({ id: thief.userId, email: thiefEmail });
       const thiefClient = createClient<Database>(URL_, ANON, {
         auth: { persistSession: false },
         global: {

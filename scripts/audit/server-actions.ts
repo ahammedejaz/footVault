@@ -43,12 +43,33 @@
  * `x-nextjs-action-not-found: 1` with `{}`; a middleware 404 answers a bare 404.
  * See `node_modules/next/dist/server/app-render/action-handler.js`.
  *
+ * ## What this gate does and does not currently prove — read this first
+ *
+ * It proves the **route-hiding** layer. It does not, as shipped, exercise
+ * `adminAction`, and that was discovered the only way such a thing can be:
+ * Stage 2 deleted the `is_admin()` check from `adminAction`, rebuilt, and ran
+ * this gate, which reported *127 passed, 0 failed*.
+ *
+ * The cause is that the proxy 404s `/admin/*` for a non-admin, so the worker
+ * never loads, so the action id is never registered, so the POST dies at
+ * `x-nextjs-action-not-found` without touching application code. No admin
+ * action is registered on a route a non-admin can load — 0 of 60, checked
+ * against the server reference manifest — so there is no HTTP vector past that
+ * proxy. The layer tally printed at the end of every run makes this visible
+ * instead of leaving it to a comment.
+ *
+ * With the proxy's hiding disabled, this gate produced **122 holes** against
+ * the removed guard and **0** against the restored one, so it discriminates
+ * perfectly once requests can reach the action. The two-layer procedure is in
+ * docs/staging.md §4.4 and is the way to re-prove `adminAction` deliberately.
+ *
  * ## What counts as a refusal, and what counts as a hole
  *
  * A refusal is any response that did **not** run the admin action: a 404
- * (middleware hid the /admin route), an empty `{}` (the action id was not
+ * (the proxy hid the /admin route), an empty `{}` (the action id was not
  * registered on the posted route and the forward failed), or a flight body
  * carrying `"reason":"forbidden"` (the action ran but `adminAction` refused).
+ * `classify()` keeps those two cases apart rather than merging them.
  *
  * A **hole** is a response that shows the action *executed* for a non-admin:
  * `"ok":true`, or `"reason":"invalid"` / `"reason":"conflict"` — because those
@@ -60,33 +81,40 @@
  * *shape* still exposes the bypass.
  */
 
-// clients first, before any other import and before anything reads
-// process.env: importing it repoints this process at staging and refuses to
-// run against production. This file used to read .env.local itself and
-// therefore built its accounts and admin promotions on the LIVE shop while
-// the app under test pointed at staging — found in Batch 3, the exact
-// near-miss clients.ts exists to stop. See the batch 3 report.
-import "./clients";
+/*
+  `./fixtures`, not `./clients`, and that is a fix rather than a tidy-up.
+
+  This file used to import `./clients` for its side effect, with a comment
+  saying that doing so "repoints this process at staging and refuses to run
+  against production." Half of that was true. `clients.ts` repoints; it does not
+  refuse. The refusal lives in `fixtures.ts`, which calls `assertNotProduction`
+  at module scope — and this harness did not import it.
+
+  So with `AUDIT_TARGET=env-local`, or on any checkout where `SUPABASE_STAGE_*`
+  is unset and resolution falls back to `.env.local`, this file would have
+  created accounts and promoted one of them to **admin** on the live shop, with
+  nothing raising an objection. It satisfied `audit:fixtures-guard` the whole
+  time, because that gate asked whether a harness imports the chokepoint rather
+  than whether it is actually guarded.
+
+  Importing `./fixtures` is the instance fix. The class fix is in `clients.ts`,
+  where the client factories themselves now refuse, and in `fixtures-guard.ts`,
+  which now proves that rather than proving an import exists.
+*/
+import {
+  adminClient,
+  anonKey,
+  createAccount,
+  supabaseUrl,
+} from "./fixtures";
 
 import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 
-import { createClient } from "@supabase/supabase-js";
 import { createServerClient } from "@supabase/ssr";
 
-import type { Database } from "../../src/lib/database.types";
-
-for (const line of readFileSync(".env.local", "utf8").split("\n")) {
-  const match = /^([A-Z0-9_]+)=(.*)$/.exec(line.trim());
-  if (match && !process.env[match[1]]) process.env[match[1]] = match[2];
-}
-
-const URL_ = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-const SERVICE = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const BASE = process.env.AUDIT_BASE_URL ?? "http://localhost:3210";
 const ORIGIN = new URL(BASE).origin;
-const PASSWORD = "correct-horse-battery-staple-42";
 /** Teardown sweeps this. Mirrored into scripts/audit/teardown.ts. */
 const PREFIX = "fv-secact.";
 
@@ -110,25 +138,26 @@ function check(label: string, held: boolean, detail = "") {
   }
 }
 
-const admin = createClient<Database>(URL_, SERVICE, {
-  auth: { persistSession: false, autoRefreshToken: false },
-});
+const admin = adminClient();
 const madeUsers: string[] = [];
 
+/**
+ * A probe identity with a real session.
+ *
+ * Delegates to the shared `createAccount`, which mints through the service-role
+ * admin API rather than `signUp`. This harness used to roll its own sign-up —
+ * one of eight copies of the same twelve lines across `scripts/audit/`, all of
+ * which stopped working on the day staging disabled email signups.
+ */
 async function makeAccount(
   label: string,
 ): Promise<{ userId: string; cookie: string; token: string }> {
-  const email = `${PREFIX}${label}.${Date.now().toString(36)}@example.com`;
-  const anon = createClient<Database>(URL_, ANON, {
-    auth: { persistSession: false },
-  });
-  const { data, error } = await anon.auth.signUp({ email, password: PASSWORD });
-  if (error || !data.session) throw new Error(`sign-up: ${error?.message}`);
-  madeUsers.push(data.session.user.id);
+  const account = await createAccount(label, { prefix: PREFIX });
+  madeUsers.push(account.userId);
   return {
-    userId: data.session.user.id,
-    token: data.session.access_token,
-    cookie: await cookieHeader(data.session),
+    userId: account.userId,
+    token: account.session.access_token,
+    cookie: await cookieHeader(account.session),
   };
 }
 
@@ -138,7 +167,7 @@ async function cookieHeader(session: {
   refresh_token: string;
 }): Promise<string> {
   const jar = new Map<string, string>();
-  const client = createServerClient(URL_, ANON, {
+  const client = createServerClient(supabaseUrl(), anonKey(), {
     cookies: {
       getAll: () => [...jar].map(([name, value]) => ({ name, value })),
       setAll: (list) => list.forEach((e) => jar.set(e.name, e.value)),
@@ -258,15 +287,65 @@ async function postAction(
   };
 }
 
+/**
+ * Which layer stopped this request — not merely whether something did.
+ *
+ * ## Why this distinction is the whole point, and why it was missing
+ *
+ * This gate used to answer one question: "did the admin action run?" Anything
+ * that was not a success counted as "the guard held". That reading is wrong,
+ * and Stage 2 proved it wrong by experiment: `adminAction`'s `is_admin()` check
+ * was **deleted**, the tree rebuilt, and this gate still reported *127 passed,
+ * 0 failed*. A gate that cannot notice the removal of the thing it is named
+ * after is not yet a gate.
+ *
+ * The reason is that two different layers refuse, and they are not
+ * interchangeable:
+ *
+ *   - **route-hidden** — the proxy (`src/lib/supabase/proxy.ts`) 404s `/admin/*`
+ *     for a non-admin, so the route's worker never loads, so the action id is
+ *     never registered, so Next answers `x-nextjs-action-not-found`. The
+ *     request never reaches application code at all.
+ *   - **guard-refused** — the request *did* reach `adminAction`, which returned
+ *     `reason:"forbidden"`. This is the layer this file is named for.
+ *
+ * Under the shipped configuration every customer and anonymous refusal is
+ * `route-hidden`, because no admin action is registered on a route a non-admin
+ * can load (verified: 0 of 60). That is genuinely good defence — but it means
+ * this gate is currently blind to `adminAction`, and saying so on every run is
+ * better than a comment claiming coverage it does not have.
+ *
+ * With the proxy's hiding disabled, the same run produced **122 holes** against
+ * the removed guard and **0** against the restored one, so the discrimination is
+ * real — it is the proxy in front that keeps it from being exercised. The
+ * procedure is in docs/staging.md §4.4.
+ */
+type RefusalKind = "ran" | "guard-refused" | "route-hidden" | "unattributed";
+
+function classify(o: Outcome): RefusalKind {
+  // Ran to completion, or reached the work function past the guard. Both mean
+  // the action executed for this caller.
+  if (o.succeeded) return "ran";
+  if (/"reason"\s*:\s*"(invalid|conflict)"/.test(o.body) && !o.forbidden)
+    return "ran";
+  if (o.forbidden) return "guard-refused";
+  if (o.notFoundHeader || o.status === 404 || o.body.trim() === "{}")
+    return "route-hidden";
+  return "unattributed";
+}
+
 /** A response that did NOT execute the admin action for this caller. */
 function isRefusal(o: Outcome): boolean {
-  if (o.succeeded) return false; // ran and returned a result
-  if (o.forbidden) return true; // ran, adminAction said no — a refusal
-  // "invalid"/"conflict" without forbidden means the work fn ran => NOT a refusal
-  if (/"reason"\s*:\s*"(invalid|conflict)"/.test(o.body)) return false;
-  // 404 (middleware), empty {} (forward failed / not-found), or empty body
-  return true;
+  return classify(o) !== "ran";
 }
+
+/** Tally of which layer did the refusing, printed at the end of the run. */
+const layers: Record<RefusalKind, number> = {
+  ran: 0,
+  "guard-refused": 0,
+  "route-hidden": 0,
+  unattributed: 0,
+};
 
 async function main() {
   console.log(`\nForging Server Action posts against ${BASE}`);
@@ -381,6 +460,7 @@ async function main() {
   section("2 · A signed-in customer: every admin action refuses");
   for (const t of targets) {
     const o = await postAction(t.route, t.id, "[{}]", customer.cookie);
+    layers[classify(o)] += 1;
     check(
       `${t.name} refuses a customer`,
       isRefusal(o),
@@ -392,6 +472,7 @@ async function main() {
   section("3 · No session: every admin action refuses");
   for (const t of targets) {
     const o = await postAction(t.route, t.id, "[{}]", null);
+    layers[classify(o)] += 1;
     check(
       `${t.name} refuses an anonymous caller`,
       isRefusal(o),
@@ -433,6 +514,28 @@ async function main() {
       "the probed order still has a status (untouched by the forged posts)",
       Boolean(after?.status),
       `status=${after?.status}`,
+    );
+  }
+
+  /* ═══ 6 · which layer actually refused ══════════════════════════════════ */
+  section("6 · Which layer refused");
+  console.log(
+    `    route-hidden ${layers["route-hidden"]}   ` +
+      `guard-refused ${layers["guard-refused"]}   ` +
+      `ran ${layers.ran}   unattributed ${layers.unattributed}`,
+  );
+  check(
+    "every refusal is attributable to a named layer",
+    layers.unattributed === 0,
+    `${layers.unattributed} responses matched neither the proxy's 404 nor adminAction's forbidden`,
+  );
+  if (layers["guard-refused"] === 0) {
+    console.log(
+      "    \x1b[33mnote\x1b[0m adminAction was not exercised by this run — the proxy\n" +
+        "         hid every /admin route first, so the POSTs never reached it.\n" +
+        "         That is the shipped configuration and it is good defence, but\n" +
+        "         it means this run says nothing about the guard. See the\n" +
+        "         two-layer procedure in docs/staging.md §4.4.",
     );
   }
 

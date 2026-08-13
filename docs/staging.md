@@ -57,21 +57,34 @@ and `SUPABASE_SERVICE_ROLE_KEY`. That is not tidiness: several harnesses parse
 the write-back a run that imported `adminClient()` _and_ read
 `process.env.NEXT_PUBLIC_SUPABASE_URL` would talk to two databases at once.
 
-### The one setting the two projects deliberately disagree on
+### Email signup is OFF in both projects (it used to differ)
 
-**Email signup is OFF in production and ON in staging**, and that is not
-drift. Production's only door is Google (`external.email = false`, closed by
-the owner on 2026-08-11 — Phase 11 finding 11D.1: with email+autoconfirm on,
-anyone holding the public anon key could mint confirmed accounts against
-addresses they do not own, which makes every per-account loyalty grant free
-to farm). Staging keeps the email provider on because `scripts/audit/
-fixtures.ts` signs up its QA accounts with email and password, and every
-browser gate in the suite builds on those fixtures. Staging is a database no
-customer can reach, so the door costs nothing there.
+Production's only door is Google (`external.email = false`, closed by the owner
+on 2026-08-11 — Phase 11 finding 11D.1: with email+autoconfirm on, anyone
+holding the public anon key could mint confirmed accounts against addresses
+they do not own, which makes every per-account loyalty grant free to farm).
 
-`npm run audit:signup-closed` asserts both halves on every suite run: if
-production's door reopens, or staging's closes, the gate names which — before
-ten minutes of Playwright fail for a reason that looks like a defect.
+**Staging used to keep the email provider ON, deliberately**, because
+`scripts/audit/fixtures.ts` signed its QA accounts up with email and password
+and every browser gate built on those fixtures. That divergence is gone, and
+its removal is worth reading as a lesson rather than a cleanup.
+
+When staging's signup was correctly turned off, eight harnesses died at once
+with "Email signups are disabled" — six of them live gates in `run-all`
+(`audit:auth`, `audit:cart`, `audit:signedin`, `audit:checkout`, `audit:admin`,
+`audit:security-advance`) plus the two security gates. And `audit:signup-closed`
+*failed on the staging half*, meaning the suite contained a gate asserting that
+a security control must stay disabled. A test that pins a door open because the
+harness walks through it will go dark every time somebody does the right thing,
+and it makes the right thing look like a regression.
+
+So the harnesses stopped using the door. `scripts/audit/accounts.ts` mints
+accounts through the service-role admin API — `auth.admin.createUser`, then
+`auth.admin.generateLink`, then `verifyOtp` for a genuine session — which works
+with signup **and** email login disabled. Staging is now closed to match
+production, and `npm run audit:signup-closed` asserts the same thing about both.
+
+If production's door reopens, or staging's does, the gate names which.
 
 ### Checking which database you are about to measure
 
@@ -263,10 +276,54 @@ trigger is different: the suite runs *before a merge is considered*; this runs
 *before the merge happens*, because merging to main is deploying. In order:
 
 1. `npm run audit` — the full suite, green, against staging.
-2. `npm run audit:build-smoke` — the outage drill, a real production build
+2. `npm run audit:actions` — the forged Server Action gate. It needs a built
+   artifact rather than the suite's dev server, so it runs here:
+
+   ```
+   npm run build:stage
+   npm run start:stage        # :3210, serving the build, pointed at staging
+   npm run audit:actions      # in another shell
+   ```
+
+   It posts a forged `Next-Action` payload at all 60 admin actions as a
+   customer, as an anonymous caller, and through the forward path, and it
+   opens with a **positive control** — a real admin eliciting `ok:true`. Read
+   that control first. If it is red, every refusal underneath it means "the
+   request never reached the action" rather than "the guard held", and the run
+   proves nothing. That is exactly what happens against `dev:stage`, which is
+   why this step builds first.
+
+   Read section 6 second. It names which layer refused, and under the shipped
+   configuration the answer is `route-hidden 120, guard-refused 0` — the proxy
+   404s `/admin/*` before the POST reaches `adminAction`. **This gate therefore
+   does not exercise `adminAction` on its own**, which was found by deleting
+   that guard, rebuilding, and watching the gate report 127 passed. Nothing is
+   wrong with the shop — no admin action is registered on a route a non-admin
+   can load (0 of 60) — but the coverage claim has to be honest.
+
+#### Re-proving the second layer, deliberately
+
+`adminAction` is proved by temporarily removing the proxy's route hiding, so
+the forged POSTs actually arrive. Do this on staging only, and revert both
+edits before committing anything:
+
+1. In `src/lib/supabase/proxy.ts`, make the `ADMIN_PREFIX` branch fall through
+   instead of returning `notFound(...)`.
+2. `npm run build:stage && npm run start:stage`, then `npm run audit:actions`.
+   Expect **0 holes** and section 6 reading `guard-refused 120` — the requests
+   now reach `adminAction` and it refuses them.
+3. To confirm the gate can fail, also delete the `if (!actor)` early return in
+   `src/lib/admin/guard.ts`, rebuild, and re-run. Expect **122 holes**, each
+   showing `"reason":"invalid"` — a customer reaching the Zod line, which is
+   only reachable past `is_admin()`.
+4. `git checkout src/lib/supabase/proxy.ts src/lib/admin/guard.ts`, rebuild,
+   and confirm the gate is green again.
+
+Measured 2026-08-13: 122 holes with the guard removed, 0 with it restored.
+3. `npm run audit:build-smoke` — the outage drill, a real production build
    against live data, the manifest assertion, the served smoke. Green.
-3. Merge to main. Vercel deploys.
-4. Verify the deploy is *serving*, not merely READY — fetch an identifier that
+4. Merge to main. Vercel deploys.
+5. Verify the deploy is *serving*, not merely READY — fetch an identifier that
    exists only in the new tree, against `www`, not the apex
    (docs/admin-guide.md has the procedure).
 

@@ -42,6 +42,11 @@ import { variantsFor } from "../seed";
 // legitimately useful pointed at the live shop: it only ever deletes, and only
 // rows carrying `QA_EMAIL_PREFIX`. It is how you clean up if that guard arrived
 // a day too late.
+//
+// The factories now refuse production unless the call says otherwise, so the
+// two `adminClient` calls below pass `allowProduction: true`. That is the whole
+// exemption, and it is visible at both call sites rather than inferred from
+// this comment.
 import { adminClient, isProductionUrl, supabaseUrl } from "./clients";
 
 /**
@@ -122,7 +127,7 @@ function seedStock(): Map<string, number> {
  * already bought".
  */
 async function reconcileStock(dryRun: boolean): Promise<number> {
-  const admin = adminClient();
+  const admin = adminClient({ allowProduction: true });
   const expected = seedStock();
 
   const { data: held, error: heldError } = await admin
@@ -227,7 +232,7 @@ async function reconcileStock(dryRun: boolean): Promise<number> {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
-  const admin = adminClient();
+  const admin = adminClient({ allowProduction: true });
   const mode = args.dryRun
     ? "DRY RUN — nothing will be deleted"
     : "LIVE — rows will be deleted";
