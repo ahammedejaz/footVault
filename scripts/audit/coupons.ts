@@ -29,6 +29,12 @@ import { randomUUID } from "node:crypto";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 import type { Database } from "../../src/lib/database.types";
+import {
+  removeWitness,
+  renderVerdict,
+  unreadableBy,
+  type Witness,
+} from "./refusal";
 import { createAccount } from "./fixtures";
 
 const URL_ = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -717,41 +723,107 @@ async function main() {
     /* ── 8 · nobody outside the panel can read any of it ──────────────────── */
     console.log("\n8 · coupons are unreadable to customers and guests");
 
+    /*
+      `error !== null || rows === 0` was the assertion for all six of these, and
+      it is vacuous twice over: any error at all satisfied the first half, and
+      all three tables are empty at rest so the second half was `0 === 0`. Both
+      `coupons` and `coupon_customers` grant SELECT *and INSERT* to
+      `authenticated`, so RLS is the only thing standing between a signed-in
+      customer and the unissued discount codes — precisely the control the old
+      check could not see. Disabling it left the gate green.
+
+      Each read now names `rls-read`, and carries a witness so the assertion has
+      a row to be about even when this suite's own fixtures have been cleaned up
+      or the section is run against a fresh database.
+    */
     const anon = createClient<Database>(URL_, ANON, {
       auth: { persistSession: false },
     });
-    for (const table of [
-      "coupons",
-      "coupon_customers",
-      "coupon_redemptions",
-    ] as const) {
-      const { data, error } = await anon.from(table).select("*").limit(1);
-      check(
-        `anon reads nothing from ${table}`,
-        error !== null || (data ?? []).length === 0,
-        error?.message ?? `${(data ?? []).length} rows`,
-      );
-    }
     const memberClient = createClient<Database>(URL_, ANON, {
       auth: { persistSession: false },
       global: {
         headers: { Authorization: `Bearer ${member.session.access_token}` },
       },
     });
-    for (const table of [
-      "coupons",
-      "coupon_customers",
-      "coupon_redemptions",
+
+    const stamp = Date.now().toString(36);
+
+    /** A coupon nobody was issued, which is exactly what must not leak. */
+    const witnessCoupon: Witness = async (a) => {
+      const { data, error } = await a
+        .from("coupons")
+        .insert({
+          code: `FV-WITNESS-${stamp}`.toUpperCase(),
+          type: "percent",
+          value: 5,
+        })
+        .select("id")
+        .single();
+      if (error || !data) return null;
+      return async () => {
+        await removeWitness("coupons", a.from("coupons").delete().eq("id", data.id));
+      };
+    };
+
+    /**
+     * An issue-list row naming somebody else. Chained off its own coupon so the
+     * foreign key has something to point at, and torn down in reverse.
+     */
+    const witnessCouponCustomer: Witness = async (a) => {
+      const { data: coupon, error: couponError } = await a
+        .from("coupons")
+        .insert({
+          code: `FV-WITNESS-CC-${stamp}`.toUpperCase(),
+          type: "percent",
+          value: 5,
+        })
+        .select("id")
+        .single();
+      if (couponError || !coupon) return null;
+      const { data, error } = await a
+        .from("coupon_customers")
+        // Issued to the *outsider*, so for the member caller this row is
+        // definitively somebody else's — the case RLS has to get right.
+        .insert({ coupon_id: coupon.id, user_id: outsider.userId })
+        .select("coupon_id")
+        .single();
+      if (error || !data) {
+        await removeWitness("coupons", a.from("coupons").delete().eq("id", coupon.id));
+        return null;
+      }
+      return async () => {
+        await removeWitness(
+          "coupon_customers",
+          a.from("coupon_customers").delete().eq("coupon_id", coupon.id),
+        );
+        await removeWitness("coupons", a.from("coupons").delete().eq("id", coupon.id));
+      };
+    };
+
+    for (const [who, caller] of [
+      ["anon", anon],
+      ["a signed-in customer", memberClient],
     ] as const) {
-      const { data, error } = await memberClient
-        .from(table)
-        .select("*")
-        .limit(1);
-      check(
-        `a signed-in customer reads nothing from ${table}`,
-        error !== null || (data ?? []).length === 0,
-        error?.message ?? `${(data ?? []).length} rows`,
-      );
+      for (const [table, witness] of [
+        ["coupons", witnessCoupon],
+        ["coupon_customers", witnessCouponCustomer],
+        // `coupon_redemptions` needs a real order and a real redemption to
+        // exist; this suite has made both by the time it gets here, so it is
+        // provable without planting anything. If it ever is not, the check says
+        // UNPROVABLE rather than passing on an empty table.
+        ["coupon_redemptions", undefined],
+      ] as const) {
+        const rendered = renderVerdict(
+          await unreadableBy({
+            admin,
+            caller,
+            table,
+            expect: ["rls-read"],
+            witness,
+          }),
+        );
+        check(`${who} reads nothing from ${table}`, rendered.ok, rendered.detail);
+      }
     }
   } finally {
     /* ── cleanup ──────────────────────────────────────────────────────────── */

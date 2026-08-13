@@ -72,8 +72,8 @@ import { createAdminClient } from "@/lib/supabase/admin";
  * adversarial review filed it as the phase's one high-severity finding. What
  * closes it is `public.release_abandoned_orders()`, run every ten minutes by
  * `pg_cron` job 1, which cancels and restocks anything still unpaid after
- * thirty minutes and skips any order with an authorised-but-unsettled payment.
- * See `supabase/migrations/20260808100000_release_abandoned_orders.sql`.
+ * ten minutes and skips any order with an authorised-but-unsettled payment.
+ * See `supabase/migrations/20260813150000_shorten_abandoned_order_window.sql`.
  *
  * **An underpaid capture does not confirm the order** — where "underpaid" means
  * short of what was owed *online*, which for a Pay-on-Delivery order is the

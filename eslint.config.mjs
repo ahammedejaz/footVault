@@ -4,6 +4,7 @@ import nextTs from "eslint-config-next/typescript";
 
 import adminActionsMustGuard from "./eslint-rules/admin-actions-must-guard.mjs";
 import noDerivedMoneyLine from "./eslint-rules/no-derived-money-line.mjs";
+import noVacuousRefusalAssertion from "./eslint-rules/no-vacuous-refusal-assertion.mjs";
 import noUncheckedSupabaseError from "./eslint-rules/no-unchecked-supabase-error.mjs";
 import noHardcodedFontSize from "./eslint-rules/no-off-scale-type.mjs";
 
@@ -17,6 +18,11 @@ import noHardcodedFontSize from "./eslint-rules/no-off-scale-type.mjs";
  *  - no-off-scale-type: docs/design-system.md fixes the type scale at seven
  *    steps. Tailwind ships more, and one `text-3xl` is all it takes for the
  *    scale to stop being a scale.
+ *  - no-vacuous-refusal-assertion: `error !== null` in an audit gate is
+ *    satisfied by a missing grant, an RLS policy, an application check and a
+ *    PGRST202 signature miss alike — and the last of those means nothing
+ *    refused at all. Three gates were passing that way; this makes the fourth
+ *    a build failure. See scripts/audit/refusal.ts.
  *  - admin-actions-must-guard: a Server Action's endpoint id ships in the
  *    browser bundle, so an unguarded admin action is a public endpoint that
  *    reads like private code. Phase 6 added the panel; this makes forgetting
@@ -34,6 +40,7 @@ const eslintConfig = defineConfig([
           "no-off-scale-type": noHardcodedFontSize,
           "admin-actions-must-guard": adminActionsMustGuard,
           "no-derived-money-line": noDerivedMoneyLine,
+          "no-vacuous-refusal-assertion": noVacuousRefusalAssertion,
         },
       },
     },
@@ -42,6 +49,7 @@ const eslintConfig = defineConfig([
       "footvault/no-off-scale-type": "error",
       "footvault/admin-actions-must-guard": "error",
       "footvault/no-derived-money-line": "error",
+      "footvault/no-vacuous-refusal-assertion": "error",
     },
   },
 

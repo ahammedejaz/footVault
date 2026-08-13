@@ -6,9 +6,15 @@
  * httpOnly cookie, and forwards it to PostgREST as a request header;
  * `public.current_guest_token()` reads it back out inside the cart policies.
  *
- * httpOnly matters: the token is a bearer credential for one cart, with the
- * same security properties as a session cookie. Client JavaScript never sees
- * it, so an XSS bug cannot walk off with somebody's bag.
+ * httpOnly matters: the token is a bearer credential for one cart. Client
+ * JavaScript never sees it, so an XSS bug cannot walk off with somebody's bag.
+ *
+ * This used to read "with the same security properties as a session cookie",
+ * which is false and false in the flattering direction. The Supabase session
+ * cookie is **not** httpOnly and cannot be — `@supabase/ssr`'s browser client
+ * reads it from `document.cookie`, and four admin upload panels depend on that.
+ * The bag is the better-protected of the two. See
+ * `src/lib/supabase/cookie-options.ts`.
  *
  * This module is shared by the middleware, the server client and the cart
  * actions, so the cookie name and the header name are defined once.

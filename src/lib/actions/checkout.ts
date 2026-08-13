@@ -124,7 +124,7 @@ export async function placeOrder(
      * Ten a minute. A customer who is genuinely retrying a failed card sits far
      * under it; a script trying to exhaust stock by placing and abandoning
      * orders sits far over. The abandoned-order sweep already gives that stock
-     * back after thirty minutes, so this narrows a window rather than closing a
+     * back after ten minutes, so this narrows a window rather than closing a
      * hole — E-1 was the hole and it is fixed.
      */
     const throttle = await consumeRateLimit(
@@ -342,7 +342,7 @@ export async function placeOrder(
      * this phase removes, so both methods start `pending` and the webhook is
      * the only thing allowed to confirm either of them. That also means the
      * existing abandoned-order sweep covers Pay on Delivery for free — a
-     * customer who dismisses the modal releases their stock in thirty minutes
+     * customer who dismisses the modal releases their stock in ten minutes
      * rather than holding it forever.
      */
     const initialStatus: OrderStatus = "pending";

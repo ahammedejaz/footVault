@@ -5,6 +5,7 @@ import { createServerClient } from "@supabase/ssr";
 
 import type { Database } from "@/lib/database.types";
 import { SUPABASE_ANON_KEY, SUPABASE_URL } from "@/lib/env";
+import { AUTH_COOKIE_OPTIONS } from "@/lib/supabase/cookie-options";
 import { GUEST_TOKEN_COOKIE, GUEST_TOKEN_HEADER } from "@/lib/guest-token";
 
 /**
@@ -22,6 +23,11 @@ export async function createClient() {
   const guestToken = cookieStore.get(GUEST_TOKEN_COOKIE)?.value;
 
   return createServerClient<Database>(SUPABASE_URL(), SUPABASE_ANON_KEY(), {
+    // Stated here as well as in proxy.ts because a Route Handler writes the
+    // session too — /auth/callback exchanges the OAuth code and sets the
+    // cookie from this client, so a `Secure` set only in the proxy would leave
+    // the *first* cookie of every session without it. See cookie-options.ts.
+    cookieOptions: AUTH_COOKIE_OPTIONS,
     cookies: {
       getAll() {
         return cookieStore.getAll();

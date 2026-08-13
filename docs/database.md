@@ -409,7 +409,7 @@ none of that touches.
 | `assert_cart_stock(uuid)` | invoker | **service_role only** | Locks every variant in the cart `FOR UPDATE` in id order and raises `OSTCK` with an `OutOfStockItem[]` json DETAIL. The lock only means anything inside the caller's transaction |
 | `create_order_with_stock(...)` | invoker | **service_role only** | The one checkout transaction. Takes no *item* price as an argument; the delivery total, the free-above threshold and the advance go in and are clamped. Raises `MTCRT`, `CNVRT`, `OSTCK` |
 | `cancel_order_with_restock(...)` | invoker | **service_role only** | Cancels and returns the units exactly once, guarded by `orders.stock_restored_at`. Returns a word — `cancelled`, `already_cancelled`, `already_paid`, `illegal_transition`, `not_found` — rather than raising, because every caller has to tell those apart |
-| `release_abandoned_orders(int)` | invoker | **service_role only** | The sweep. Default cutoff 30 minutes, bounded at 500 rows, skips anything with money in flight. Run by `pg_cron` as the job's owner |
+| `release_abandoned_orders(int)` | invoker | **service_role only** | The sweep. Default cutoff 10 minutes (30 until 2026-08-13), bounded at 500 rows, skips anything with money in flight. Run by `pg_cron` as the job's owner |
 | `merge_guest_cart(text, int)` | invoker | **authenticated only** | The bag merge, in one transaction. Invoker is correct: RLS already shows the `/auth/callback` client both bags |
 | `adopt_guest_orders()` | **definer** | authenticated, service_role | Moves the caller's guest orders onto their account. Takes **no arguments** — see below |
 | **Phase 6** | | | |

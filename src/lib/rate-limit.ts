@@ -37,6 +37,55 @@ import { createAdminClient } from "@/lib/supabase/admin";
  * The numbers are deliberately generous. A limiter tuned tight enough to be
  * interesting is a limiter that eventually rejects a real customer on a hotel
  * wifi behind one NAT, and that costs a sale to prevent an inconvenience.
+ *
+ * ## Why these are constants and not rows in `site_settings`
+ *
+ * **Decided 2026-08-13. Settled, not pending — please do not reopen it without
+ * a new fact.** The Stage 1 security brief asked for "configurable" thresholds
+ * and the audit flagged this literal as not meeting that word. It was raised,
+ * considered, and declined, and this paragraph exists so the next reader finds
+ * the reasoning attached to the code rather than re-deriving it.
+ *
+ * Making a number editable means reading it at the moment it is used. Every
+ * policy below sits on a *limited path* — that is what makes it a policy — so
+ * moving them into the database adds **a database read to every request the
+ * limiter guards**, including the webhook, checkout, and a keystroke-cadence
+ * search endpoint. The limiter already costs one round trip
+ * (`consume_rate_limit`); this would make it two, on the paths least able to
+ * afford it, and the second one would sit in front of the first.
+ *
+ * What that buys is the ability to change a number without a deploy. The shop
+ * has one operator, deploys take a couple of minutes, and no threshold here has
+ * ever been changed in an incident — the numbers are sized against what a
+ * *person* can physically do (see each comment below), which does not move.
+ * Paying a permanent per-request cost for an operation nobody performs is the
+ * wrong trade, and it is wrong in the direction that hurts customers rather
+ * than the direction that hurts the owner.
+ *
+ * The secondary costs are real too and were part of the decision:
+ *
+ *   - **A new validation surface.** A limit read from a row can be absent,
+ *     null, a string, negative, or zero. Zero is the interesting one: it blocks
+ *     the path entirely, which turns a settings typo into an outage on
+ *     checkout. Today `as const satisfies` makes a malformed policy a
+ *     *compile* error.
+ *   - **A new failure mode on a component that must fail open.** This module
+ *     is explicitly not load-bearing for security and returns
+ *     `ALLOWED_ON_ERROR` when its counter is unreadable. A configuration read
+ *     that fails has to fail open too — at which point the limit is whatever
+ *     the fallback constant says, and the constant is back, now with a second
+ *     copy that can disagree with the row.
+ *   - **The rationale would drift from the number.** Every policy below is
+ *     commented with what it is sized against. Move the value into a row and
+ *     the comment describes a figure that is no longer there, which is the
+ *     failure this file just had in a smaller form — three doc blocks sitting
+ *     above the wrong keys, making the one table somebody reads during an
+ *     incident actively misleading.
+ *
+ * If a threshold ever does need to move at runtime, the cheap version is a
+ * per-policy environment variable read at module load — no per-request cost, no
+ * row to validate — and that can be added for the one policy that needs it
+ * rather than for all seventeen. Nothing here has needed it yet.
  */
 export const RATE_LIMITS = {
   /**
@@ -73,14 +122,28 @@ export const RATE_LIMITS = {
    */
   serviceability: [60, 60],
   /**
-   * How often one *distinct* server error may email the owner.
+   * Turning one uploaded photograph into the catalogue's four sizes.
    *
-   * Three an hour per fingerprint. The thing being defended against is not an
-   * attacker, it is a broken deploy: one failing page, crawled or refreshed,
-   * produces the same error thousands of times, and an inbox with four
-   * thousand identical messages in it is indistinguishable from an inbox with
-   * none. Three is enough to notice and to see it is still happening.
+   * Its own policy rather than `adminBulk` (20/min), because the two are sized
+   * against different things. `adminBulk` bounds *whole-table writes* — a bulk
+   * activate touches every product and twenty a minute is generous. This bounds
+   * a single admin working through a shoebox: two shots per product across
+   * thirty-five products is seventy calls in one sitting, and the panel is
+   * one-photograph-at-a-time with a description typed for each, so the honest
+   * ceiling is however fast a person can work rather than however fast a script
+   * can loop.
+   *
+   * A hundred and twenty a minute is far above the first and still bounds a
+   * stuck client, which is the actual failure this guards: normalisation is
+   * several seconds of server CPU per call, so a retry loop is expensive in a
+   * way that a misplaced click is not.
+   *
+   * It matters that this is generous because of *how* it fails. A throttled
+   * upload mid-session does not read as "slow down"; it reads as the site
+   * breaking, in the middle of the one task standing between this shop and
+   * opening.
    */
+  imageProcessing: [120, 60],
   /**
    * Writing to a bag. The one limit here that guards *row creation* by an
    * unauthenticated caller.
@@ -105,29 +168,6 @@ export const RATE_LIMITS = {
    * checkout. What it stops is one source turning an afternoon into a million
    * rows.
    */
-  /**
-   * Turning one uploaded photograph into the catalogue's four sizes.
-   *
-   * Its own policy rather than `adminBulk` (20/min), because the two are sized
-   * against different things. `adminBulk` bounds *whole-table writes* — a bulk
-   * activate touches every product and twenty a minute is generous. This bounds
-   * a single admin working through a shoebox: two shots per product across
-   * thirty-five products is seventy calls in one sitting, and the panel is
-   * one-photograph-at-a-time with a description typed for each, so the honest
-   * ceiling is however fast a person can work rather than however fast a script
-   * can loop.
-   *
-   * A hundred and twenty a minute is far above the first and still bounds a
-   * stuck client, which is the actual failure this guards: normalisation is
-   * several seconds of server CPU per call, so a retry loop is expensive in a
-   * way that a misplaced click is not.
-   *
-   * It matters that this is generous because of *how* it fails. A throttled
-   * upload mid-session does not read as "slow down"; it reads as the site
-   * breaking, in the middle of the one task standing between this shop and
-   * opening.
-   */
-  imageProcessing: [120, 60],
   cartWrite: [90, 60],
   /**
    * Type-ahead search — the only public GET that reaches the database on a
@@ -191,6 +231,15 @@ export const RATE_LIMITS = {
    * review in one minute of sincere use.
    */
   reviewWrite: [5, 60],
+  /**
+   * How often one *distinct* server error may email the owner.
+   *
+   * Three an hour per fingerprint. The thing being defended against is not an
+   * attacker, it is a broken deploy: one failing page, crawled or refreshed,
+   * produces the same error thousands of times, and an inbox with four
+   * thousand identical messages in it is indistinguishable from an inbox with
+   * none. Three is enough to notice and to see it is still happening.
+   */
   errorReport: [3, 3600],
   /**
    * And a ceiling across *all* fingerprints, because the per-fingerprint limit
@@ -199,6 +248,48 @@ export const RATE_LIMITS = {
    * attempt. Twenty an hour total; past that the log is the record.
    */
   errorReportTotal: [20, 3600],
+  /**
+   * CSP violation reports, per fingerprint.
+   *
+   * ## Why these are their own policies and not `errorReport`
+   *
+   * They very nearly were. The reason they are not is the sentence at the top
+   * of this table: **the name is the first half of the bucket key.** Sharing
+   * `errorReportTotal` would put CSP reports and real server errors in one
+   * twenty-an-hour budget, and a CSP header applies to *every page view* while
+   * a server error needs something to be broken. A noisy afternoon of
+   * violations would spend the ceiling, and the next genuine 500 — a checkout
+   * throwing, the exact thing the reporter exists for — would be silently
+   * suppressed by a policy about stylesheets.
+   *
+   * A limiter starving the alarm it shares a budget with is the failure that
+   * looks like everything working.
+   *
+   * Two an hour per fingerprint, which is a directive plus a blocked origin
+   * (see `csp-classify.ts`) — not per page, or one missing directive would
+   * report once per product slug. Two is enough to see it and to see it is not
+   * a one-off.
+   */
+  cspReport: [2, 3600],
+  /**
+   * And a ceiling across all fingerprints. Lower than `errorReportTotal`
+   * because the input is unbounded in a way server errors are not: this is a
+   * public POST endpoint that any browser on the internet can aim at, and the
+   * report volume scales with traffic rather than with breakage. Past this the
+   * log is the record — which for a Report-Only bake is the thing being read
+   * anyway.
+   */
+  cspReportTotal: [12, 3600],
+  /**
+   * A ceiling on the endpoint itself, per IP, before anything is parsed.
+   *
+   * The two above are per-*violation* and are spent after the body has been
+   * read and classified. This one is spent first and exists to stop a script
+   * POSTing megabytes at a route that is, by design, unauthenticated and
+   * public. Generous, because a real browser reporting a genuinely broken page
+   * can legitimately fire several times in quick succession.
+   */
+  cspReportIngest: [60, 60],
 } as const satisfies Record<
   string,
   readonly [limit: number, windowSeconds: number]

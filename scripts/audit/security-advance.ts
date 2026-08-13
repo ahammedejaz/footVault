@@ -21,25 +21,26 @@
  */
 
 import { adminClient, anonClient, createAccount } from "./fixtures";
+import {
+  gate,
+  refusedBy,
+  removeWitness,
+  unchangedBy,
+  unreadableBy,
+} from "./refusal";
 
-let held = 0;
-let holes = 0;
-const found: string[] = [];
-
-function section(title: string) {
-  console.log(`\n\x1b[1m${title}\x1b[0m`);
-}
-
-function check(label: string, blocked: boolean, detail = "") {
-  if (blocked) {
-    held += 1;
-    console.log(`  \x1b[32m✓\x1b[0m ${label}`);
-  } else {
-    holes += 1;
-    found.push(label + (detail ? ` — ${detail}` : ""));
-    console.log(`  \x1b[31m✗ HOLE\x1b[0m ${label}${detail ? ` — ${detail}` : ""}`);
-  }
-}
+/**
+ * The tally and the refusal classifier are shared — see `./refusal`.
+ *
+ * §3 below was already doing the right thing the hard way: it derives
+ * `create_order_with_stock`'s privileges from the catalog rather than reading
+ * "some error came back" as a refusal, because reading it that way is what let
+ * a `PGRST202` masquerade as authorization for two days. That lesson is now a
+ * module instead of a comment in one section of one file, and the rest of this
+ * suite is converted to it below.
+ */
+const g = gate("audit:security-advance");
+const { section, check } = { section: g.section.bind(g), check: g.check.bind(g) };
 
 async function main() {
   const admin = adminClient();
@@ -97,6 +98,25 @@ async function main() {
     /* ═══ 1 · moving the split on somebody else's order ════════════════════ */
     section("1 · Another customer's advance and balance");
 
+    /*
+      Captured once, before the first attempt, and compared against for all six.
+
+      Re-reading a "before" inside the loop is what the original constant
+      comparison (`after?.advance_amount === 34_900`) was implicitly avoiding:
+      if one write lands, the compromised row becomes the next iteration's
+      baseline and the remaining checks go green off the damage. Proved by
+      opening RLS on `orders` — three of six stayed green until this was fixed.
+    */
+    const { data: moneyBaseline, error: moneyBaselineError } = await admin
+      .from("orders")
+      .select(
+        "advance_amount, balance_due_on_delivery, grand_total, payment_status, cash_collected_at",
+      )
+      .eq("id", victimOrder.id)
+      .maybeSingle();
+    if (moneyBaselineError)
+      throw new Error(`money baseline: ${moneyBaselineError.message}`);
+
     for (const [label, patch] of [
       ["advance_amount", { advance_amount: 100 }],
       ["balance_due_on_delivery", { balance_due_on_delivery: 0 }],
@@ -105,26 +125,33 @@ async function main() {
       ["cash_collected_at", { cash_collected_at: new Date().toISOString() }],
       ["payment_status", { payment_status: "paid" as const }],
     ] as const) {
-      const { error } = await attackerClient
-        .from("orders")
-        .update(patch)
-        .eq("id", victimOrder.id);
-      const { data: after, error: afterError } = await admin
-        .from("orders")
-        .select("advance_amount, balance_due_on_delivery, grand_total, payment_status, cash_collected_at")
-        .eq("id", victimOrder.id)
-        .single();
-      const unchanged =
-        afterError === null &&
-        after?.advance_amount === 34_900 &&
-        after?.balance_due_on_delivery === 500_000 &&
-        after?.grand_total === 534_900 &&
-        after?.payment_status === "unpaid" &&
-        after?.cash_collected_at === null;
-      check(
+      /*
+        Provable by construction: `victimOrder` was inserted by this harness a
+        few lines above, so "nothing changed" cannot be true merely because
+        there was nothing to change — which is the failure mode `unchangedBy`
+        exists to catch on tables that might be empty. What it adds here is the
+        *layer*: RLS filters this UPDATE to zero rows rather than raising, and
+        the detail now says so instead of leaving silence ambiguous.
+      */
+      g.verdict(
         `a customer cannot rewrite ${label} on an order that is not theirs`,
-        unchanged,
-        `error=${error?.code ?? "none"} advance=${after?.advance_amount}`,
+        await unchangedBy({
+          attempt: () =>
+            attackerClient.from("orders").update(patch).eq("id", victimOrder.id),
+          readBack: async () => {
+            const { data, error } = await admin
+              .from("orders")
+              .select(
+                "advance_amount, balance_due_on_delivery, grand_total, payment_status, cash_collected_at",
+              )
+              .eq("id", victimOrder.id)
+              .maybeSingle();
+            if (error) throw new Error(`order read-back: ${error.message}`);
+            return data ?? null;
+          },
+          baseline: moneyBaseline ?? undefined,
+          expect: ["rls-write", "app-check"],
+        }),
       );
     }
 
@@ -137,21 +164,25 @@ async function main() {
       refresh_token: victim.session.refresh_token,
     });
 
-    const { error: ownError } = await victimClient
-      .from("orders")
-      .update({ advance_amount: 100, balance_due_on_delivery: 534_800 })
-      .eq("id", victimOrder.id);
-    const { data: ownAfter, error: ownAfterError } = await admin
-      .from("orders")
-      .select("advance_amount, balance_due_on_delivery")
-      .eq("id", victimOrder.id)
-      .single();
-    check(
+    g.verdict(
       "owning an order does not permit rewriting what you owe on it",
-      ownAfterError === null &&
-        ownAfter?.advance_amount === 34_900 &&
-        ownAfter?.balance_due_on_delivery === 500_000,
-      `error=${ownError?.code ?? "none"} advance=${ownAfter?.advance_amount}`,
+      await unchangedBy({
+        attempt: () =>
+          victimClient
+            .from("orders")
+            .update({ advance_amount: 100, balance_due_on_delivery: 534_800 })
+            .eq("id", victimOrder.id),
+        readBack: async () => {
+          const { data, error } = await admin
+            .from("orders")
+            .select("advance_amount, balance_due_on_delivery")
+            .eq("id", victimOrder.id)
+            .maybeSingle();
+          if (error) throw new Error(`own-order read-back: ${error.message}`);
+          return data ?? null;
+        },
+        expect: ["rls-write", "app-check"],
+      }),
     );
 
     /* ═══ 3 · the function that decides the split ══════════════════════════ */
@@ -204,14 +235,63 @@ async function main() {
     /* ═══ 4 · the quote the order is priced from ═══════════════════════════ */
     section("4 · shipping_quotes, where the fee is stored");
 
-    const { data: quoteRows, error: quoteReadError } = await attackerClient
-      .from("shipping_quotes")
-      .select("id")
-      .limit(1);
-    check(
+    /*
+      `error !== null || rows === 0` was the whole assertion here, and
+      `shipping_quotes` is empty in staging — so the second half was `0 === 0`
+      and the first half would have accepted any error at all. In fact this
+      table is refused a layer earlier than the label implies: `authenticated`
+      holds no SELECT grant, so PostgREST never consults a policy. Naming
+      `table-grant` means that if somebody grants SELECT intending RLS to carry
+      it, this goes red rather than silently changing what it proves.
+    */
+    g.verdict(
       "a customer cannot read anybody's stored quote",
-      quoteReadError !== null || (quoteRows?.length ?? 0) === 0,
-      `error=${quoteReadError?.code ?? "none"} rows=${quoteRows?.length ?? 0}`,
+      await unreadableBy({
+        admin,
+        caller: attackerClient,
+        table: "shipping_quotes",
+        expect: ["table-grant"],
+        /*
+          The table is empty, and the grant refuses before the row count can
+          matter — so this witness never gets planted today. It is here for the
+          day the grant is added: without it the check degrades to UNPROVABLE
+          ("empty table, proves nothing"), which is honest but unhelpful. With
+          it, the same change reports the useful thing instead — that the
+          refusal moved to RLS and the layer this check names is gone.
+        */
+        witness: async (a) => {
+          const { data: cart, error: cartError } = await a
+            .from("carts")
+            .select("id")
+            .limit(1)
+            .maybeSingle();
+          if (cartError || !cart?.id) return null;
+          const { data, error } = await a
+            .from("shipping_quotes")
+            .insert({
+              cart_id: cart.id,
+              postal_code: "403001",
+              payment_method: "cod",
+              subtotal_paise: 500_000,
+              // `shipping_quotes_fee_split` requires shipping + cod == fee.
+              fee_paise: 49_900,
+              shipping_fee_paise: 34_900,
+              cod_handling_paise: 15_000,
+              deliverable: true,
+              cod_available: true,
+              source: "shiprocket",
+            })
+            .select("id")
+            .single();
+          if (error || !data) return null;
+          return async () => {
+            await removeWitness(
+              "shipping_quotes",
+              a.from("shipping_quotes").delete().eq("id", data.id),
+            );
+          };
+        },
+      }),
     );
 
     const { error: quoteWriteError } = await attackerClient
@@ -228,10 +308,9 @@ async function main() {
         cod_available: true,
         source: "shiprocket",
       });
-    check(
+    g.verdict(
       "nor write themselves a free-delivery quote",
-      quoteWriteError !== null,
-      `error=${quoteWriteError?.code ?? "NONE"}`,
+      refusedBy(quoteWriteError, "table-grant"),
     );
 
     /* ═══ 5 · the settings the advance rule comes from ═════════════════════ */
@@ -250,32 +329,29 @@ async function main() {
       `admin-pages.ts` already learned this lesson and wrote it down: "A sentinel
       tests the property itself and cannot go stale with the schema." Same fix
       here. The property is that an attacker's write does not land, so the
-      before-and-after of the whole row is the only thing worth comparing.
+      before-and-after of the whole row is the only thing worth comparing —
+      which is exactly what `unchangedBy` does, so the hand-rolled "before" read
+      that used to sit here is now its `readBack`.
     */
-    const { data: settingsBefore, error: beforeError } = await admin
-      .from("site_settings")
-      .select("value")
-      .eq("key", "shipping")
-      .single();
-    if (beforeError) throw new Error(`could not read shipping: ${beforeError.message}`);
-
-    const { error: settingsError } = await attackerClient
-      .from("site_settings")
-      .update({ value: { cod_advance_minimum_paise: 100 } })
-      .eq("key", "shipping");
-
-    const { data: settingsAfter, error: settingsAfterError } = await admin
-      .from("site_settings")
-      .select("value")
-      .eq("key", "shipping")
-      .single();
-    const stillRight =
-      settingsAfterError === null &&
-      JSON.stringify(settingsAfter?.value) === JSON.stringify(settingsBefore?.value);
-    check(
+    g.verdict(
       "a customer cannot rewrite the settings the advance rule comes from",
-      stillRight,
-      `error=${settingsError?.code ?? "none"}, changed=${!stillRight}`,
+      await unchangedBy({
+        attempt: () =>
+          attackerClient
+            .from("site_settings")
+            .update({ value: { cod_advance_minimum_paise: 100 } })
+            .eq("key", "shipping"),
+        readBack: async () => {
+          const { data, error } = await admin
+            .from("site_settings")
+            .select("value")
+            .eq("key", "shipping")
+            .maybeSingle();
+          if (error) throw new Error(`shipping settings read-back: ${error.message}`);
+          return data?.value ?? null;
+        },
+        expect: ["rls-write", "app-check"],
+      }),
     );
 
     /* ═══ 6 · the shipment, and what the courier is told to collect ════════ */
@@ -288,10 +364,9 @@ async function main() {
         status: "created",
         cod_collectable_amount: 0,
       });
-    check(
+    g.verdict(
       "a customer cannot invent a shipment collecting nothing",
-      shipmentError !== null,
-      `error=${shipmentError?.code ?? "NONE"}`,
+      refusedBy(shipmentError, "rls-write"),
     );
 
     /* ═══ 7 · the ledger that would show the tampering ═════════════════════ */
@@ -304,10 +379,9 @@ async function main() {
         status: "delivered",
         note: "forged",
       });
-    check(
+    g.verdict(
       "a customer cannot forge a line on somebody's timeline",
-      historyError !== null,
-      `error=${historyError?.code ?? "NONE"}`,
+      refusedBy(historyError, "rls-write"),
     );
   } finally {
     const { error: cleanupError } = await admin
@@ -323,11 +397,7 @@ async function main() {
     await admin.auth.admin.deleteUser(victim.userId).catch(() => {});
   }
 
-  console.log(
-    `\n\x1b[1m${held} held, ${holes} holes\x1b[0m` +
-      (found.length ? `\n\n${found.map((f) => `  · ${f}`).join("\n")}` : ""),
-  );
-  process.exit(holes > 0 ? 1 : 0);
+  g.finish();
 }
 
 void main();

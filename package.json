@@ -85,7 +85,8 @@
     "audit:reviews": "NODE_OPTIONS=--conditions=react-server tsx scripts/audit/reviews.ts",
     "audit:coins-earning": "NODE_OPTIONS=--conditions=react-server tsx scripts/audit/coins-earning.ts",
     "audit:coins-redemption": "NODE_OPTIONS=--conditions=react-server tsx scripts/audit/coins-redemption.ts",
-    "audit:loyalty": "NODE_OPTIONS=--conditions=react-server tsx scripts/audit/loyalty.ts"
+    "audit:loyalty": "NODE_OPTIONS=--conditions=react-server tsx scripts/audit/loyalty.ts",
+    "audit:headers": "tsx scripts/audit/security-headers.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.7.1",

@@ -31,9 +31,10 @@ export async function readGuestToken(): Promise<string | null> {
 /**
  * The token this browser has, creating one if it does not.
  *
- * httpOnly: the token is a bearer credential for one bag, with the same
- * security properties as a session cookie. Client JavaScript never sees it, so
- * an XSS bug cannot walk off with somebody's cart.
+ * httpOnly: the token is a bearer credential for one bag. Client JavaScript
+ * never sees it, so an XSS bug cannot walk off with somebody's cart — it can
+ * still walk off with their account, because the Supabase session cookie is
+ * not httpOnly and cannot be. See `src/lib/supabase/cookie-options.ts`.
  */
 export async function getOrCreateGuestToken(): Promise<string> {
   const store = await cookies();

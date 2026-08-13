@@ -60,8 +60,18 @@ export const dynamic = "force-dynamic";
  */
 const MAX_ORDERS_PER_TICK = 50;
 
-/** Matches `release_abandoned_orders`' own default. One cutoff, one meaning. */
-const ABANDONED_AFTER_MINUTES = 30;
+/**
+ * Matches `release_abandoned_orders`' own default. One cutoff, one meaning.
+ *
+ * Thirty until 2026-08-13. Shortened because an order reserves stock before it
+ * is paid for, which makes "place orders and never pay" the cheapest way to
+ * empty this shop's shelves — no card required. Ten minutes is still four to
+ * five times a PSP's own payment-intent expiry, and the orders this route
+ * decides are the ones with a payment attempt against them, each of which is
+ * checked with Razorpay before anything is cancelled. See
+ * supabase/migrations/20260813150000_shorten_abandoned_order_window.sql.
+ */
+const ABANDONED_AFTER_MINUTES = 10;
 
 export async function POST(request: Request): Promise<NextResponse> {
   if (!authorisedCronRequest(request, "cron/release-abandoned")) {

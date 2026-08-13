@@ -48,6 +48,17 @@ import { randomUUID } from "node:crypto";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 import type { Database } from "../../src/lib/database.types";
+import { removeWitness, renderVerdict, unreadableBy } from "./refusal";
+
+/**
+ * This suite's `check` takes a boolean; `./refusal` returns a three-state
+ * verdict. `renderVerdict` flattens the two that fit and keeps `unprovable`
+ * distinguishable by name rather than folding it into a pass.
+ */
+function g_verdict(label: string, verdict: Parameters<typeof renderVerdict>[0]) {
+  const rendered = renderVerdict(verdict);
+  check(label, rendered.ok, rendered.detail);
+}
 import { applyPaymentOutcome } from "../../src/lib/orders/payment-state";
 import { rows, maybeRow } from "../../src/lib/queries/run";
 
@@ -1074,25 +1085,79 @@ async function main() {
   }
 
   /* ── 10 · nobody else can reach any of it ───────────────────────────────── */
-  const paymentsAnon = await rows<{ id: string }>(
-    "anon reads payments",
-    anon.from("payments").select("id").eq("order_id", online.order.orderId),
-  );
-  check(
+  /*
+    This used to be `rows("anon reads payments", …)` followed by
+    `length === 0`, and it **threw** rather than asserting: `anon` holds no
+    SELECT grant on `payments`, so PostgREST answers 42501 and `rows()` — which
+    is right to treat an unexpected error as fatal — turned the refusal into an
+    exception. The check below it never ran.
+
+    That was not a small thing. The throw is *above* this suite's cleanup, so
+    every run left its fixture `unspecified` inventory rows behind — the exact
+    artefacts the cleanup at the end of this file exists to sweep, and whose
+    comment records that leaving them makes `audit:admin` fail afterwards.
+    `npm run audit` runs checkout before admin. Two gates, one root cause.
+
+    It is the same confusion as the rest of this batch, in its loud form: the
+    harness did not know *which layer* refuses `payments` for an anonymous
+    caller, so it reached for the wrong tool. `unreadableBy` treats the refusal
+    as the observation it is, and names the layer.
+  */
+  g_verdict(
     "anon reads zero payment rows",
-    paymentsAnon.length === 0,
-    `${paymentsAnon.length}`,
+    await unreadableBy({
+      admin,
+      caller: anon,
+      table: "payments",
+      expect: ["table-grant"],
+    }),
   );
 
-  const eventsUser = await rows<{ id: string }>(
-    "a customer reads the event ledger",
-    stranger.from("payment_events").select("id"),
-  );
-  check(
-    "a signed-in customer reads zero payment events",
-    eventsUser.length === 0,
-    `${eventsUser.length}`,
-  );
+  /*
+    Unfiltered, against a table that is empty at rest — so `length === 0` was
+    `0 === 0` and would have held with RLS off. Every other read in this
+    section filters on an id this harness just created, which makes the row's
+    existence a precondition satisfied by construction; this one had nothing.
+
+    `unreadableBy` plants a witness event when the table is empty and reports
+    UNPROVABLE rather than passing if it cannot. See `./refusal`.
+  */
+  {
+    const rendered = renderVerdict(
+      await unreadableBy({
+        admin,
+        caller: stranger,
+        table: "payment_events",
+        // A signed-in customer *can* select this table; RLS is what returns
+        // nothing. `anon` above is refused a layer earlier, by the grant —
+        // same table, two callers, two different controls.
+        expect: ["rls-read"],
+        witness: async (a) => {
+          const { data, error } = await a
+            .from("payment_events")
+            .insert({
+              event_id: `witness-${Date.now().toString(36)}`,
+              event_type: "payment.captured",
+              provider: "razorpay",
+            })
+            .select("id")
+            .single();
+          if (error || !data) return null;
+          return async () => {
+            await removeWitness(
+              "payment_events",
+              a.from("payment_events").delete().eq("id", data.id),
+            );
+          };
+        },
+      }),
+    );
+    check(
+      "a signed-in customer reads zero payment events",
+      rendered.ok,
+      rendered.detail,
+    );
+  }
 
   // These three read `error` and nothing else: being refused *is* the result.
   const { error: rpcAnonError } = await anon.rpc("create_order_with_stock", {

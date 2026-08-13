@@ -2,6 +2,7 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 import type { Database } from "@/lib/database.types";
+import { AUTH_COOKIE_OPTIONS } from "@/lib/supabase/cookie-options";
 import {
   SUPABASE_ANON_KEY,
   SUPABASE_URL,
@@ -48,6 +49,11 @@ export async function updateSession(
     SUPABASE_URL(),
     SUPABASE_ANON_KEY(),
     {
+      // The refresh path writes the session cookie, so this is one of the two
+      // places `Secure` has to be stated. See cookie-options.ts for what the
+      // library sets on its own, and for why `httpOnly` deliberately does not
+      // follow.
+      cookieOptions: AUTH_COOKIE_OPTIONS,
       cookies: {
         getAll() {
           return request.cookies.getAll();

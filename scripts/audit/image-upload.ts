@@ -52,8 +52,11 @@ import { chromium } from "playwright";
 import {
   CANONICAL_WIDTHS,
   CANONICAL_EDGE,
+  MAX_DECODED_PIXELS,
+  MAX_UPLOAD_BYTES,
   UPLOAD_EDGE,
 } from "../../src/lib/images/constants";
+import { inspect } from "../../src/lib/images/pipeline";
 import { derivativeLoader, isDerivative } from "../../src/lib/images/srcset";
 import { adminClient, createAccount, sessionCookies } from "./fixtures";
 import { BASE_URL } from "./routes";
@@ -503,6 +506,78 @@ async function main() {
     }
     await admin.auth.admin.deleteUser(account.userId).catch(() => {});
     await browser.close();
+  }
+
+  /* ═══ the decode ceiling ═════════════════════════════════════════════════ */
+  /*
+    A byte limit is not a pixel limit, and this is where that gap gets tested.
+
+    `MAX_UPLOAD_BYTES` (5MB) bounds what crosses the wire. It says nothing about
+    what the bytes expand to once decoded, and the compression ratio belongs to
+    whoever made the file: a flat-colour PNG at 8000 × 8000 is 64 megapixels
+    unpacked and well under 200KB on disk. It is a real PNG with correct magic
+    bytes that passes every check the upload path has, and without an explicit
+    `limitInputPixels` it takes the function down inside `inspect()` — before a
+    single one of the pipeline's own dimension checks has run.
+
+    Asserted here rather than trusted from the source, because the control is a
+    library option and options get dropped in refactors without anything
+    noticing. This section is the thing that notices.
+  */
+  {
+    const side = 8_000;
+    const bomb = await sharp({
+      create: { width: side, height: side, channels: 3, background: "#ffffff" },
+      limitInputPixels: false,
+    })
+      .png({ compressionLevel: 9 })
+      .toBuffer();
+
+    check(
+      "the bomb is a legitimate-looking upload — under the byte ceiling",
+      bomb.length < MAX_UPLOAD_BYTES,
+      `${(bomb.length / 1024).toFixed(0)}KB, ${((bomb.length / MAX_UPLOAD_BYTES) * 100).toFixed(1)}% of the ${MAX_UPLOAD_BYTES / 1024 / 1024}MB limit`,
+    );
+    check(
+      "and it is over the decode ceiling — so the two limits genuinely differ",
+      side * side > MAX_DECODED_PIXELS,
+      `${((side * side) / 1e6).toFixed(0)}MP decoded vs a ${(MAX_DECODED_PIXELS / 1e6).toFixed(0)}MP ceiling`,
+    );
+
+    let refusal: Error | null = null;
+    try {
+      await inspect(bomb);
+    } catch (error) {
+      refusal = error instanceof Error ? error : new Error(String(error));
+    }
+    check(
+      "inspect() refuses it rather than decoding it",
+      refusal !== null,
+      refusal ? refusal.message : "NOT REFUSED — the pixel limit is not in force",
+    );
+    check(
+      "and the refusal is sayable, not a raw sharp error",
+      refusal?.name === "ImagePipelineError",
+      `${refusal?.name ?? "none"}: ${refusal?.message ?? ""}`,
+    );
+
+    // The other half: the ceiling must not be so low it refuses real work.
+    const realistic = await sharp({
+      create: { width: UPLOAD_EDGE, height: UPLOAD_EDGE, channels: 3, background: "#cccccc" },
+    })
+      .jpeg()
+      .toBuffer();
+    let realInfo: { width: number; height: number } | null = null;
+    try {
+      realInfo = await inspect(realistic);
+    } catch {
+      realInfo = null;
+    }
+    check(
+      `a real ${UPLOAD_EDGE}×${UPLOAD_EDGE} upload still inspects`,
+      realInfo?.width === UPLOAD_EDGE,
+      realInfo ? `${realInfo.width}×${realInfo.height}` : "REFUSED — the ceiling is too low",
+    );
   }
 
   console.log(

@@ -361,6 +361,216 @@ check fails and the exemption has to be argued again — which is the point.
 
 ---
 
+## 4.6 · A gate that passes for the wrong reason
+
+The guard above answers "is this harness pointed somewhere safe". This section
+is about the other half: **is this assertion measuring the thing it names.**
+
+Three gates were found asserting refusals in a shape that cannot fail for the
+right reason. The rule and the tools live in `scripts/audit/refusal.ts`; this is
+how to use them and, more importantly, how to check a conversion is real.
+
+### The three shapes, and why each is green with the control removed
+
+```ts
+check("X refuses a customer", error !== null);               // 1
+check("Y is not readable",    (data?.length ?? 0) === 0);    // 2
+check("Z did not change",     error === null && rows === 0); // 3
+```
+
+**Shape 1 — any error will do.** A refused write here comes back as one of five
+things and the boolean flattens all of them:
+
+| what actually refused | code | message |
+|---|---|---|
+| no `GRANT` on the table | `42501` | `permission denied for table X` |
+| no `GRANT EXECUTE` | `42501` | `permission denied for function X` |
+| an RLS policy | `42501` | `new row violates row-level security policy for "X"` |
+| the function's own `is_admin()` | `FVADM` | `not_admin` |
+| a `CHECK`/`UNIQUE`/FK constraint | `23xxx` | *refuses anybody — proves nothing about the caller* |
+| **nothing** | `PGRST202` | `Could not find the function … in the schema cache` |
+
+Three share a SQLSTATE and are told apart only by the message. The last is not a
+refusal at all — and it is what happened: a migration added a parameter to
+`create_order_with_stock`, the gate's fixed-arity POST started answering
+`PGRST202`, and `error !== null` counted that as a pass for two days while the
+new 26-argument function sat executable by `anon`. A new arity is a new function
+and inherits no ACL.
+
+**Shapes 2 and 3 — nothing was there to begin with.** A read RLS filtered and a
+read of an empty table are byte-identical: `rows=0, error=null`. No predicate
+fixes that; only a precondition does. Five of the eight tables `audit:admin`
+checked were empty in staging, so five of its ticks were `0 === 0` — proved by
+disabling RLS on `coupons` and watching the gate report 8 held.
+
+### What to write instead
+
+```ts
+g.verdict("adjust_variant_stock refuses a non-admin",
+  refusedBy(error, "app-check"));                      // names the layer
+
+g.verdict("coupons is not readable by a customer",
+  await unreadableBy({ admin, caller, table: "coupons",
+    expect: ["rls-read"], witness: witnessCoupon }));   // requires a row to exist
+
+g.verdict("a customer cannot rewrite what they owe",
+  await unchangedBy({ attempt, readBack, baseline }));  // compares to a known-good
+```
+
+`footvault/no-vacuous-refusal-assertion` fails the build on shape 1 inside
+`scripts/audit/`, so the fourth instance is a lint error rather than a
+discovery.
+
+### Three outcomes, not two
+
+`gate()` counts **held / holes / unprovable**. `unprovable` is a check that could
+not be made to mean anything — an empty table with no witness, a row that does
+not exist. It prints in its own colour and **fails the run**. It is not a hole in
+the shop and it is not a pass, and folding it into either loses the only
+information that matters about it.
+
+When a check reports unprovable, the fix is to make it provable — give
+`unreadableBy` a `witness` that plants a row with the service role for the
+duration of the read — not to accept the amber.
+
+### Proving a conversion, which is the part that matters
+
+A converted assertion is worth nothing until it has been watched failing **for
+the specific control it names**. Disable that control against staging, run the
+gate, confirm red, restore. Every conversion in this repository was proved this
+way. A representative set:
+
+| Control disabled | Gate | What it printed |
+|---|---|---|
+| `alter table coupons disable row level security` | `audit:admin` | HOLE — the planted witness row is readable by a plain customer |
+| `grant select on rate_limits to authenticated` | `audit:admin` | HOLE — refusal came from RLS, but this check claims table grant |
+| `grant execute on consume_rate_limit` | `audit:admin` | HOLE — NOT REFUSED, the call succeeded |
+| rename `adjust_variant_stock` (the PGRST202 landmine) | `audit:admin` | HOLE — the probe never reached a control, so nothing was proved |
+| `grant insert on inventory_movements` | `audit:admin` | HOLE — refused by RLS policy where the check claims table grant |
+| permissive INSERT policy on `order_status_history` | `audit:admin` | HOLE — NOT REFUSED |
+| `grant select, insert on shipping_quotes` | `audit:security-advance` | HOLE + UNPROVABLE (empty table, before its witness existed) |
+| permissive UPDATE policy on `site_settings` | `audit:security-advance` | HOLE — showed the before → after diff |
+| permissive SELECT+UPDATE on `orders` | `audit:security-advance` | 4 HOLEs across the six money fields |
+| `grant insert on coin_transactions` | `audit:coins-earning` | HOLE — the label's exact claim, "no grant, not merely no policy" |
+| remove `limitInputPixels` from the pipeline | `audit:image-upload` | HOLE — the pixel limit is not in force |
+
+**Two of those proofs write to staging.** A permissive policy means the forbidden
+write *lands*: the `site_settings` proof replaced the whole `shipping` JSONB and
+left the dev server unable to quote delivery, and the
+`order_status_history` proof left a forged "delivered" line on a real staging
+order. Restore the data as well as the DDL — the gate's own before/after detail
+is what tells you the original value. Afterwards, check:
+
+```sql
+select polname from pg_policy where polname like 'fv_proof%';   -- expect 0 rows
+select relname from pg_class c join pg_namespace n on n.oid = c.relnamespace
+ where n.nspname = 'public' and c.relkind = 'r' and not c.relrowsecurity;
+```
+
+---
+
+## 4.7 · Do not edit config while the suite's dev server is running
+
+**Cost, measured on 2026-08-13: one whole suite run, plus ledger artefacts that
+took a separate investigation to clear.**
+
+Mid-run, the staging dev server died outright:
+
+```
+thread 'tokio-rt-worker' panicked at
+  turbopack/crates/turbo-tasks-backend/src/backend/operation/mod.rs:292:17:
+Restore of All for task TaskId 510340 failed in another thread: restoring failed
+
+turbo-tasks: an internal panic occurred outside the per-task panic boundary.
+This is a bug in turbo-tasks/Turbopack
+
+Aborting.
+```
+
+Turbopack's **persistent incremental cache** corrupted itself and took the
+process with it. What preceded it was `next.config.ts` and one of its imports
+being edited repeatedly while that server was live — every such edit forces a
+config reload and a hot restart, and this panic is in the cache's restore path.
+That is a plausible trigger rather than a proven one; the rule below is cheap
+enough that it is not worth proving.
+
+**The rule: while a gate run is in flight, do not touch `next.config.ts`, its
+imports, or anything else that reloads the server. Stop the server, edit, clear
+`.next`, restart.** Docs and gate scripts are safe — the dev server does not
+watch them.
+
+### How it reads when it happens, which is the expensive part
+
+Nothing announces "the server is gone". It looks like the shop is broken:
+
+```
+━━ audit:overflow
+Error: /shop: no visible <h1> after 15s — is the page rendering?
+
+━━ audit:hero-media
+TypeError: fetch failed
+  Error: connect ECONNREFUSED 127.0.0.1:3210
+```
+
+The first gate to notice reports a **rendering** failure, because at that point
+the server is degraded rather than dead. Only later gates get the honest
+`ECONNREFUSED`. An hour can go into "why does `/shop` not render" before anyone
+scrolls far enough to find the panic in the server's own log — which is a
+different file from the suite log, and is the one place the real cause appears.
+
+**When a browser gate fails on "the page is not rendering", read the dev
+server's log before reading the component.**
+
+### Recovery, in order
+
+1. `rm -rf .next` — the cache is the thing that is corrupt, and a restart alone
+   restores it from the same bad state.
+2. Restart the server, then confirm the route the gate complained about actually
+   serves: `curl -s localhost:3210/shop | grep -c '<h1'`.
+3. **Re-run the whole suite, not the failed tail.** Gate results from either side
+   of the crash are not comparable — the ones before ran against a healthy
+   server, the ones after against nothing.
+4. **Check the ledger.** This is the part that is easy to skip and the reason it
+   is written down.
+
+### The crash leaves inventory artefacts behind
+
+A run that dies mid-flight leaves orders half-finished. `run-all` opens the next
+run with `teardown.ts`, which **restocks, then deletes** — and restocking an
+order the cancellation path had already restocked writes a second `+1`. Those
+extra rows carry `reason = 'unspecified'` and an empty note, because a bare stock
+write never sets `app.inventory_reason`:
+
+```
+15:36:41Z  delta=+1  reason=unspecified  note=''
+15:33:00Z  delta=+1  reason=unspecified  note=''
+```
+
+`audit:transitions` then fails on drift that nothing in the shop caused.
+
+Note that **`teardown.ts --stock-only` will report clean** and is not the tool
+for this: it compares the shelf against the *seed baseline*, accounting for units
+held by live orders. `reconcile_inventory()` compares the shelf against the
+*ledger sum*. Two different invariants; a crash breaks the second one only.
+
+To find and clear it:
+
+```sql
+-- the drift, and whether unspecified rows explain it
+select * from public.reconcile_inventory();
+
+-- the artefacts themselves: no reason, no note, timestamped in the crash window
+select id, created_at, delta, reason, note
+  from public.inventory_movements
+ where variant_id = '<the drifting variant>' and reason = 'unspecified';
+```
+
+Remove only rows with **no note** — every legitimate movement carries one. Then
+re-run `audit:transitions` and confirm `reconcile_inventory()` reports zero
+drift before trusting any later gate.
+
+---
+
 ## 5 · When the guard fires
 
 `assertNotProduction()` in `scripts/audit/clients.ts` throws at module scope in

@@ -26,6 +26,7 @@
  */
 // clients first: repoints this process at staging, refuses production.
 import { adminClient, anonClient, assertNotProduction, createAccount } from "./fixtures";
+import { refusedBy, renderVerdict } from "./refusal";
 
 import { buildDeliveredEmail } from "../../src/lib/email/lifecycle";
 import { transitionOrder } from "../../src/lib/orders/transition";
@@ -384,20 +385,59 @@ async function main(): Promise<void> {
       delta: 1_000_000,
       reason: "adjusted",
     });
-    ok(
-      "an authenticated PostgREST INSERT is refused — no grant, not merely no policy",
-      forgeError !== null,
-      "a signed-in caller minted their own coins",
-    );
+    /*
+      The label makes a claim about *which* layer refuses — "no grant, not
+      merely no policy" — and `forgeError !== null` could not check it. Any
+      error satisfied it: a policy refusal, a constraint violation, or a
+      PGRST202 from a renamed table would all have read as a pass while the
+      grant this line is about had been quietly restored.
+
+      `refusedBy` checks the claim the label already made.
+    */
+    {
+      const rendered = renderVerdict(refusedBy(forgeError, "table-grant"));
+      ok(
+        "an authenticated PostgREST INSERT is refused — no grant, not merely no policy",
+        rendered.ok,
+        rendered.detail,
+      );
+    }
 
     const { data: theirRead, error: theirReadError } = await authed
       .from("coin_transactions")
       .select("id, user_id");
+
+    /*
+      `.every()` on an empty array is `true`, so "reads their own rows and
+      nobody else's" was satisfied by reading *nothing* — which is what a
+      bystander with no ledger rows reads whether RLS works or not. The
+      table is empty at rest, so on a fresh database this asserted nothing at
+      all.
+
+      Two halves, and both need a row to exist before they mean anything: there
+      must be rows belonging to somebody else (the buyer earns some earlier in
+      this suite) for "nobody else's" to be a claim, and the caller must see
+      exactly their own for "their own" to be one.
+    */
+    const { data: everyRow, error: everyRowError } = await db
+      .from("coin_transactions")
+      .select("user_id");
+    const othersRows = (everyRow ?? []).filter(
+      (row) => row.user_id !== bystander.userId,
+    ).length;
+    const leaked = (theirRead ?? []).filter(
+      (row) => row.user_id !== bystander.userId,
+    ).length;
+
     ok(
       "a customer reads their own rows and nobody else's",
-      theirReadError === null &&
-        (theirRead ?? []).every((row) => row.user_id === bystander.userId),
-      theirReadError?.message ?? `${theirRead?.length} rows`,
+      everyRowError === null && theirReadError === null && othersRows > 0 && leaked === 0,
+      everyRowError?.message ??
+        theirReadError?.message ??
+        (othersRows === 0
+          ? "UNPROVABLE — no coin_transactions row belongs to anybody else, so " +
+            "'nobody else's' is true of an empty result and proves nothing"
+          : `${leaked} of ${othersRows} other-user rows leaked`),
     );
 
     /* ══ 7 · the email says the number, or nothing ══════════════════════ */

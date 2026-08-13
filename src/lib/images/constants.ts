@@ -123,6 +123,44 @@ export const UPLOAD_EDGE = UPLOAD_EDGE_LADDER[0];
 export const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
 
 /**
+ * The most pixels the decoder will unpack from an uploaded file, whatever the
+ * file says about itself.
+ *
+ * **A byte limit is not a pixel limit**, and that gap is the whole reason this
+ * exists. `MAX_UPLOAD_BYTES` bounds what arrives over the wire; it says nothing
+ * about what that expands to in memory once decoded. The formats here are all
+ * compressed, and compression ratio is attacker-chosen: a PNG of one flat
+ * colour at 40 000 × 40 000 is a few hundred kilobytes on disk and 1.6
+ * gigapixels decoded — about 6 GB at four bytes a pixel. It passes every check
+ * the upload path has: under 5MB, a real PNG, correct magic bytes, parses fine.
+ * The function then dies on memory, and it dies during `inspect()`, before any
+ * of the pipeline's own dimension logic gets a chance to look at it.
+ *
+ * That is the classic decompression bomb, and the defence is to refuse at
+ * *decode* time rather than after.
+ *
+ * ## Why fifty megapixels
+ *
+ * Derived from the byte ceiling rather than picked. Photographic JPEG at the
+ * qualities a camera or a phone produces runs roughly 0.3–0.5 bytes per pixel,
+ * so the largest genuine photograph that can fit inside 5MB is somewhere around
+ * 10–16 megapixels; even an unusually efficient encode does not reach 30. Fifty
+ * is comfortably above every real file this shop will ever be handed — a 100MP
+ * phone shot is shrunk to `UPLOAD_EDGE` (3000px, ~9MP) in the browser before it
+ * is sent — and far below the ~200MB of decoded pixels it represents.
+ *
+ * sharp's own default is 268 402 689 (0x3FFF²), which is ~1GB decoded and was
+ * chosen to be permissive rather than safe. Stating a number here makes the
+ * ceiling a decision with a reason attached instead of a library default nobody
+ * chose, which is the only difference that matters when someone reads this file
+ * during an incident.
+ *
+ * Applied at every point an **untrusted** buffer enters sharp. Buffers sharp
+ * itself produced are already bounded and do not need it.
+ */
+export const MAX_DECODED_PIXELS = 50_000_000;
+
+/**
  * A ceiling per emitted variant, in bytes.
  *
  * The 1600 is the one that matters — it is what a product page fetches — and

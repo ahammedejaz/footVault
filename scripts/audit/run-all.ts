@@ -51,6 +51,7 @@ const GATES = [
   // so this entry is kept by hand, next to the pure gates it belongs with.
   "shapes",
   "audit:literals",
+  "audit:headers",
   "audit:fixtures-guard",
   "audit:signup-closed",
   "audit:emails",

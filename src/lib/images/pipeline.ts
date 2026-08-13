@@ -8,6 +8,7 @@ import {
   CANONICAL_EDGE,
   CANONICAL_WIDTHS,
   CARD_SURFACE,
+  MAX_DECODED_PIXELS,
   MIN_RECOMMENDED_EDGE,
   PIPELINE_VERSION,
   VARIANT_BUDGET_BYTES,
@@ -101,6 +102,57 @@ export {
  */
 const WEBP_OPTIONS = { quality: 82, effort: 6 } as const;
 
+/**
+ * How an **untrusted** buffer is opened.
+ *
+ * `failOn: "none"` is the long-standing half: a photograph with a truncated
+ * final scan line, or a slightly malformed EXIF block, still decodes rather
+ * than throwing — a phone or a messaging app produced most of the files this
+ * shop is handed, and refusing one because it is imperfect refuses a sale.
+ *
+ * `limitInputPixels` is the other half and it is the one that is a security
+ * control. See `MAX_DECODED_PIXELS`: the 5MB upload ceiling bounds bytes on the
+ * wire, not pixels in memory, and the ratio between them is chosen by whoever
+ * made the file. Without this, a few hundred kilobytes of flat-colour PNG
+ * decodes to gigabytes and takes the function with it — inside `inspect()`,
+ * before any dimension check this file performs has run.
+ *
+ * Used for the three calls that take the caller's bytes. Everything downstream
+ * operates on buffers sharp produced under these limits and is bounded already.
+ */
+const SOURCE_DECODE = {
+  failOn: "none",
+  limitInputPixels: MAX_DECODED_PIXELS,
+} as const;
+
+/**
+ * Run a decode and turn the one refusal that is *ours* into a sayable error.
+ *
+ * `limitInputPixels` throws sharp's own `Input image exceeds pixel limit`,
+ * which reaches the admin as "That file could not be processed as a
+ * photograph." — the same sentence a genuinely corrupt file produces. Those are
+ * different problems with different fixes, and the owner is standing in the
+ * shop holding the file: "it is broken" sends them looking for another
+ * photograph, when the answer is that this one is enormous.
+ *
+ * The limit is deliberately not named in the message. Fifty megapixels is not a
+ * number anybody has about a file they are holding; pixels-per-side is.
+ */
+async function decoding<T>(work: () => Promise<T>): Promise<T> {
+  try {
+    return await work();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (/exceeds pixel limit/i.test(message)) {
+      throw new ImagePipelineError(
+        "That image is far too large to open — more than about 7000 pixels on " +
+          "each side once unpacked. Export it smaller and try again.",
+      );
+    }
+    throw error;
+  }
+}
+
 export type SourceInfo = {
   width: number;
   height: number;
@@ -141,7 +193,7 @@ export type NormalisedImage = {
  * than midway through a resize.
  */
 export async function inspect(input: Buffer): Promise<SourceInfo> {
-  const meta = await sharp(input, { failOn: "none" }).metadata();
+  const meta = await decoding(() => sharp(input, SOURCE_DECODE).metadata());
 
   if (!meta.width || !meta.height) {
     throw new ImagePipelineError(
@@ -224,15 +276,17 @@ export async function normaliseProductImage(
    */
   const square = crop
     ? await croppedSquare(input, crop)
-    : await sharp(input, { failOn: "none" })
-        .rotate()
-        .flatten({ background: CARD_SURFACE })
-        .resize(CANONICAL_EDGE, CANONICAL_EDGE, {
-          fit: "contain",
-          background: CARD_SURFACE,
-        })
-        .png()
-        .toBuffer();
+    : await decoding(() =>
+        sharp(input, SOURCE_DECODE)
+          .rotate()
+          .flatten({ background: CARD_SURFACE })
+          .resize(CANONICAL_EDGE, CANONICAL_EDGE, {
+            fit: "contain",
+            background: CARD_SURFACE,
+          })
+          .png()
+          .toBuffer(),
+      );
 
   const variants: Variant[] = [];
   for (const width of CANONICAL_WIDTHS) {
@@ -515,11 +569,13 @@ export async function frameFor(
    */
   padWithOwnCorner = false,
 ): Promise<{ data: Buffer; width: number; height: number }> {
-  const oriented = await sharp(input, { failOn: "none" })
-    .rotate()
-    .flatten({ background: CARD_SURFACE })
-    .png()
-    .toBuffer();
+  const oriented = await decoding(() =>
+    sharp(input, SOURCE_DECODE)
+      .rotate()
+      .flatten({ background: CARD_SURFACE })
+      .png()
+      .toBuffer(),
+  );
 
   const data =
     rotation === 0

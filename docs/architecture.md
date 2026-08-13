@@ -472,12 +472,16 @@ reconciliation and a later webhook delivery collapse to one application.
 `src/lib/payments/reconcile.ts` holds that decision as a pure function, which is
 what makes it assertable without a database or a Razorpay account.
 
-**Thirty minutes**, and the number lives in exactly one place: the
-`p_older_than_minutes` default. The scheduler passes no argument on purpose, so
-the two cannot disagree. The longest legitimate gap between "order written" and
-"money moves" is a UPI collect the customer approves on another device, which
-PSPs expire in five minutes; thirty is about six times the slowest honest path.
-Worst-case reclaim latency is cutoff plus one tick, so forty minutes.
+**Ten minutes** (thirty until 2026-08-13), and the number lives in exactly one
+place: the `p_older_than_minutes` default. The scheduler passes no argument on
+purpose, so the two cannot disagree. The longest legitimate gap between "order
+written" and "money moves" is a UPI collect the customer approves on another
+device, which PSPs expire in five minutes; ten is still twice the slowest honest
+path, and the orders this function sweeps have no payment attempt against them
+at all, so nothing honest is in flight to protect. It was shortened because an
+order reserves stock before it is paid for, which makes placing orders and never
+paying the cheapest way to empty the shelves — no card needed. Worst-case
+reclaim latency is cutoff plus one tick, so twenty minutes.
 
 Both halves are scheduled by **`pg_cron` inside the database**, not by Vercel
 Cron. pg_cron needs no caller and no credential for the SQL half, and it keeps

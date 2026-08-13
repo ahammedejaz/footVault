@@ -187,13 +187,23 @@ const reporterSource = readFileSync(
 );
 const limits = readFileSync("src/lib/rate-limit.ts", "utf8");
 
-const perError = /errorReport:\s*\[(\d+),\s*(\d+)\]/.exec(limits);
+/*
+  Named `perFingerprintCap`, not `perError`. It is a regex match against the
+  policy table, not a Supabase error — and `footvault/no-vacuous-refusal-assertion`
+  flagged the old name, correctly by its own lights: anything ending in "Error"
+  used as an assertion condition reads as "something failed, therefore a control
+  refused", which is the whole class that rule exists to stop. A variable that
+  reads like an error and is not one is worth renaming rather than exempting.
+*/
+const perFingerprintCap = /errorReport:\s*\[(\d+),\s*(\d+)\]/.exec(limits);
 const total = /errorReportTotal:\s*\[(\d+),\s*(\d+)\]/.exec(limits);
 
 check(
   "a per-error cap exists",
-  perError !== null,
-  perError ? `${perError[1]} per ${perError[2]}s` : "missing",
+  perFingerprintCap !== null,
+  perFingerprintCap
+    ? `${perFingerprintCap[1]} per ${perFingerprintCap[2]}s`
+    : "missing",
 );
 check(
   "a global cap exists, in one bucket for the whole shop",

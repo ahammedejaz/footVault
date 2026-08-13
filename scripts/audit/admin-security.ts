@@ -37,6 +37,14 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 import type { Database } from "../../src/lib/database.types";
 import { maybeRow } from "../../src/lib/queries/run";
+import {
+  gate,
+  refusedBy,
+  removeWitness,
+  unchangedBy,
+  unreadableBy,
+  type Witness,
+} from "./refusal";
 
 /**
  * Nothing below this line may run against the live shop.
@@ -61,26 +69,15 @@ const URL_ = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 const SERVICE = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
-let passed = 0;
-let failed = 0;
-const failures: string[] = [];
-
-function section(title: string) {
-  console.log(`\n\x1b[1m${title}\x1b[0m`);
-}
-
-function check(label: string, held: boolean, detail = "") {
-  if (held) {
-    passed += 1;
-    console.log(`  \x1b[32m✓\x1b[0m ${label}`);
-  } else {
-    failed += 1;
-    failures.push(label);
-    console.log(
-      `  \x1b[31m✗ HOLE\x1b[0m ${label}${detail ? ` — ${detail}` : ""}`,
-    );
-  }
-}
+/**
+ * The tally, the three outcome states and the refusal classifier all live in
+ * `./refusal` now. This file used to carry its own `check(label, boolean)`,
+ * which is precisely how six of the assertions below came to be vacuous: a
+ * boolean cannot say *why* a probe was refused, and half of these were being
+ * satisfied by a control other than the one they name — or by nothing at all.
+ */
+const g = gate("audit:admin");
+const { section, check } = { section: g.section.bind(g), check: g.check.bind(g) };
 
 const admin = createClient<Database>(URL_, SERVICE, {
   auth: { persistSession: false, autoRefreshToken: false },
@@ -128,50 +125,163 @@ async function main() {
      * The escalation that would make everything else moot: writing your own
      * role. `guard_profile_role` is the trigger that refuses it.
      */
-    const { error: escalateError } = await customer
-      .from("profiles")
-      .update({ role: "admin" })
-      .eq("id", madeUsers[madeUsers.length - 1]!);
-    const { data: after, error: readBack } = await customer
-      .from("profiles")
-      .select("role")
-      .eq("id", madeUsers[madeUsers.length - 1]!)
-      .maybeSingle();
-    if (readBack)
-      throw new Error(
-        `could not read the probe profile back: ${readBack.message}`,
-      );
-    check(
+    /*
+      `guard_profile_role` answers this with SQLSTATE 42501 and "Only an admin
+      can change a profile role" — a *trigger* raising `insufficient_privilege`,
+      not Postgres refusing a grant. The classifier reads the message rather
+      than the code for exactly this reason: three unrelated controls answer
+      42501 here, and a check that accepted any of them would keep passing if
+      the trigger were dropped and the row simply stopped existing.
+    */
+    const probeId = madeUsers[madeUsers.length - 1]!;
+    g.verdict(
       "a customer cannot promote themselves to admin",
-      after?.role !== "admin",
-      `error=${escalateError?.code ?? "none"} role=${after?.role}`,
+      await unchangedBy({
+        attempt: () =>
+          customer.from("profiles").update({ role: "admin" }).eq("id", probeId),
+        readBack: async () => {
+          const { data, error } = await admin
+            .from("profiles")
+            .select("role")
+            .eq("id", probeId)
+            .maybeSingle();
+          if (error) throw new Error(`probe profile read: ${error.message}`);
+          return data?.role ?? null;
+        },
+        describe: (role) => String(role),
+        expect: ["app-check"],
+      }),
     );
   }
 
   /* ═══ 2 · admin-only data through PostgREST ══════════════════════════════ */
   section("2 · Reading admin-only tables directly");
   {
-    const cases: { table: keyof Database["public"]["Tables"]; why: string }[] =
-      [
-        { table: "inventory_movements", why: "the stock ledger" },
-        { table: "shipments", why: "AWBs and courier detail" },
-        { table: "shipment_events", why: "fulfilment history" },
-        { table: "payments", why: "money" },
-        { table: "payment_events", why: "webhook ledger" },
-        { table: "rate_limits", why: "the limiter's own counters" },
-        { table: "integration_tokens", why: "a live Shiprocket bearer token" },
-        { table: "coupons", why: "unissued discount codes" },
-      ];
+    /*
+      This section is the reason `./refusal` exists.
 
-    for (const { table, why } of cases) {
-      const { data, error } = await customer.from(table).select("*").limit(5);
-      const leaked = (data?.length ?? 0) > 0;
-      check(
+      It used to assert `(data?.length ?? 0) === 0` against all eight tables and
+      count that as "not readable by a customer". Five of the eight are empty in
+      staging — `shipments`, `shipment_events`, `payment_events`, `coupons`, and
+      `shipping_quotes` next door in `security-advance` — so five of those ticks
+      were `0 === 0`. Disabling row level security on `coupons` outright left
+      this section reporting 8 held, which is how the class was found.
+
+      Two things changed. Each case now names **which layer** is supposed to
+      refuse it, so a check satisfied by a grant cannot be read as evidence
+      about a policy and vice versa; and each empty table carries a **witness** —
+      a row planted with the service role for the duration of the read, so that
+      RLS has something to hide. A table with neither rows nor a witness is
+      reported UNPROVABLE and fails the run, because a tick that proves nothing
+      is worse than no tick at all.
+    */
+    const stamp = Date.now().toString(36);
+
+    /** An order to hang a witness shipment off. Any order will do; none is owned by the probe. */
+    const anyOrder = await maybeRow<{ id: string }>(
+      "probe.anyOrder",
+      admin.from("orders").select("id").limit(1).maybeSingle(),
+    );
+
+    const witnessShipment: Witness = async (a) => {
+      if (!anyOrder?.id) return null;
+      const { data, error } = await a
+        .from("shipments")
+        .insert({ order_id: anyOrder.id, status: "created", awb_code: `WITNESS-${stamp}` })
+        .select("id")
+        .single();
+      if (error || !data) return null;
+      return async () => {
+        await removeWitness("shipments", a.from("shipments").delete().eq("id", data.id));
+      };
+    };
+
+    const witnessShipmentEvent: Witness = async (a) => {
+      if (!anyOrder?.id) return null;
+      const { data: ship, error: shipError } = await a
+        .from("shipments")
+        .insert({ order_id: anyOrder.id, status: "created", awb_code: `WITNESS-EV-${stamp}` })
+        .select("id")
+        .single();
+      if (shipError || !ship) return null;
+      const { data, error } = await a
+        .from("shipment_events")
+        .insert({
+          shipment_id: ship.id,
+          event_id: `witness-${stamp}`,
+          event_type: "picked_up",
+        })
+        .select("id")
+        .single();
+      if (error || !data) {
+        await removeWitness("shipments", a.from("shipments").delete().eq("id", ship.id));
+        return null;
+      }
+      return async () => {
+        await removeWitness(
+          "shipment_events",
+          a.from("shipment_events").delete().eq("id", data.id),
+        );
+        await removeWitness("shipments", a.from("shipments").delete().eq("id", ship.id));
+      };
+    };
+
+    const witnessPaymentEvent: Witness = async (a) => {
+      const { data, error } = await a
+        .from("payment_events")
+        .insert({
+          event_id: `witness-${stamp}`,
+          event_type: "payment.captured",
+          provider: "razorpay",
+        })
+        .select("id")
+        .single();
+      if (error || !data) return null;
+      return async () => {
+        await removeWitness(
+          "payment_events",
+          a.from("payment_events").delete().eq("id", data.id),
+        );
+      };
+    };
+
+    const witnessCoupon: Witness = async (a) => {
+      const { data, error } = await a
+        .from("coupons")
+        .insert({ code: `FV-WITNESS-${stamp}`.toUpperCase(), type: "percent", value: 5 })
+        .select("id")
+        .single();
+      if (error || !data) return null;
+      return async () => {
+        await removeWitness("coupons", a.from("coupons").delete().eq("id", data.id));
+      };
+    };
+
+    const cases: {
+      table: keyof Database["public"]["Tables"];
+      why: string;
+      /** The control this check is actually about. Observed, not assumed — see the probe in the report. */
+      expect: Parameters<typeof unreadableBy>[0]["expect"];
+      witness?: Witness;
+    }[] = [
+      { table: "inventory_movements", why: "the stock ledger", expect: ["rls-read"] },
+      { table: "shipments", why: "AWBs and courier detail", expect: ["rls-read"], witness: witnessShipment },
+      { table: "shipment_events", why: "fulfilment history", expect: ["rls-read"], witness: witnessShipmentEvent },
+      { table: "payments", why: "money", expect: ["rls-read"] },
+      { table: "payment_events", why: "webhook ledger", expect: ["rls-read"], witness: witnessPaymentEvent },
+      // These two are refused a whole layer earlier: `authenticated` holds no
+      // SELECT grant at all, so PostgREST never reaches a policy. Saying so is
+      // the point — if somebody adds a permissive grant intending RLS to carry
+      // it, this check goes red rather than quietly changing what it means.
+      { table: "rate_limits", why: "the limiter's own counters", expect: ["table-grant"] },
+      { table: "integration_tokens", why: "a live Shiprocket bearer token", expect: ["table-grant"] },
+      { table: "coupons", why: "unissued discount codes", expect: ["rls-read"], witness: witnessCoupon },
+    ];
+
+    for (const { table, why, expect, witness } of cases) {
+      g.verdict(
         `${table} — ${why} — is not readable by a customer`,
-        !leaked,
-        leaked
-          ? `${data!.length} rows leaked`
-          : `error=${error?.code ?? "empty"}`,
+        await unreadableBy({ admin, caller: customer, table, expect, witness }),
       );
     }
   }
@@ -214,10 +324,19 @@ async function main() {
           .maybeSingle(),
       );
 
-      check(
+      /*
+        `adjust_variant_stock` is executable by `authenticated` on purpose — the
+        refusal is the `if not public.is_admin() then raise` at the top of its
+        body, which answers FVADM/not_admin. Naming that layer is what stops the
+        check being satisfied by a PGRST202: add a parameter to this function in
+        a migration and the old call shape stops matching, PostgREST says "no
+        such function", and `error !== null` would have called that a pass while
+        the new arity sat un-ACLed. That is not hypothetical — it is what
+        happened to `create_order_with_stock`.
+      */
+      g.verdict(
         "adjust_variant_stock refuses a non-admin",
-        error !== null,
-        `error=${error?.code ?? "NONE — the call succeeded"}`,
+        refusedBy(error, "app-check"),
       );
       check(
         "and the stock did not move",
@@ -247,10 +366,9 @@ async function main() {
           .eq("id", product.id)
           .maybeSingle(),
       );
-      check(
+      g.verdict(
         "admin_delete_product refuses a non-admin",
-        error !== null,
-        `error=${error?.code ?? "NONE"}`,
+        refusedBy(error, "app-check"),
       );
       check("and the product is still live", after?.deleted_at === null);
     }
@@ -268,10 +386,14 @@ async function main() {
           ? { p_bucket: "probe", p_limit: 1, p_window_seconds: 60 }
           : ({} as never),
       );
-      check(
+      // A different layer from the two above, and the distinction is the whole
+      // claim: these three carry no EXECUTE grant, so the body never runs. If
+      // one ever acquires a grant and starts refusing from inside instead, this
+      // goes red — which is correct, because "cannot call it" and "can call it
+      // but it says no" are different security postures.
+      g.verdict(
         `${fn}() is not executable by a customer`,
-        error !== null,
-        `error=${error?.code ?? "NONE"}`,
+        refusedBy(error, "function-grant"),
       );
     }
   }
@@ -295,33 +417,50 @@ async function main() {
     if (!someone) {
       console.log("  \x1b[33m•\x1b[0m skipped — no orders to attack");
     } else {
+      /*
+        Provable without a witness, and worth saying why: `someone` was fetched
+        with the service role a moment ago, so the row demonstrably exists and is
+        demonstrably not the probe's — the account was minted for this run. "No
+        rows came back" therefore means RLS filtered it rather than that there
+        was nothing to filter. That is the same precondition `unreadableBy`
+        enforces by counting; here it is already satisfied by construction.
+      */
       const { data: read, error: readError } = await customer
         .from("orders")
         .select("id")
         .eq("id", someone.id)
         .maybeSingle();
-      check(
+      g.verdict(
         "a customer cannot read an order that is not theirs",
-        read === null,
-        `error=${readError?.code ?? "none"}`,
+        readError
+          ? refusedBy(readError, "rls-read", "table-grant")
+          : read === null
+            ? { state: "held", detail: `RLS hid order ${someone.order_number}` }
+            : { state: "hole", detail: `read back order ${someone.order_number}` },
       );
 
-      const { error: writeError } = await customer
-        .from("orders")
-        .update({ status: "delivered", payment_status: "paid" })
-        .eq("id", someone.id);
-      const after = await maybeRow<{ status: string; payment_status: string }>(
-        "probe.orderAfter",
-        admin
-          .from("orders")
-          .select("status, payment_status")
-          .eq("id", someone.id)
-          .maybeSingle(),
-      );
-      check(
+      g.verdict(
         "and cannot mark it delivered and paid",
-        after?.status === someone.status,
-        `error=${writeError?.code ?? "none"} status=${after?.status}`,
+        await unchangedBy({
+          attempt: () =>
+            customer
+              .from("orders")
+              .update({ status: "delivered", payment_status: "paid" })
+              .eq("id", someone.id),
+          readBack: async () => {
+            const { data, error } = await admin
+              .from("orders")
+              .select("status, payment_status")
+              .eq("id", someone.id)
+              .maybeSingle();
+            if (error) throw new Error(`order read-back: ${error.message}`);
+            return data ?? null;
+          },
+          // Silence is the expected answer here: the RLS `USING` clause filters
+          // the UPDATE to zero rows rather than raising. `unchangedBy` says so
+          // in its detail instead of leaving "nothing happened" ambiguous.
+          expect: ["rls-write", "app-check"],
+        }),
       );
 
       const { error: historyError } = await customer
@@ -331,10 +470,9 @@ async function main() {
           status: "delivered",
           note: "escalation probe",
         });
-      check(
+      g.verdict(
         "and cannot forge a line on its timeline",
-        historyError !== null,
-        `error=${historyError?.code ?? "NONE"}`,
+        refusedBy(historyError, "rls-write"),
       );
 
       const { error: shipError } = await customer.from("shipments").insert({
@@ -342,10 +480,9 @@ async function main() {
         status: "created",
         awb_code: "FORGED",
       });
-      check(
+      g.verdict(
         "and cannot invent a shipment for it",
-        shipError !== null,
-        `error=${shipError?.code ?? "NONE"}`,
+        refusedBy(shipError, "rls-write"),
       );
     }
   }
@@ -361,10 +498,14 @@ async function main() {
         balance_after: 999,
         reason: "restock",
       });
-    check(
+    // Refused by the *grant*, not by a policy — `authenticated` has no INSERT on
+    // this table at all. Worth naming because the read three sections up is
+    // refused by RLS: the same table is protected by two different layers
+    // depending on the verb, and a check that could not tell them apart would
+    // survive losing either one.
+    g.verdict(
       "a customer cannot write a movement row",
-      insertError !== null,
-      `error=${insertError?.code ?? "NONE"}`,
+      refusedBy(insertError, "table-grant"),
     );
 
     // The reconciliation is the real assertion: after everything above, the
@@ -384,12 +525,7 @@ async function main() {
       console.warn(`  could not remove probe user ${id}: ${error.message}`);
   }
 
-  console.log(`\n\x1b[1m${passed} held, ${failed} holes\x1b[0m`);
-  if (failed > 0) {
-    console.log("\nHoles:");
-    for (const failure of failures) console.log(`  - ${failure}`);
-    process.exit(1);
-  }
+  g.finish();
 }
 
 main().catch((error) => {

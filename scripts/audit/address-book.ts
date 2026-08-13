@@ -20,6 +20,7 @@ import { chromium, type Page } from "playwright";
 
 import { adminClient } from "./clients";
 import { createAccount, sessionCookies } from "./fixtures";
+import { removeWitness } from "./refusal";
 
 const BASE = process.env.AUDIT_BASE_URL ?? "http://localhost:3210";
 
@@ -155,18 +156,114 @@ async function main() {
     no stored quote exists under the *new* PIN for this customer's cart — a
     changed PIN is structurally a cache miss, not a rate carried over.
   */
+  /*
+    This asserted `rows === 0` for PIN 110001 and nothing else, and
+    `shipping_quotes` is empty at rest — so it was `0 === 0`. It would have
+    passed on a database where quotes are never stored under *any* PIN, which
+    is to say it would have passed if the caching this check is about did not
+    exist. Same class as the refusal assertions in `audit:admin`; see
+    `./refusal` for the rule.
+
+    The claim is that the storage key discriminates on postal code. That needs
+    both halves: a quote **does** exist under the old PIN, and none under the
+    new one. A witness is planted under the old PIN so the first half is true by
+    construction rather than by luck.
+  */
+  /*
+    This harness never opens a bag, so the account has no cart and the witness
+    had nothing to hang off — which left the precondition below reporting
+    UNPROVABLE. Correct, and not good enough: the fix for an unprovable check is
+    to make it provable, not to accept the amber. One cart, made with the
+    service role and removed with the address at cleanup.
+  */
+  const { data: existingCart, error: cartLookupError } = await admin
+    .from("carts")
+    .select("id")
+    .eq("user_id", account.userId)
+    .limit(1)
+    .maybeSingle();
+  if (cartLookupError)
+    console.warn(`  witness cart lookup: ${cartLookupError.message}`);
+
+  let madeCart: string | null = null;
+  let witnessCart = existingCart;
+  if (!witnessCart?.id) {
+    const { data: created, error: createError } = await admin
+      .from("carts")
+      .insert({ user_id: account.userId })
+      .select("id")
+      .single();
+    if (createError) console.warn(`  witness cart: ${createError.message}`);
+    witnessCart = created ?? null;
+    madeCart = created?.id ?? null;
+  }
+
+  const quoteRow = witnessCart?.id
+    ? {
+        cart_id: witnessCart.id,
+        postal_code: "560025",
+        payment_method: "cod",
+        subtotal_paise: 500_000,
+        // `shipping_quotes_fee_split`: shipping + cod must equal fee.
+        fee_paise: 49_900,
+        shipping_fee_paise: 34_900,
+        cod_handling_paise: 15_000,
+        deliverable: true,
+        cod_available: true,
+        source: "shiprocket",
+      }
+    : null;
+
+  let plantedQuote: string | null = null;
+  if (quoteRow) {
+    const { data, error } = await admin
+      .from("shipping_quotes")
+      .upsert(quoteRow, { onConflict: "cart_id,postal_code,payment_method" })
+      .select("id")
+      .maybeSingle();
+    if (error) console.warn(`  witness quote: ${error.message}`);
+    plantedQuote = data?.id ?? null;
+  }
+
+  const { data: oldPinRows, error: oldPinError } = await admin
+    .from("shipping_quotes")
+    .select("postal_code")
+    .eq("postal_code", "560025");
   const { data: staleQuoteRows, error: staleQuoteError } = await admin
     .from("shipping_quotes")
     .select("postal_code")
     .eq("postal_code", "110001");
-  check("shipping_quotes reads back", !staleQuoteError, staleQuoteError?.message ?? "");
-  const staleQuotes = { data: staleQuoteRows };
+  check(
+    "shipping_quotes reads back",
+    !staleQuoteError && !oldPinError,
+    staleQuoteError?.message ?? oldPinError?.message ?? "",
+  );
+
+  // The precondition. Without it the assertion below is about an empty table.
+  check(
+    "a quote IS stored under the old PIN — so the absence below means something",
+    (oldPinRows?.length ?? 0) > 0,
+    plantedQuote
+      ? `${oldPinRows?.length ?? 0} quote(s) for 560025`
+      : "UNPROVABLE — no cart to hang a witness quote off, so the check below " +
+        "is asserting that an empty table is empty",
+  );
 
   check(
     "no quote is stored under the new PIN, so the next read must re-quote",
-    (staleQuotes.data?.length ?? 0) === 0,
-    `${staleQuotes.data?.length ?? 0} quote(s) for 110001`,
+    (staleQuoteRows?.length ?? 0) === 0,
+    `${staleQuoteRows?.length ?? 0} quote(s) for 110001`,
   );
+
+  if (plantedQuote) {
+    await removeWitness(
+      "shipping_quotes",
+      admin.from("shipping_quotes").delete().eq("id", plantedQuote),
+    );
+  }
+  if (madeCart) {
+    await removeWitness("carts", admin.from("carts").delete().eq("id", madeCart));
+  }
 
   /* 5 ── cleanup ──────────────────────────────────────────────────────── */
 
