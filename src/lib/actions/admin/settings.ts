@@ -4,6 +4,10 @@ import { revalidatePath, updateTag } from "next/cache";
 import { z } from "zod";
 
 import { adminAction, type AdminResult } from "@/lib/admin/guard";
+import {
+  MAX_TARGET_FILL_PERCENT,
+  MIN_TARGET_FILL_PERCENT,
+} from "@/lib/images/target-fill";
 import type { Json } from "@/lib/database.types";
 import { MIN_CHARGEABLE_PAISE } from "@/lib/payments/types";
 import { CATALOG_CACHE_TAG, CHROME_CACHE_TAG } from "@/lib/queries/cached";
@@ -621,6 +625,96 @@ export async function saveAnnouncement(
        */
       updateTag(CHROME_CACHE_TAG);
       revalidatePath("/", "layout");
+      return { ok: true };
+    },
+  );
+}
+
+/* ------------------------------------------------ how a photograph sits --- */
+
+/**
+ * The one number the crop tool is aimed at.
+ *
+ * Bounded rather than free: under 50% the guide would be encouraging a shoe
+ * adrift in fog, which is the inconsistency the whole image pipeline exists to
+ * remove; over 95% and the product touches the frame edge, which is what the
+ * marketplaces' own 85% rule leaves room to avoid.
+ */
+const imageSettingsSchema = z.object({
+  targetFillPercent: z
+    .number({ message: "The target fill must be a number." })
+    .int("Use a whole percent.")
+    .min(
+      MIN_TARGET_FILL_PERCENT,
+      `Below ${MIN_TARGET_FILL_PERCENT}% the shoe is adrift in the frame.`,
+    )
+    .max(
+      MAX_TARGET_FILL_PERCENT,
+      `Above ${MAX_TARGET_FILL_PERCENT}% the shoe touches the edge, with no breathing room.`,
+    ),
+});
+
+export async function saveImageSettings(
+  input: unknown,
+): Promise<AdminResult<object>> {
+  return adminAction<object>(
+    "saveImageSettings",
+    "adminMutation",
+    async ({ supabase }) => {
+      const parsed = imageSettingsSchema.safeParse(input);
+      if (!parsed.success) {
+        return {
+          ok: false,
+          reason: "invalid",
+          message: parsed.error.issues[0]?.message ?? "Check that and try again.",
+        };
+      }
+
+      /**
+       * `.select()` on the update, and the row count checked — because an
+       * `update ... where key = 'images'` against a database that has no such
+       * row **succeeds**. It matches nothing, returns no error, and the panel
+       * says "Saved." The owner then watches the crop tool keep aiming at the
+       * old number and reasonably concludes the tool is broken rather than the
+       * save.
+       *
+       * That is not hypothetical here: this row arrives in a migration, and
+       * migrations reach staging and production at different moments from the
+       * code that reads them. The honest failure is to say the setting has no
+       * row yet.
+       */
+      const { data, error } = await supabase
+        .from("site_settings")
+        .update({
+          value: { target_fill_percent: parsed.data.targetFillPercent },
+        })
+        .eq("key", "images")
+        .select("key");
+
+      if (error) {
+        return {
+          ok: false,
+          reason: "error",
+          message: "Could not save how photographs are framed.",
+        };
+      }
+
+      if (!data || data.length === 0) {
+        return {
+          ok: false,
+          reason: "error",
+          message:
+            "There is no photograph settings row to save into yet. The migration that creates it has not been applied to this database.",
+        };
+      }
+
+      /**
+       * No cache tag to bust and nothing on the storefront to revalidate: this
+       * number is read by the crop tool at the moment it frames a photograph,
+       * and by nothing else. Revalidating the catalogue here would be cargo
+       * cult — the other savers do it because they change what a customer is
+       * shown, and this one does not.
+       */
       return { ok: true };
     },
   );

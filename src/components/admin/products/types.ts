@@ -100,6 +100,18 @@ export type AdminImage = {
   sortOrder: number;
   isPrimary: boolean;
   color: string | null;
+  /**
+   * The untouched upload this was derived from, or null for a seed placeholder
+   * and for anything uploaded before Phase 10 kept originals.
+   *
+   * Present here because it is what decides whether a photograph can be
+   * re-framed at all: null means the only copy the shop has is already cropped,
+   * and the honest answer in the UI is "re-upload it", not a disabled button
+   * with no explanation.
+   */
+  originalPath: string | null;
+  /** How it was framed. Null means the whole photograph, as before crops. */
+  crop: unknown;
 };
 
 export type AdminProductDetail = {

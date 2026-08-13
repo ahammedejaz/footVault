@@ -1,12 +1,21 @@
 "use client";
 
 import * as React from "react";
-import { AlertTriangle, Check, ImageUp, X } from "lucide-react";
+import { AlertTriangle, Check, Crop as CropIcon, ImageUp, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  CropControls,
+  CropStage,
+  type Frame,
+  type Subject,
+} from "@/components/admin/products/crop-stage";
 import { addProductImage } from "@/lib/actions/admin/products";
-import { normaliseUpload } from "@/lib/actions/admin/image-pipeline";
+import {
+  normaliseUpload,
+  proposeFrame,
+} from "@/lib/actions/admin/image-pipeline";
 import {
   MAX_UPLOAD_BYTES,
   MIN_RECOMMENDED_EDGE,
@@ -14,12 +23,31 @@ import {
   UPLOAD_EDGE_LADDER,
   UPLOAD_RECOMMENDATION,
 } from "@/lib/images/constants";
+import { DEFAULT_CROP, type Crop } from "@/lib/images/crop";
 import { createClient } from "@/lib/supabase/client";
 import { toast } from "@/lib/toast";
 
 /**
- * Choosing a photograph, seeing what the shop will make of it, and describing
- * it — before any of it is committed.
+ * Choosing a photograph, framing it, describing it, and only then committing.
+ *
+ * ## The order, and why the upload now happens in the middle
+ *
+ * The flow is **choose → frame → describe → commit**, and the original is put
+ * into Storage the moment a file is chosen rather than at the end.
+ *
+ * That is not a smaller change than it sounds. Auto-frame runs server-side —
+ * `sharp` finds the shoe, the target fill comes from a settings row — so the
+ * bytes have to be somewhere the server can read before there is anything to
+ * propose. Uploading at commit time would mean the owner frames, presses the
+ * button, and *then* waits for an upload; uploading at choose time means the
+ * network works while the human does, and by the time the first drag is over
+ * the proposal is already on screen.
+ *
+ * If normalisation later fails, an original is left in storage attached to
+ * nothing. That is the deliberate direction to fail in: a stray original costs
+ * a few hundred kilobytes and can be reprocessed, whereas attaching the row
+ * first and failing second would put a product image on the shop pointing at
+ * an unprocessed file.
  *
  * ## Why the upload is staged rather than immediate
  *
@@ -34,35 +62,42 @@ import { toast } from "@/lib/toast";
  * beside the picture, and the button that commits is disabled without it.
  *
  * A photograph the owner cannot see framed is a photograph that gets uploaded
- * twice. The pipeline pads to a square and the card letterboxes that into 4:5,
- * so a shoe shot too close is cropped by nothing and still looks wrong. The
- * preview below is **the real card frame** — same aspect ratio, same `bg-fog`,
- * same `object-contain` — so what is on screen here is what is on the
- * storefront.
+ * twice — and framing it is now something they do rather than something they
+ * hope for.
  *
  * And a photograph that is too small should be refused-with-a-reason at the
  * moment of choosing, not discovered later on a product page. The pipeline
  * upscales to keep every product at the same scale, which is the right
  * behaviour and also the one that makes a small source look soft.
  *
- * ## The order of operations, and why the original goes first
+ * ## The crop is six numbers, and they never become pixels here
  *
- * The browser compresses, uploads the **original** to `originals/`, and only
- * then asks the server to normalise it. The original is kept forever: the
- * pipeline is a pure function of it, so a change to the frame — or the arrival
- * of a better encoder — is a reprocess rather than a re-upload of a catalogue
- * that may no longer exist on anybody's phone.
- *
- * If normalisation fails, an original is left in storage attached to nothing.
- * That is the deliberate direction to fail in: a stray original costs a few
- * hundred kilobytes and can be reprocessed, whereas attaching the row first and
- * failing second would put a product image on the shop pointing at an
- * unprocessed file.
+ * The browser sends `{cx, cy, size, rotation, brightness, contrast}` and the
+ * server cuts the asset. No canvas, no second encoder, no pixels crossing the
+ * wire twice — and because the numbers are recorded on the row, the same
+ * framing can be re-applied to the same original next year by a pipeline that
+ * has changed underneath it.
  */
 
 const BUCKET = "product-images";
 const ACCEPTED = ["image/jpeg", "image/png", "image/webp", "image/avif"];
 const WEBP_QUALITY = 0.82;
+
+/**
+ * The last framing committed in this session, reused as the starting point for
+ * the next photograph.
+ *
+ * Module scope rather than component state on purpose: the panel unmounts and
+ * remounts as the owner moves between products, and "the same table, the same
+ * distance, the same light" outlives that. It resets on reload, which is the
+ * right lifetime — a session is one photography sitting.
+ *
+ * **Auto-frame still wins on framing when it finds the shoe.** What is
+ * inherited from the last crop is the part detection cannot know and the room
+ * does not change between shots: the straighten angle and the tone. Framing is
+ * per-photograph; the table being three degrees off square is not.
+ */
+let lastCrop: Crop | null = null;
 
 type Staged = {
   file: File;
@@ -73,41 +108,21 @@ type Staged = {
   width: number;
   height: number;
   /**
-   * What is inside `blob` — the size the crop step will have to work with, and
-   * the size `originals/` keeps forever.
-   *
-   * Reported separately from the pair above because they are different facts
-   * and the owner is entitled to both: "you gave us 4000px, we kept 3000" is
-   * information, whereas showing only the source would state a resolution the
-   * catalogue does not actually hold.
+   * What is inside `blob` — the size the crop step works with, and the size
+   * `originals/` keeps forever.
    */
   storedWidth: number;
   storedHeight: number;
   tooSmall: boolean;
-};
-
-/**
- * What `shrink` hands back: the bytes to upload, the source it decoded, and the
- * size those bytes actually are.
- *
- * Named rather than inlined because three of the five fields are dimensions and
- * an inline object literal made it possible — it happened — to read the source
- * pair where the stored pair was meant.
- */
-type Prepared = {
-  blob: Blob;
-  /** The decoded source, after its orientation tag is applied. 0 if unreadable. */
-  width: number;
-  height: number;
-  /** What is inside `blob`. 0 when nothing usable was produced. */
-  storedWidth: number;
-  storedHeight: number;
+  /** Where it landed in Storage, once the background upload finishes. */
+  path: string | null;
 };
 
 type Phase =
   | { step: "idle" }
   | { step: "reading" }
   | { step: "uploading" }
+  | { step: "framing" }
   | { step: "processing" }
   /**
    * Throttled, waiting, and about to try again on its own.
@@ -125,12 +140,19 @@ export function ImageUploadPanel({
   productId,
   productName,
   existingCount,
+  targetFill,
   onAdded,
 }: {
   productId: string;
   productName: string;
   /** Drives the two-shot guidance: what is still missing. */
   existingCount: number;
+  /**
+   * The fraction the fill guide is drawn at, read from the owner's settings on
+   * the server. Passed in rather than fetched here so the guide is correct on
+   * the very first paint, before any photograph has been chosen.
+   */
+  targetFill: number;
   onAdded: () => void;
 }) {
   const inputRef = React.useRef<HTMLInputElement>(null);
@@ -138,8 +160,22 @@ export function ImageUploadPanel({
   const [staged, setStaged] = React.useState<Staged | null>(null);
   const [altText, setAltText] = React.useState("");
   const [phase, setPhase] = React.useState<Phase>({ step: "idle" });
+  const [crop, setCrop] = React.useState<Crop>(DEFAULT_CROP);
+  const [frame, setFrame] = React.useState<Frame | null>(null);
+  const [subject, setSubject] = React.useState<Subject | null>(null);
+  const [autoFramed, setAutoFramed] = React.useState<boolean | null>(null);
 
-  const busy = phase.step !== "idle";
+  /**
+   * Busy means "do not touch anything", and the two network steps that run
+   * *while the owner frames* are deliberately not it. Disabling the square
+   * during its own upload would take the tool away at the exact moment the
+   * overlap was designed to give it back.
+   */
+  const busy =
+    phase.step !== "idle" &&
+    phase.step !== "framing" &&
+    phase.step !== "uploading";
+  const ready = staged !== null && staged.path !== null && frame !== null;
 
   React.useEffect(() => {
     // A blob URL that is not revoked is a leak that survives every re-render.
@@ -171,7 +207,8 @@ export function ImageUploadPanel({
     }
 
     if (staged) URL.revokeObjectURL(staged.previewUrl);
-    setStaged({
+
+    const next: Staged = {
       file,
       blob: prepared.blob,
       previewUrl: URL.createObjectURL(prepared.blob),
@@ -182,51 +219,109 @@ export function ImageUploadPanel({
       tooSmall:
         prepared.width < MIN_RECOMMENDED_EDGE ||
         prepared.height < MIN_RECOMMENDED_EDGE,
-    });
+      path: null,
+    };
+
+    setStaged(next);
     setAltText("");
+    setAutoFramed(null);
+    setSubject(null);
+    /**
+     * The frame is known locally before the server answers, so the square is
+     * draggable during the upload rather than after it. The server's own
+     * measurement replaces it when the proposal lands — they agree, and the
+     * server's is the one the asset is actually cut from.
+     */
+    setFrame(
+      prepared.storedWidth > 0
+        ? { width: prepared.storedWidth, height: prepared.storedHeight }
+        : { width: prepared.width, height: prepared.height },
+    );
+    setCrop({
+      ...DEFAULT_CROP,
+      rotation: lastCrop?.rotation ?? 0,
+      brightness: lastCrop?.brightness ?? 0,
+      contrast: lastCrop?.contrast ?? 0,
+    });
+
+    void upload(next);
+  }
+
+  /** Put the original in Storage, then ask the server how to frame it. */
+  async function upload(item: Staged) {
+    const supabase = createClient();
+    const extension = item.blob.type === "image/webp" ? "webp" : "jpg";
+    const path = `originals/${productId}/${crypto.randomUUID()}.${extension}`;
+
+    setPhase({ step: "uploading" });
+    const { error } = await supabase.storage
+      .from(BUCKET)
+      .upload(path, item.blob, {
+        contentType: item.blob.type,
+        cacheControl: "31536000",
+        upsert: false,
+      });
+
+    if (error) {
+      setPhase({ step: "idle" });
+      toast.failed(`That did not upload. ${error.message}`);
+      return;
+    }
+
+    setStaged((prev) => (prev ? { ...prev, path } : prev));
+    setPhase({ step: "framing" });
+    await propose(path, lastCrop?.rotation ?? 0);
     setPhase({ step: "idle" });
+  }
+
+  /**
+   * Ask the server where the shoe is and how to frame it.
+   *
+   * Called again after a straighten, because rotating the picture changes the
+   * rectangle everything is measured against — a bounding box found on the
+   * unrotated frame would make the fill readout quietly wrong the moment the
+   * slider moved.
+   */
+  async function propose(path: string, rotation: number, keepFraming = false) {
+    const result = await proposeFrame({ path, rotation });
+    if (!result.ok) {
+      // Not a toast. Auto-frame is an assist; failing to get one leaves the
+      // owner exactly where they would have been without it, and a red banner
+      // would make a missing convenience look like a broken upload.
+      setAutoFramed(false);
+      return;
+    }
+
+    setFrame(result.frame);
+    setSubject(result.subject);
+    setAutoFramed(result.subject !== null);
+
+    if (!keepFraming) {
+      setCrop((prev) => ({
+        ...result.crop,
+        // The room's constants, not the photograph's: kept across shots.
+        rotation: prev.rotation,
+        brightness: prev.brightness,
+        contrast: prev.contrast,
+      }));
+    }
   }
 
   function discard() {
     if (staged) URL.revokeObjectURL(staged.previewUrl);
     setStaged(null);
     setAltText("");
+    setFrame(null);
+    setSubject(null);
+    setAutoFramed(null);
     if (inputRef.current) inputRef.current.value = "";
   }
 
-  async function commit(alreadyUploadedAt?: string) {
-    if (!staged || altText.trim().length === 0) return;
-
-    const supabase = createClient();
-
-    /**
-     * On a retry the bytes are already in storage. Re-uploading them would mint
-     * a second original for one photograph — an orphan by construction, since
-     * only one of them can end up on the row.
-     */
-    let path = alreadyUploadedAt ?? "";
-    if (!path) {
-      const extension = staged.blob.type === "image/webp" ? "webp" : "jpg";
-      path = `originals/${productId}/${crypto.randomUUID()}.${extension}`;
-
-      setPhase({ step: "uploading" });
-      const { error } = await supabase.storage
-        .from(BUCKET)
-        .upload(path, staged.blob, {
-          contentType: staged.blob.type,
-          cacheControl: "31536000",
-          upsert: false,
-        });
-
-      if (error) {
-        setPhase({ step: "idle" });
-        toast.failed(`That did not upload. ${error.message}`);
-        return;
-      }
-    }
+  async function commit() {
+    if (!staged?.path || altText.trim().length === 0) return;
 
     setPhase({ step: "processing" });
-    const processed = await normaliseUpload({ path });
+    const processed = await normaliseUpload({ path: staged.path, crop });
 
     if (!processed.ok) {
       if (processed.reason === "throttled") {
@@ -235,14 +330,14 @@ export function ImageUploadPanel({
           setPhase({ step: "waiting", seconds: left });
           await new Promise((resolve) => setTimeout(resolve, 1000));
         }
-        // The same original, not a new one.
-        return commit(path);
+        return commit();
       }
       setPhase({ step: "idle" });
       toast.failed(processed.message);
       return;
     }
 
+    const supabase = createClient();
     const { data } = supabase.storage
       .from(BUCKET)
       .getPublicUrl(processed.canonicalPath);
@@ -251,9 +346,11 @@ export function ImageUploadPanel({
     const added = await addProductImage({
       productId,
       url: data.publicUrl,
-      // Echoed back by the server rather than reused from `path` above, so the
-      // row can only ever name the file that was actually processed.
+      // Echoed back by the server rather than reused from the state above, so
+      // the row can only ever name the file and the framing that were actually
+      // processed.
       originalPath: processed.originalPath,
+      crop: processed.crop,
       altText: altText.trim(),
     });
     setPhase({ step: "idle" });
@@ -262,6 +359,8 @@ export function ImageUploadPanel({
       toast.failed(added.message);
       return;
     }
+
+    lastCrop = processed.crop ?? crop;
 
     if (processed.overBudget.length > 0) {
       toast.done(
@@ -322,24 +421,28 @@ export function ImageUploadPanel({
           </p>
         </>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-[10rem_1fr]">
-          <div>
-            {/*
-              The real frame: aspect-4/5, bg-fog and object-contain are the same
-              three the storefront card uses. A generic square thumbnail here
-              would show the owner something the shop never renders, which is
-              how a photograph gets approved and then looks wrong in the grid.
-            */}
-            <div className="bg-fog relative aspect-4/5 overflow-hidden rounded-lg">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
+        <div className="grid gap-4 lg:grid-cols-[minmax(16rem,22rem)_1fr]">
+          <div className="space-y-3">
+            {frame ? (
+              <CropStage
                 src={staged.previewUrl}
-                alt=""
-                className="absolute inset-0 size-full object-contain"
+                frame={frame}
+                crop={crop}
+                subject={subject}
+                targetFill={targetFill}
+                disabled={busy}
+                onChange={setCrop}
               />
-            </div>
-            <p className="text-muted-foreground mt-1 text-center text-xs">
-              how it appears on a card
+            ) : null}
+
+            <p className="text-muted-foreground text-center text-xs">
+              {phase.step === "uploading"
+                ? "Uploading while you frame it…"
+                : phase.step === "framing"
+                  ? "Looking for the shoe…"
+                  : autoFramed === true
+                    ? "Framed automatically — nudge it if you disagree"
+                    : "This square is what the shop will store"}
             </p>
           </div>
 
@@ -349,8 +452,7 @@ export function ImageUploadPanel({
               <span className="text-muted-foreground">
                 — {staged.width} × {staged.height}px,{" "}
                 {(staged.blob.size / 1024).toFixed(0)}KB after compressing
-                {staged.storedWidth > 0 &&
-                staged.storedWidth < staged.width ? (
+                {staged.storedWidth > 0 && staged.storedWidth < staged.width ? (
                   <>
                     {" "}
                     · kept at {staged.storedWidth} × {staged.storedHeight}px
@@ -371,11 +473,45 @@ export function ImageUploadPanel({
               </p>
             ) : null}
 
-            <div>
-              <label
-                htmlFor={altId}
-                className="mb-1 block text-sm font-medium"
+            <CropControls
+              crop={crop}
+              disabled={busy}
+              onChange={(next) => {
+                const straightened = next.rotation !== crop.rotation;
+                setCrop(next);
+                // Re-measure against the rotated frame, keeping the owner's
+                // framing. Fire-and-forget: the readout catches up, and the
+                // crop they are dragging is never taken out from under them.
+                if (straightened && staged.path) {
+                  void propose(staged.path, next.rotation, true);
+                }
+              }}
+            />
+
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={busy || !staged.path}
+                onClick={() => {
+                  if (staged.path) void propose(staged.path, crop.rotation);
+                }}
               >
+                <CropIcon className="size-4" aria-hidden />
+                Frame it for me
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={busy}
+                onClick={() => setCrop({ ...DEFAULT_CROP })}
+              >
+                Whole photograph
+              </Button>
+            </div>
+
+            <div>
+              <label htmlFor={altId} className="mb-1 block text-sm font-medium">
                 Describe this photograph
               </label>
               <Input
@@ -397,7 +533,7 @@ export function ImageUploadPanel({
               </p>
             </div>
 
-            {busy ? (
+            {phase.step !== "idle" ? (
               <p className="text-muted-foreground text-sm" aria-live="polite">
                 {phaseLabel(phase)}
               </p>
@@ -406,7 +542,7 @@ export function ImageUploadPanel({
             <div className="flex flex-wrap gap-2">
               <Button
                 size="sm"
-                disabled={busy || altText.trim().length === 0}
+                disabled={busy || !ready || altText.trim().length === 0}
                 onClick={() => void commit()}
               >
                 <Check className="size-4" aria-hidden />
@@ -451,16 +587,36 @@ function phaseLabel(phase: Phase): string {
       return "Reading the file…";
     case "uploading":
       return "Uploading…";
+    case "framing":
+      return "Looking for the shoe…";
     case "waiting":
       return `The shop is pacing itself — trying again in ${phase.seconds}s. Nothing has been lost.`;
     case "processing":
-      return "Squaring it up and making the sizes the shop needs…";
+      return "Cutting the square and making the sizes the shop needs…";
     case "attaching":
       return "Adding it to the product…";
     default:
       return "";
   }
 }
+
+/**
+ * What `shrink` hands back: the bytes to upload, the source it decoded, and the
+ * size those bytes actually are.
+ *
+ * Named rather than inlined because three of the five fields are dimensions and
+ * an inline object literal made it possible — it happened — to read the source
+ * pair where the stored pair was meant.
+ */
+type Prepared = {
+  blob: Blob;
+  /** The decoded source, after its orientation tag is applied. 0 if unreadable. */
+  width: number;
+  height: number;
+  /** What is inside `blob`. 0 when nothing usable was produced. */
+  storedWidth: number;
+  storedHeight: number;
+};
 
 /**
  * Downscale and re-encode in the browser, with no library.

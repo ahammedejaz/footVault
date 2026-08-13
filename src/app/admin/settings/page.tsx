@@ -4,6 +4,7 @@ import Link from "next/link";
 import {
   AnnouncementForm,
   ParcelDefaultsForm,
+  PhotographSettingsForm,
   ShippingSettingsForm,
   StoreSettingsForm,
 } from "@/components/admin/settings/settings-forms";
@@ -14,6 +15,7 @@ import {
   settingObject,
   settingString,
 } from "@/lib/queries/admin/settings";
+import { SUGGESTED_TARGET_FILL_PERCENT } from "@/lib/images/target-fill";
 import { istWallClock } from "@/lib/announcement";
 import { parcelDefaultsStatus } from "@/lib/shipping/quote";
 
@@ -45,6 +47,7 @@ export default async function AdminSettingsPage() {
   const contact = settingObject(settings, "contact");
   const announcement = settingObject(settings, "announcement");
   const social = settingObject(settings, "social");
+  const images = settingObject(settings, "images");
   const prepaidDiscount = (shipping.prepaid_discount ?? {}) as {
     mode?: string;
     value?: unknown;
@@ -225,6 +228,20 @@ export default async function AdminSettingsPage() {
                     ? announcement.ends_at
                     : null,
                 ),
+              }}
+            />
+          </Panel>
+
+          <Panel
+            title="Photographs"
+            description="What the crop tool aims at when you frame a picture."
+          >
+            <PhotographSettingsForm
+              initial={{
+                targetFillPercent:
+                  typeof images.target_fill_percent === "number"
+                    ? images.target_fill_percent
+                    : SUGGESTED_TARGET_FILL_PERCENT,
               }}
             />
           </Panel>

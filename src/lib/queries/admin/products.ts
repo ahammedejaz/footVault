@@ -294,11 +294,15 @@ export async function getAdminProduct(
       sort_order: number;
       is_primary: boolean;
       color: string | null;
+      original_path: string | null;
+      crop: unknown;
     }>(
       "admin.products.images",
       supabase
         .from("product_images")
-        .select("id, url, alt_text, sort_order, is_primary, color")
+        .select(
+          "id, url, alt_text, sort_order, is_primary, color, original_path, crop",
+        )
         .eq("product_id", productId),
     ),
   ]);
@@ -369,6 +373,8 @@ export async function getAdminProduct(
       sortOrder: row.sort_order,
       isPrimary: row.is_primary,
       color: row.color,
+      originalPath: row.original_path,
+      crop: row.crop,
     }));
 
   return {
@@ -477,4 +483,69 @@ function positiveOr(value: unknown, fallback: number): number {
   return typeof value === "number" && Number.isFinite(value) && value > 0
     ? value
     : fallback;
+}
+
+/**
+ * Every product photograph in the catalogue, newest first, for the contact
+ * sheet.
+ *
+ * Capped, and the cap is reported rather than silent: a sheet that quietly
+ * stopped at a hundred would read as "the catalogue is consistent" when it had
+ * only looked at part of it. The component prints what it is showing out of
+ * what exists.
+ */
+export async function listCatalogueImages(limit = 60): Promise<{
+  images: {
+    id: string;
+    url: string;
+    altText: string | null;
+    productId: string;
+    productName: string;
+  }[];
+  total: number;
+}> {
+  const supabase = await createClient();
+
+  /**
+   * The total exists so the sheet can say "60 of 214" rather than implying it
+   * has shown everything. If the count fails, falling back to the number of
+   * rows actually fetched is the honest answer — it makes the sheet say
+   * nothing about a total it does not know, rather than claiming one.
+   */
+  const { count, error: countError } = await supabase
+    .from("product_images")
+    .select("id", { count: "exact", head: true });
+
+  if (countError) {
+    console.error(
+      "[admin] contact sheet could not count the catalogue:",
+      countError.message,
+    );
+  }
+
+  const data = await rows<{
+    id: string;
+    url: string;
+    alt_text: string | null;
+    product_id: string;
+    products: { name: string } | null;
+  }>(
+    "admin.contact-sheet",
+    supabase
+      .from("product_images")
+      .select("id, url, alt_text, product_id, products(name)")
+      .order("created_at", { ascending: false })
+      .limit(limit),
+  );
+
+  return {
+    total: count ?? data.length,
+    images: data.map((row) => ({
+      id: row.id,
+      url: row.url,
+      altText: row.alt_text,
+      productId: row.product_id,
+      productName: row.products?.name ?? "—",
+    })),
+  };
 }

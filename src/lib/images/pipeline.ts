@@ -299,29 +299,10 @@ export async function normaliseProductImage(
  * decode, once per upload, on an operation the owner is already waiting on.
  */
 async function croppedSquare(input: Buffer, crop: Crop): Promise<Buffer> {
-  const oriented = await sharp(input, { failOn: "none" })
-    .rotate()
-    .flatten({ background: CARD_SURFACE })
-    .png()
-    .toBuffer();
+  const framed = await frameFor(input, crop.rotation);
 
-  const framed =
-    crop.rotation === 0
-      ? oriented
-      : await sharp(oriented)
-          .rotate(crop.rotation, { background: CARD_SURFACE })
-          .png()
-          .toBuffer();
-
-  const meta = await sharp(framed).metadata();
-  if (!meta.width || !meta.height) {
-    throw new ImagePipelineError(
-      "That photograph could not be re-read after straightening it.",
-    );
-  }
-
-  const rect = resolveCrop(meta.width, meta.height, crop);
-  const pad = paddingFor(meta.width, meta.height, rect);
+  const rect = resolveCrop(framed.width, framed.height, crop);
+  const pad = paddingFor(framed.width, framed.height, rect);
 
   /**
    * The padding is its own pass, and it has to be.
@@ -335,11 +316,11 @@ async function croppedSquare(input: Buffer, crop: Crop): Promise<Buffer> {
    */
   const padded =
     pad.left || pad.top || pad.right || pad.bottom
-      ? await sharp(framed)
+      ? await sharp(framed.data)
           .extend({ ...pad, background: CARD_SURFACE })
           .png()
           .toBuffer()
-      : framed;
+      : framed.data;
 
   const pipeline = sharp(padded).extract({
     left: rect.left + pad.left,
@@ -387,6 +368,190 @@ function adjusted(pipeline: Sharp, crop: Crop): Sharp {
 
 function clampAdjustment(value: number): number {
   return Math.min(MAX_ADJUSTMENT, Math.max(-MAX_ADJUSTMENT, value));
+}
+
+/**
+ * The thresholds auto-frame tries, in order.
+ *
+ * Measured 2026-08-13 against constructed fixtures, and the order is the
+ * finding rather than a guess. There is **no single threshold that works**:
+ *
+ *   - 20 and above is needed for a photograph with uneven light across the
+ *     table — a soft gradient reads as "not background" below it, and the trim
+ *     comes back holding half the frame.
+ *   - 8 and above **loses a white shoe on a fog background**, where the
+ *     subject differs from what it stands on by about eight levels per
+ *     channel. That case is real: it is the shop's own product on the shop's
+ *     own colour.
+ *
+ * So the ladder starts at a value that handles ordinary light, widens for
+ * difficult light, and finally tries a tight one for a low-contrast subject.
+ * The first plausible answer wins.
+ */
+const TRIM_THRESHOLDS = [10, 20, 30, 5] as const;
+
+/**
+ * A box this close to the whole frame means the trim found nothing — the
+ * background was too busy to tell from the subject, or the subject runs into
+ * the corner the background colour is sampled from.
+ */
+const SUBJECT_MAX = 0.92;
+
+/** And this small means it found a speck: a highlight, a sensor mark, dust. */
+const SUBJECT_MIN = 0.08;
+
+export type Subject = {
+  /** Fractions of the frame, so they mean the same thing to the browser. */
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  /** Which rung of the ladder found it. Reported, not decorative. */
+  threshold: number;
+};
+
+/**
+ * Where the shoe is, or null when the photograph does not say.
+ *
+ * ## What this is, honestly
+ *
+ * `sharp`'s trim, walked over a ladder of thresholds. It is not object
+ * detection and it does not know what a shoe is: it finds the largest region
+ * that differs from **the colour in the frame's top-left corner**. On the case
+ * this shop actually has — one shoe on a plain table — that is the same answer,
+ * for a fraction of the cost of a computer-vision dependency.
+ *
+ * ## What it fails on, stated rather than implied
+ *
+ * All four are measured, not imagined:
+ *
+ *  1. **A busy background** — bedspread, wood grain, patterned floor. Every
+ *     threshold returns the whole frame.
+ *  2. **A subject touching the top-left corner.** The corner *is* the shoe, so
+ *     the colour being trimmed away is the shoe's own. Returns the whole frame.
+ *  3. **A white shoe on a white table.** Under about eight levels of
+ *     separation the boundary is not in the pixels at all, and no threshold
+ *     invents it.
+ *  4. **Two shoes photographed apart** — returns a box spanning both, which is
+ *     arguably right and is at least visibly what happened.
+ *
+ * The first three come back as null, and the panel says "couldn't find the shoe
+ * — centred instead" rather than presenting a confident wrong crop. That
+ * distinction is the whole design: a wrong crop looks deliberate and gets
+ * approved, a stated fallback invites the owner to fix it.
+ *
+ * **Trimming against a named background is the version that does not work.**
+ * `trim({ background: CARD_SURFACE })` reads as the obvious implementation —
+ * our pad colour is fog, so trim the fog — and it finds nothing whatsoever
+ * unless the photograph was taken on a `#eef1f5` surface. A warm wooden table
+ * returns the whole frame at every threshold. Inferring the background from the
+ * corner is what makes this work on a real table.
+ */
+export async function findSubject(frame: Buffer): Promise<Subject | null> {
+  const meta = await sharp(frame).metadata();
+  if (!meta.width || !meta.height) return null;
+
+  for (const threshold of TRIM_THRESHOLDS) {
+    let info;
+    try {
+      ({ info } = await sharp(frame)
+        .trim({ threshold })
+        .toBuffer({ resolveWithObject: true }));
+    } catch {
+      // sharp throws rather than returning the whole frame when a trim would
+      // leave nothing at all — a photograph of one flat colour. That is a
+      // "cannot tell", same as the rest.
+      continue;
+    }
+
+    const width = info.width / meta.width;
+    const height = info.height / meta.height;
+
+    const plausible =
+      (width <= SUBJECT_MAX || height <= SUBJECT_MAX) &&
+      width >= SUBJECT_MIN &&
+      height >= SUBJECT_MIN;
+
+    if (plausible) {
+      return {
+        x: -(info.trimOffsetLeft ?? 0) / meta.width,
+        y: -(info.trimOffsetTop ?? 0) / meta.height,
+        width,
+        height,
+        threshold,
+      };
+    }
+  }
+
+  return null;
+}
+
+/**
+ * The frame a crop is measured against: oriented, flattened, optionally
+ * straightened — and its dimensions, read back rather than predicted.
+ *
+ * Shared by `findSubject`'s caller and by `croppedSquare` so that a bounding
+ * box found at one moment and a crop applied at another are talking about the
+ * same rectangle.
+ */
+export async function frameFor(
+  input: Buffer,
+  rotation = 0,
+  /**
+   * Pad the rotation with the photograph's **own** corner colour instead of
+   * `CARD_SURFACE`.
+   *
+   * For measuring, and only for measuring. `findSubject` infers the background
+   * from the frame's top-left pixel, and rotating fills the new corners with
+   * whatever colour is asked for — so padding a warm wooden table with fog
+   * makes the corner fog, the rest of the photograph "not background", and the
+   * detector correctly reports that it cannot find anything. Straightening a
+   * photograph would therefore switch auto-frame off, silently, which is
+   * exactly what it did until `audit:image-editor` caught it.
+   *
+   * The output frame keeps `CARD_SURFACE`, because that padding is stored and
+   * has to match the card. Both frames come out the same *size*, so the
+   * fractions resolved against one hold against the other.
+   */
+  padWithOwnCorner = false,
+): Promise<{ data: Buffer; width: number; height: number }> {
+  const oriented = await sharp(input, { failOn: "none" })
+    .rotate()
+    .flatten({ background: CARD_SURFACE })
+    .png()
+    .toBuffer();
+
+  const data =
+    rotation === 0
+      ? oriented
+      : await sharp(oriented)
+          .rotate(rotation, {
+            background: padWithOwnCorner
+              ? await cornerColour(oriented)
+              : CARD_SURFACE,
+          })
+          .png()
+          .toBuffer();
+
+  const meta = await sharp(data).metadata();
+  if (!meta.width || !meta.height) {
+    throw new ImagePipelineError("That photograph could not be measured.");
+  }
+  return { data, width: meta.width, height: meta.height };
+}
+
+/**
+ * The colour in the frame's top-left pixel — the same one `trim` treats as
+ * background, read the same way.
+ */
+async function cornerColour(image: Buffer): Promise<string> {
+  const { data } = await sharp(image)
+    .extract({ left: 0, top: 0, width: 1, height: 1 })
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+
+  const hex = (value: number) => value.toString(16).padStart(2, "0");
+  return `#${hex(data[0] ?? 238)}${hex(data[1] ?? 241)}${hex(data[2] ?? 245)}`;
 }
 
 /**

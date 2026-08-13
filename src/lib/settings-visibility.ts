@@ -70,6 +70,11 @@ export const SETTINGS_VISIBILITY: Record<string, SettingClassification> = {
     visibility: "public",
     reason: "what the checkout offers, which the customer is about to be shown anyway",
   },
+  images: {
+    visibility: "private",
+    reason:
+      "the target fill percentage the crop tool nudges toward. Operational: it shapes what the owner is guided to while framing a photograph, and a customer learns the result by looking at the pictures rather than by reading the figure",
+  },
   loyalty: {
     visibility: "private",
     reason:

@@ -105,7 +105,7 @@ type Control = {
    */
   options?: Record<string, string | RegExp>;
   /** Which settings row it lands in. */
-  row: "shipping" | "shipping_defaults" | "store_name" | "store_tagline" | "contact" | "social" | "announcement";
+  row: "shipping" | "shipping_defaults" | "store_name" | "store_tagline" | "contact" | "social" | "announcement" | "images";
   /** Read the stored value out of that row's `value`. */
   read: (value: unknown) => unknown;
 };
@@ -178,6 +178,13 @@ const CONTROLS: Control[] = [
   { id: "announcement-href", label: "Where it links", kind: "text", row: "announcement", read: (v) => obj(v).href },
   { id: "announcement-starts", label: "When it starts", kind: "text", row: "announcement", read: (v) => obj(v).starts_at },
   { id: "announcement-ends", label: "When it ends", kind: "text", row: "announcement", read: (v) => obj(v).ends_at },
+  /*
+    The image editor's one owner-facing number. Located by its visible label
+    like everything else here — and the label is the long one on purpose,
+    because "Target fill" would be a control whose meaning lives only in a
+    hint nobody reads twice.
+  */
+  { id: "target-fill", label: /How much of the frame a shoe should fill/, kind: "number", row: "images", read: (v) => obj(v).target_fill_percent },
 ];
 
 function obj(value: unknown): Record<string, unknown> {
@@ -205,6 +212,7 @@ const SAVE: Record<Control["row"], RegExp> = {
   contact: /Save shop details/,
   social: /Save shop details/,
   announcement: /Save the announcement/,
+  images: /Save how photographs are framed/,
 };
 
 /**
@@ -485,6 +493,17 @@ async function main() {
     await save(page, "shipping_defaults");
     for (const [id, , expected] of parcel) await assertStored(page, id, expected);
     await assertStored(page, "pickup-pin", "516360");
+
+    /*
+      The image editor's target. One control, one row, and the assertion that
+      matters is that the number the crop tool reads is the number the owner
+      typed — 78, not 85, and not "saved" while the row still says 85.
+    */
+    section("2b · how much of the frame a shoe should fill");
+    await open();
+    await setValue(page, "target-fill", "78");
+    await save(page, "images");
+    await assertStored(page, "target-fill", 78);
 
     /* ═══ 3 · delivery, in an order the form's own rules allow ════════════ */
     /*

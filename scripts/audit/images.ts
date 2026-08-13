@@ -29,6 +29,8 @@ import {
   MIN_RECOMMENDED_EDGE,
   VARIANT_BUDGET_BYTES,
   derivativePath,
+  findSubject,
+  frameFor,
   inspect,
   normaliseProductImage,
 } from "../../src/lib/images/pipeline";
@@ -799,6 +801,175 @@ async function main() {
     "a crop that runs off the edge is padded in the card's colour",
     padOff <= 2,
     `#${corneredPixel.subarray(0, 3).toString("hex")} against #eef1f5, off by ${padOff} — CARD_SURFACE within the encoder's tolerance, so the seam does not exist`,
+  );
+
+  /* ------------------------------------------------- 9 · auto-frame ------- */
+
+  console.log(
+    "\n\x1b[1m9 · auto-frame finds the shoe, and says so when it cannot\x1b[0m",
+  );
+
+  /**
+   * Every case below is a photograph the owner could plausibly take, and the
+   * four that fail are as important as the three that work — **more**
+   * important, because a detector that quietly returns a confident wrong box
+   * produces a catalogue of confidently wrong crops.
+   */
+  const SUB = { left: 200, top: 1100, width: 900, height: 420 };
+  const shoe = async (colour: string) =>
+    sharp({
+      create: {
+        width: SUB.width,
+        height: SUB.height,
+        channels: 3,
+        background: colour,
+      },
+    })
+      .png()
+      .toBuffer();
+
+  const on = async (
+    background: string,
+    colour = "#2b2b33",
+    at: { top: number; left: number } = { top: SUB.top, left: SUB.left },
+  ) =>
+    sharp({
+      create: {
+        width: SCENE_W,
+        height: SCENE_H,
+        channels: 3,
+        background,
+      },
+    })
+      .composite([{ input: await shoe(colour), ...at }])
+      .jpeg({ quality: 92 })
+      .toBuffer();
+
+  const found = async (image: Buffer) =>
+    findSubject((await frameFor(image)).data);
+
+  const onFog = await found(await on("#eef1f5"));
+  check(
+    "a dark shoe on the shop's own fog is found",
+    onFog !== null &&
+      Math.abs(onFog.width - SUB.width / SCENE_W) < 0.02 &&
+      Math.abs(onFog.x - SUB.left / SCENE_W) < 0.02,
+    onFog
+      ? `${(onFog.width * 100).toFixed(0)}% × ${(onFog.height * 100).toFixed(0)}% at threshold ${onFog.threshold}`
+      : "not found",
+  );
+
+  const onWarmTable = await found(await on("#e8e2d6"));
+  check(
+    "and on a warm wooden table, which is what a shop actually has",
+    onWarmTable !== null &&
+      Math.abs(onWarmTable.width - SUB.width / SCENE_W) < 0.02,
+    onWarmTable
+      ? `threshold ${onWarmTable.threshold} — trimming against CARD_SURFACE instead of the corner finds nothing at all here`
+      : "not found — the named-background implementation is back",
+  );
+
+  const lowContrast = await found(await on("#eef1f5", "#f6f6f6"));
+  check(
+    "a white shoe on fog is still found, by the tight rung of the ladder",
+    lowContrast !== null,
+    lowContrast
+      ? `threshold ${lowContrast.threshold} — about eight levels of separation; anything above ~8 loses it`
+      : "not found",
+  );
+
+  const busy = await found(
+    await sharp({
+      create: {
+        width: SCENE_W,
+        height: SCENE_H,
+        channels: 3,
+        // Ignored where noise is given, and required by the type.
+        background: "#808080",
+        noise: { type: "gaussian", mean: 150, sigma: 40 },
+      },
+    })
+      .composite([{ input: await shoe("#2b2b33"), top: SUB.top, left: SUB.left }])
+      .jpeg({ quality: 92 })
+      .toBuffer(),
+  );
+  check(
+    "a busy background reports nothing rather than the whole frame",
+    busy === null,
+    "the panel says 'couldn't find the shoe — centred instead'; a wrong crop would look deliberate",
+  );
+
+  const inTheCorner = await found(
+    await on("#eef1f5", "#2b2b33", { top: 0, left: 0 }),
+  );
+  check(
+    "a subject running into the top-left corner reports nothing",
+    inTheCorner === null,
+    "the corner is where the background colour is sampled — so the colour being trimmed is the shoe's own",
+  );
+
+  const whiteOnWhite = await found(await on("#ffffff", "#fcfcfc"));
+  check(
+    "a white shoe on a white table reports nothing",
+    whiteOnWhite === null,
+    "under a few levels of separation the boundary is not in the pixels, and no threshold invents it",
+  );
+
+  /**
+   * Two shoes is the case that is *not* a failure, and it is checked so nobody
+   * later "fixes" it into one: a box spanning both is what the owner asked for
+   * by photographing both.
+   */
+  const pair = await found(
+    await sharp({
+      create: {
+        width: SCENE_W,
+        height: SCENE_H,
+        channels: 3,
+        background: "#eef1f5",
+      },
+    })
+      .composite([
+        { input: await shoe("#2b2b33"), top: 300, left: 120 },
+        { input: await shoe("#2b2b33"), top: 1100, left: 1300 },
+      ])
+      .jpeg({ quality: 92 })
+      .toBuffer(),
+  );
+  check(
+    "two shoes photographed apart come back as one box spanning both",
+    pair !== null && pair.width > 0.8 && pair.height > 0.6,
+    pair
+      ? `${(pair.width * 100).toFixed(0)}% × ${(pair.height * 100).toFixed(0)}% — deliberate, not a miss`
+      : "not found",
+  );
+
+  /**
+   * Straightening must not switch the detector off.
+   *
+   * Rotating fills the new corners with a pad colour, and the corner is where
+   * the background is inferred from. Padding a warm table with fog therefore
+   * made every pixel of the photograph "not background" and auto-frame reported
+   * nothing — so the owner nudging the straighten slider silently lost the
+   * feature. Caught by audit:image-editor operating the real slider; asserted
+   * here too, because this is the layer that can be checked in a second rather
+   * than in a browser.
+   */
+  const straightScene = await on("#e8e2d6");
+  const beforeTilt = await found(straightScene);
+  const afterTilt = await findSubject((await frameFor(straightScene, 6, true)).data);
+  check(
+    "the subject is still found after a straighten",
+    beforeTilt !== null && afterTilt !== null,
+    afterTilt
+      ? `found at ${(afterTilt.width * 100).toFixed(0)}% wide, threshold ${afterTilt.threshold}`
+      : "lost once the photograph was rotated",
+  );
+  const fogPadded = await findSubject((await frameFor(straightScene, 6)).data);
+  check(
+    "and padding that rotation with fog instead is what used to break it",
+    fogPadded === null,
+    "kept as a check because the failure is invisible: a working detector that quietly stops",
   );
 
   /* --------------------------------------------------------- report ------ */

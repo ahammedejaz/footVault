@@ -7,6 +7,7 @@ import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   saveAnnouncement,
+  saveImageSettings,
   saveParcelDefaults,
   saveShippingSettings,
   saveStoreSettings,
@@ -782,6 +783,68 @@ export function AnnouncementForm({
       <Button type="submit" disabled={saving} className="min-h-11">
         {saving ? <Loader2 aria-hidden className="size-4 animate-spin" /> : null}
         Save the announcement
+      </Button>
+    </form>
+  );
+}
+
+/* ------------------------------------------- how a photograph is framed --- */
+
+/**
+ * The target the crop tool aims at, and the sentence that stops it being
+ * misread.
+ *
+ * **The hint is load-bearing, not decoration.** "85%" with no other context
+ * reads as 85% *by area* to most people, and for a shoe that is not a
+ * demanding target, it is an unreachable one — a silhouette filling 85% of its
+ * own bounding box by area would have to be a rectangle. An owner who assumed
+ * the area reading would conclude the tool was broken and turn the number down
+ * until it "worked", which would undo the consistency the figure exists to
+ * create. So the control says which measurement it is, in words, where it is
+ * being typed.
+ */
+export function PhotographSettingsForm({
+  initial,
+}: {
+  initial: { targetFillPercent: number };
+}) {
+  const { saving, save } = useSaver();
+  const [v, setV] = React.useState(initial);
+
+  return (
+    <form
+      onSubmit={(event) => {
+        event.preventDefault();
+        void save(
+          () => saveImageSettings(v),
+          "Saved. New photographs will be framed to that.",
+        );
+      }}
+      className="space-y-5"
+    >
+      <Amount
+        id="target-fill"
+        label="How much of the frame a shoe should fill"
+        unit="%"
+        value={v.targetFillPercent}
+        onChange={(next) =>
+          setV(() => ({ targetFillPercent: Math.round(next) }))
+        }
+        hint={
+          <>
+            Measured across the shoe&rsquo;s <strong>longest side</strong>, not
+            by area — a shoe filling 85% of the frame by area would have to be a
+            rectangle. Amazon and Flipkart both use 85% and both mean it this
+            way; the remaining room is what stops a product touching the frame
+            edge. A shoe is wider and lower than the boxes that figure was
+            chosen for, so it is worth trying 78&ndash;80 once you have thirty
+            real photographs to compare.
+          </>
+        }
+      />
+      <Button type="submit" disabled={saving} className="min-h-11">
+        {saving ? <Loader2 aria-hidden className="size-4 animate-spin" /> : null}
+        Save how photographs are framed
       </Button>
     </form>
   );

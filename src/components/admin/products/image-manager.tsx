@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { ArrowDown, ArrowUp, Star } from "lucide-react";
 
 import { ConfirmAction } from "@/components/admin/confirm-action";
+import { RecropDialog } from "@/components/admin/products/recrop-dialog";
 import { Chip, EmptyState, Panel } from "@/components/admin/ui";
 import { ImageUploadPanel } from "@/components/admin/products/image-upload-panel";
 import { Button } from "@/components/ui/button";
@@ -41,10 +42,13 @@ export function ImageManager({
   productId,
   productName,
   images,
+  targetFill,
 }: {
   productId: string;
   productName: string;
   images: AdminImage[];
+  /** The fraction the fill guide is drawn at, from the owner's settings. */
+  targetFill: number;
 }) {
   const router = useRouter();
   const [busy, setBusy] = React.useState<string | null>(null);
@@ -70,6 +74,7 @@ export function ImageManager({
           productId={productId}
           productName={productName}
           existingCount={images.length}
+          targetFill={targetFill}
           onAdded={() => router.refresh()}
         />
       </div>
@@ -123,7 +128,18 @@ export function ImageManager({
                 />
               </div>
 
-              <div className="flex shrink-0 flex-wrap items-center gap-1.5">
+              {/*
+                Full width and wrapping below `sm`, fixed-width above it.
+
+                `shrink-0` alone put five controls on one line at 390px: the row
+                could not shrink, so it grew past the card's own border and
+                "Re-frame" was clipped with "Delete" hanging outside the box
+                entirely. Every predicate in every gate passed — the buttons
+                were present, visible and clickable — and a screenshot at 390
+                caught it, which is the second time that has happened in this
+                area and the reason audit:image-editor takes them.
+              */}
+              <div className="flex w-full flex-wrap items-center gap-1.5 sm:w-auto sm:shrink-0">
                 <Button
                   variant="outline"
                   size="icon-sm"
@@ -154,6 +170,12 @@ export function ImageManager({
                   />
                   Make main
                 </Button>
+                <RecropDialog
+                  image={image}
+                  position={index + 1}
+                  targetFill={targetFill}
+                  onDone={() => router.refresh()}
+                />
                 <ConfirmAction
                   subject={`Delete photograph ${index + 1}?`}
                   consequence={
