@@ -8,8 +8,10 @@ import { Input } from "@/components/ui/input";
 import { addProductImage } from "@/lib/actions/admin/products";
 import { normaliseUpload } from "@/lib/actions/admin/image-pipeline";
 import {
-  CANONICAL_EDGE,
+  MAX_UPLOAD_BYTES,
   MIN_RECOMMENDED_EDGE,
+  UPLOAD_EDGE,
+  UPLOAD_EDGE_LADDER,
   UPLOAD_RECOMMENDATION,
 } from "@/lib/images/constants";
 import { createClient } from "@/lib/supabase/client";
@@ -58,8 +60,6 @@ import { toast } from "@/lib/toast";
  * unprocessed file.
  */
 
-/** The bucket's own ceiling, and the copy has to agree with it. */
-const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
 const BUCKET = "product-images";
 const ACCEPTED = ["image/jpeg", "image/png", "image/webp", "image/avif"];
 const WEBP_QUALITY = 0.82;
@@ -69,9 +69,39 @@ type Staged = {
   /** The compressed bytes actually uploaded. */
   blob: Blob;
   previewUrl: string;
+  /** The source as the camera took it, after its orientation tag is applied. */
   width: number;
   height: number;
+  /**
+   * What is inside `blob` — the size the crop step will have to work with, and
+   * the size `originals/` keeps forever.
+   *
+   * Reported separately from the pair above because they are different facts
+   * and the owner is entitled to both: "you gave us 4000px, we kept 3000" is
+   * information, whereas showing only the source would state a resolution the
+   * catalogue does not actually hold.
+   */
+  storedWidth: number;
+  storedHeight: number;
   tooSmall: boolean;
+};
+
+/**
+ * What `shrink` hands back: the bytes to upload, the source it decoded, and the
+ * size those bytes actually are.
+ *
+ * Named rather than inlined because three of the five fields are dimensions and
+ * an inline object literal made it possible — it happened — to read the source
+ * pair where the stored pair was meant.
+ */
+type Prepared = {
+  blob: Blob;
+  /** The decoded source, after its orientation tag is applied. 0 if unreadable. */
+  width: number;
+  height: number;
+  /** What is inside `blob`. 0 when nothing usable was produced. */
+  storedWidth: number;
+  storedHeight: number;
 };
 
 type Phase =
@@ -131,8 +161,11 @@ export function ImageUploadPanel({
 
     if (prepared.blob.size > MAX_UPLOAD_BYTES) {
       setPhase({ step: "idle" });
+      // The ladder has already been walked to the bottom by this point, so the
+      // sentence names the smallest size that was tried. "Still 6MB" without
+      // "at 1600px" reads as though nothing was attempted.
       toast.failed(
-        `${file.name} is still ${(prepared.blob.size / 1048576).toFixed(1)}MB after compressing. Five megabytes is the limit.`,
+        `${file.name} is still ${(prepared.blob.size / 1048576).toFixed(1)}MB after compressing it down to ${UPLOAD_EDGE_LADDER[UPLOAD_EDGE_LADDER.length - 1]}px. Five megabytes is the limit.`,
       );
       return;
     }
@@ -144,6 +177,8 @@ export function ImageUploadPanel({
       previewUrl: URL.createObjectURL(prepared.blob),
       width: prepared.width,
       height: prepared.height,
+      storedWidth: prepared.storedWidth,
+      storedHeight: prepared.storedHeight,
       tooSmall:
         prepared.width < MIN_RECOMMENDED_EDGE ||
         prepared.height < MIN_RECOMMENDED_EDGE,
@@ -280,10 +315,10 @@ export function ImageUploadPanel({
           */}
           <p className="text-muted-foreground max-w-prose text-sm text-pretty">
             Two shots per product: the three-quarter view and the outsole.{" "}
-            {nextShotHint(existingCount)} Pictures are shrunk to{" "}
-            {CANONICAL_EDGE}px and converted to WebP in this browser first, so a
-            photograph straight off a phone does not cost a customer four
-            megabytes.
+            {nextShotHint(existingCount)} Pictures are shrunk to {UPLOAD_EDGE}px
+            and converted to WebP in this browser first — large enough to crop
+            into later, small enough that a photograph straight off a phone is
+            not a four-megabyte upload.
           </p>
         </>
       ) : (
@@ -314,6 +349,13 @@ export function ImageUploadPanel({
               <span className="text-muted-foreground">
                 — {staged.width} × {staged.height}px,{" "}
                 {(staged.blob.size / 1024).toFixed(0)}KB after compressing
+                {staged.storedWidth > 0 &&
+                staged.storedWidth < staged.width ? (
+                  <>
+                    {" "}
+                    · kept at {staged.storedWidth} × {staged.storedHeight}px
+                  </>
+                ) : null}
               </span>
             </p>
 
@@ -439,48 +481,99 @@ function phaseLabel(phase: Phase): string {
  * slowly, rather than refuse. The result is only used when it is actually
  * smaller — re-encoding an already-tight JPEG as WebP can come out larger, and
  * shipping a bigger file than the owner chose would make this a cost.
+ *
+ * ## The ladder
+ *
+ * `UPLOAD_EDGE_LADDER` is walked from the top, and the first rung that fits
+ * inside `MAX_UPLOAD_BYTES` wins. Every rung re-encodes from the *bitmap*, not
+ * from the rung above it, so stepping down costs a little time and no quality:
+ * a chain of re-encodings would compound WebP's losses three times over for a
+ * photograph that was merely large.
+ *
+ * The "it came out bigger, send the original instead" rule applies **only at
+ * the top rung**. Lower down, the original is by definition over the ceiling —
+ * that is why the ladder is being walked at all — so preferring it there would
+ * hand the caller a file it is about to refuse.
  */
-async function shrink(
-  file: File,
-): Promise<{ blob: Blob; width: number; height: number }> {
-  if (typeof createImageBitmap !== "function") {
-    return { blob: file, width: 0, height: 0 };
-  }
+async function shrink(file: File): Promise<Prepared> {
+  /** The untouched file, with whatever we managed to learn about it. */
+  const untouched = (width = 0, height = 0): Prepared => ({
+    blob: file,
+    width,
+    height,
+    storedWidth: width,
+    storedHeight: height,
+  });
+
+  if (typeof createImageBitmap !== "function") return untouched();
 
   let bitmap: ImageBitmap | null = null;
   try {
-    bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
-    const scale = Math.min(
-      1,
-      CANONICAL_EDGE / Math.max(bitmap.width, bitmap.height),
-    );
-    const width = Math.max(1, Math.round(bitmap.width * scale));
-    const height = Math.max(1, Math.round(bitmap.height * scale));
+    const image = await createImageBitmap(file, {
+      imageOrientation: "from-image",
+    });
+    bitmap = image;
 
     const canvas = document.createElement("canvas");
-    canvas.width = width;
-    canvas.height = height;
     const context = canvas.getContext("2d");
-    if (!context) {
-      return { blob: file, width: bitmap.width, height: bitmap.height };
-    }
-    context.drawImage(bitmap, 0, 0, width, height);
+    if (!context) return untouched(image.width, image.height);
 
-    const blob = await new Promise<Blob | null>((resolve) => {
-      canvas.toBlob(resolve, "image/webp", WEBP_QUALITY);
-    });
+    /**
+     * Kept so the refusal message can report the smallest thing actually
+     * produced rather than the multi-megabyte file the owner chose. "Still
+     * 6.2MB" is only a fair sentence if it describes an attempt.
+     */
+    let smallest: Blob | null = null;
 
-    if (!blob || blob.size >= file.size) {
-      return { blob: file, width: bitmap.width, height: bitmap.height };
+    for (const [rung, edge] of UPLOAD_EDGE_LADDER.entries()) {
+      const scale = Math.min(1, edge / Math.max(image.width, image.height));
+      const width = Math.max(1, Math.round(image.width * scale));
+      const height = Math.max(1, Math.round(image.height * scale));
+
+      canvas.width = width;
+      canvas.height = height;
+      context.drawImage(image, 0, 0, width, height);
+
+      const blob = await new Promise<Blob | null>((resolve) => {
+        canvas.toBlob(resolve, "image/webp", WEBP_QUALITY);
+      });
+      if (!blob) return untouched(image.width, image.height);
+
+      if (rung === 0 && blob.size >= file.size && file.size <= MAX_UPLOAD_BYTES) {
+        return untouched(image.width, image.height);
+      }
+
+      if (blob.size <= MAX_UPLOAD_BYTES) {
+        // The *decoded* dimensions are what the too-small warning must be
+        // about: the file may be 4000px wide and, once the portrait tag is
+        // applied, 3000px on its shortest side. Reporting the pre-rotation
+        // pair would warn about the wrong number.
+        return {
+          blob,
+          width: image.width,
+          height: image.height,
+          storedWidth: width,
+          storedHeight: height,
+        };
+      }
+
+      if (!smallest || blob.size < smallest.size) smallest = blob;
     }
-    // The *decoded* dimensions are what the warning must be about: the file may
-    // be 4000px wide and, once the portrait tag is applied, 3000px on its
-    // shortest side. Reporting the pre-rotation pair would warn about the wrong
-    // number.
-    return { blob, width: bitmap.width, height: bitmap.height };
+
+    // Every rung was over the ceiling. Hand back the smallest attempt so the
+    // caller refuses with a number that means something.
+    return smallest
+      ? {
+          blob: smallest,
+          width: image.width,
+          height: image.height,
+          storedWidth: 0,
+          storedHeight: 0,
+        }
+      : untouched(image.width, image.height);
   } catch (error) {
     console.warn("[admin] could not compress, sending the original:", error);
-    return { blob: file, width: 0, height: 0 };
+    return untouched();
   } finally {
     bitmap?.close();
   }

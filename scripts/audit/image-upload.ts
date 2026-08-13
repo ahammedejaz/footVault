@@ -49,7 +49,11 @@ assertNotProduction("run image-upload");
 import sharp from "sharp";
 import { chromium } from "playwright";
 
-import { CANONICAL_WIDTHS, CANONICAL_EDGE } from "../../src/lib/images/constants";
+import {
+  CANONICAL_WIDTHS,
+  CANONICAL_EDGE,
+  UPLOAD_EDGE,
+} from "../../src/lib/images/constants";
 import { derivativeLoader, isDerivative } from "../../src/lib/images/srcset";
 import { adminClient, createAccount, sessionCookies } from "./fixtures";
 import { BASE_URL } from "./routes";
@@ -70,6 +74,17 @@ function check(label: string, condition: boolean, detail = "") {
 }
 
 /**
+ * The long edge of the fixture, deliberately **above** the upload cap.
+ *
+ * Derived from `UPLOAD_EDGE` rather than typed, so raising the cap raises the
+ * fixture with it. A fixture smaller than the cap would be uploaded untouched
+ * and section 6's headroom assertion would pass without the panel having
+ * resized anything at all — a check that proves the fixture, not the code.
+ */
+const FIXTURE_LONG_EDGE = UPLOAD_EDGE + 200;
+const FIXTURE_SHORT_EDGE = Math.round(FIXTURE_LONG_EDGE * 0.75);
+
+/**
  * A portrait photograph with an unmistakable top-left mark, carrying EXIF
  * orientation 6 — the tag a phone writes when held in portrait.
  *
@@ -79,13 +94,23 @@ function check(label: string, condition: boolean, detail = "") {
  */
 async function crookedPhotograph(): Promise<Buffer> {
   const mark = await sharp({
-    create: { width: 150, height: 200, channels: 3, background: "#d81e05" },
+    create: {
+      width: Math.round(FIXTURE_SHORT_EDGE / 8),
+      height: Math.round(FIXTURE_LONG_EDGE / 8),
+      channels: 3,
+      background: "#d81e05",
+    },
   })
     .png()
     .toBuffer();
 
   const upright = await sharp({
-    create: { width: 1200, height: 1600, channels: 3, background: "#ffffff" },
+    create: {
+      width: FIXTURE_SHORT_EDGE,
+      height: FIXTURE_LONG_EDGE,
+      channels: 3,
+      background: "#ffffff",
+    },
   })
     .composite([{ input: mark, top: 0, left: 0 }])
     .jpeg({ quality: 92 })
@@ -313,7 +338,9 @@ async function main() {
       );
     }
 
-    console.log("\n\x1b[1m6 · the original was kept\x1b[0m");
+    console.log(
+      "\n\x1b[1m6 · the original was kept, with room to crop into\x1b[0m",
+    );
 
     const { data: originals, error: listError } = await admin.storage
       .from(BUCKET)
@@ -324,6 +351,65 @@ async function main() {
       !listError && (originals ?? []).length > 0,
       `${(originals ?? []).length} file(s) — this is what makes a reprocess possible`,
     );
+
+    /**
+     * The row has to *name* its original, not merely coexist with one.
+     *
+     * `originals/` accumulates: a failed normalisation leaves a file behind on
+     * purpose. So "there is a file in the folder" would stay true after the
+     * column stopped being written, and re-crop — which reads the column, not
+     * the folder — would have nothing to work from.
+     */
+    check(
+      "the row names the original it came from",
+      typeof newest.original_path === "string" &&
+        newest.original_path.startsWith(`originals/${product.id}/`),
+      newest.original_path ?? "(null)",
+    );
+
+    /**
+     * **The headroom check.** A crop is a zoom, and it can only zoom into
+     * pixels that were uploaded.
+     *
+     * Until 2026-08-13 the panel shrank every upload to `CANONICAL_EDGE`, so
+     * `originals/` held a 1600px copy and a crop to the target fill fed roughly
+     * 750px into a 1600px canvas. Nothing failed — the pipeline upscales by
+     * design — it simply looked soft, which is the failure this whole area
+     * exists to prevent and the one no other assertion here would notice.
+     *
+     * The fixture is `UPLOAD_EDGE + 200` on its long edge, so this is a real
+     * measurement of where the panel capped it, not of what it was handed. It
+     * fails loudly if the cap is ever lowered back.
+     */
+    if (typeof newest.original_path === "string") {
+      const { data: originalFile, error: originalError } = await admin.storage
+        .from(BUCKET)
+        .download(newest.original_path);
+
+      if (originalError || !originalFile) {
+        check(
+          "the stored original can be read back",
+          false,
+          originalError?.message ?? "no body",
+        );
+      } else {
+        const meta = await sharp(
+          Buffer.from(await originalFile.arrayBuffer()),
+        ).metadata();
+        const longEdge = Math.max(meta.width ?? 0, meta.height ?? 0);
+
+        check(
+          "the stored original keeps the full upload edge",
+          longEdge === UPLOAD_EDGE,
+          `${meta.width}×${meta.height} from a ${FIXTURE_SHORT_EDGE}×${FIXTURE_LONG_EDGE} source — the cap is ${UPLOAD_EDGE}px`,
+        );
+        check(
+          "which is more than the canonical edge, so a crop has room to zoom",
+          longEdge > CANONICAL_EDGE,
+          `${longEdge} > ${CANONICAL_EDGE} — at parity a crop to the target fill would upscale about 2x`,
+        );
+      }
+    }
 
     console.log(
       "\n\x1b[1m7 · promoted to main, the storefront serves it directly\x1b[0m",
@@ -404,16 +490,23 @@ async function countImages(
   return (await listImages(admin, productId)).length;
 }
 
+type ImageRow = {
+  id: string;
+  url: string;
+  alt_text: string | null;
+  original_path: string | null;
+};
+
 async function listImages(
   admin: ReturnType<typeof adminClient>,
   productId: string,
-): Promise<{ id: string; url: string; alt_text: string | null }[]> {
+): Promise<ImageRow[]> {
   const { data, error } = await admin
     .from("product_images")
-    .select("id, url, alt_text")
+    .select("id, url, alt_text, original_path")
     .eq("product_id", productId)
     .order("sort_order")
-    .overrideTypes<{ id: string; url: string; alt_text: string | null }[]>();
+    .overrideTypes<ImageRow[]>();
   // Throwing rather than returning []: an unreadable table would otherwise make
   // "a row was written" fail with a count of 0, which reads as a broken upload
   // and sends the next person to the wrong place entirely.

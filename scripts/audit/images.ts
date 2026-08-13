@@ -32,6 +32,11 @@ import {
   inspect,
   normaliseProductImage,
 } from "../../src/lib/images/pipeline";
+import {
+  MAX_UPLOAD_BYTES,
+  UPLOAD_EDGE,
+  UPLOAD_EDGE_LADDER,
+} from "../../src/lib/images/constants";
 import { isDerivative, snapWidth } from "../../src/lib/images/srcset";
 
 let failed = 0;
@@ -442,6 +447,57 @@ async function main() {
     (w) => typeof VARIANT_BUDGET_BYTES[w] === "number",
   );
   check("every emitted width has a byte budget", budgets);
+
+  /* ------------------------------------------------- 7 · upload cap ------ */
+
+  console.log(
+    "\n\x1b[1m7 · what reaches originals/ can still be cropped\x1b[0m",
+  );
+
+  /**
+   * These four assertions are cheap and they guard a decision that is
+   * **irreversible per photograph**: whatever the panel stores in `originals/`
+   * is what every future re-crop and every `PIPELINE_VERSION` bump has to work
+   * from. A cap quietly lowered back to the canonical edge would not fail
+   * anything else in this file — the pipeline would keep producing perfect
+   * 1600px squares out of a source with nothing left to crop into.
+   */
+  check(
+    "the upload cap leaves headroom above the canonical edge",
+    UPLOAD_EDGE > CANONICAL_EDGE,
+    `${UPLOAD_EDGE} > ${CANONICAL_EDGE} — a crop to the target fill keeps roughly half the frame`,
+  );
+  check(
+    "the ladder descends",
+    UPLOAD_EDGE_LADDER.every(
+      (edge, i) => i === 0 || edge < UPLOAD_EDGE_LADDER[i - 1]!,
+    ),
+    UPLOAD_EDGE_LADDER.join(" → "),
+  );
+  check(
+    "and bottoms out no lower than the canonical edge",
+    UPLOAD_EDGE_LADDER[UPLOAD_EDGE_LADDER.length - 1]! >= CANONICAL_EDGE,
+    "below it the pipeline would upscale even an uncropped photograph",
+  );
+
+  /**
+   * The client-side ceiling and the bucket's own must agree.
+   *
+   * They are two systems' opinions about one number: `MAX_UPLOAD_BYTES` decides
+   * what the panel offers to upload, and `file_size_limit` on the bucket
+   * decides what Storage accepts. A panel believing in the larger of the two
+   * produces the worst version of this failure — the owner waits out a full
+   * upload and is refused at the end by a layer with no message worth reading.
+   */
+  const storageSql = readFileSync(
+    "supabase/migrations/20260807120600_storage.sql",
+    "utf8",
+  );
+  check(
+    "the panel's ceiling equals the bucket's file_size_limit",
+    storageSql.includes(String(MAX_UPLOAD_BYTES)),
+    `${MAX_UPLOAD_BYTES} bytes, stated in the storage migration`,
+  );
 
   /* --------------------------------------------------------- report ------ */
 
