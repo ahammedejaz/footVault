@@ -28,7 +28,7 @@ import { shippingDefaults } from "@/lib/shipping/quote";
  *
  * ## The PIN, which is the part that costs money
  *
- * The pickup PIN determines the rate — a quote from Cuddapah and a quote from
+ * The pickup PIN determines the rate — a quote from Proddatur and a quote from
  * Bengaluru for the same parcel are different amounts. `site_settings
  * .shipping_defaults.pickup_postcode` is what every quote is taken from, and it
  * is typed by hand at `/admin/settings`; the nickname sent at shipment time is a

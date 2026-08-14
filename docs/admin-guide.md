@@ -103,7 +103,7 @@ because a different courier wins there. That is correct, and it is why a single
 flat rate was always overcharging some customers and undercharging others.
 
 If Shiprocket says **no courier serves that pin code at all**, checkout says so
-before any money moves. From Cuddapah, Port Blair is one of those.
+before any money moves. From Proddatur, Port Blair is one of those.
 
 ### What you do control
 
@@ -232,7 +232,7 @@ directly.
   number. Send your developer the real ones. This is not cosmetic — it is the
   only route a customer has for a claim.
 - **The phone number and shop address are correct**, taken from your Shiprocket
-  record: Classic Vastralayam Complex, Shop No. 2, Near RTC Bus Stand, Cuddapah,
+  record: Classic Vastralayam Complex, Shop No. 2, Near RTC Bus Stand, Proddatur,
   Andhra Pradesh 516360, and **+91 91602 52643**.
 
 ### One refund the site still promises, deliberately
@@ -284,7 +284,7 @@ booked from the site.
 
 - The site can already sign in to your Shiprocket account, and it prices delivery
   from it live. That part works.
-- Your pickup location is **DCSR**, Cuddapah, PIN 516360.
+- Your pickup location is **DCSR**, Proddatur, PIN 516360.
 - **Your pickup address is not verified in Shiprocket.** The panel shows it as
   unverified, and Shiprocket can refuse to issue a tracking number for an
   unverified address. Verify it in the panel before you try a real shipment.

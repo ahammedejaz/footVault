@@ -9,7 +9,7 @@
  *
  *     phone     +91 91602 52643                     ← real, and Andhra Pradesh
  *     email     inquiry@footvault.in                 ← real
- *     address   …Near RTC Bus Stand, Cuddapah…       ← real
+ *     address   …Near RTC Bus Stand, Cuddapah…       ← real, wrong town
  *     whatsapp  +91 98450 22001                      ← the seed fixture, byte for byte
  *
  * Three of the four had been updated to the real shop. The fourth still held
@@ -58,7 +58,9 @@ function check(label: string, ok: boolean, detail = ""): void {
     return;
   }
   failed += 1;
-  console.log(`  \x1b[31m✗\x1b[0m ${label}${detail ? `\n      ${detail}` : ""}`);
+  console.log(
+    `  \x1b[31m✗\x1b[0m ${label}${detail ? `\n      ${detail}` : ""}`,
+  );
 }
 
 /** The fixture value for one field of one settings row, or null. */
@@ -98,7 +100,9 @@ async function main(): Promise<void> {
     .in("key", ["contact", "social"]);
 
   if (error) {
-    console.log(`\n  \x1b[31m✗\x1b[0m site_settings unreadable: ${error.message}`);
+    console.log(
+      `\n  \x1b[31m✗\x1b[0m site_settings unreadable: ${error.message}`,
+    );
     process.exit(1);
   }
 
@@ -108,7 +112,9 @@ async function main(): Promise<void> {
 
   /* ------------------------------------------------- 1 · nothing is a fixture -- */
 
-  console.log("\n\x1b[1m1 · no published detail is still the seed fixture\x1b[0m");
+  console.log(
+    "\n\x1b[1m1 · no published detail is still the seed fixture\x1b[0m",
+  );
 
   const fields: { key: string; field: string; what: string }[] = [
     { key: "contact", field: "phone", what: "the number a customer rings" },
@@ -118,9 +124,21 @@ async function main(): Promise<void> {
       what: "the channel the returns policy sends damage claims to, inside 24 hours",
     },
     { key: "contact", field: "email", what: "where enquiries arrive" },
-    { key: "contact", field: "address", what: "the shop's address, and what LocalBusiness will claim" },
-    { key: "social", field: "instagram", what: "a profile `sameAs` will tell Google is this business" },
-    { key: "social", field: "facebook", what: "a profile `sameAs` will tell Google is this business" },
+    {
+      key: "contact",
+      field: "address",
+      what: "the shop's address, and what LocalBusiness will claim",
+    },
+    {
+      key: "social",
+      field: "instagram",
+      what: "a profile `sameAs` will tell Google is this business",
+    },
+    {
+      key: "social",
+      field: "facebook",
+      what: "a profile `sameAs` will tell Google is this business",
+    },
   ];
 
   for (const { key, field, what } of fields) {
@@ -141,7 +159,9 @@ async function main(): Promise<void> {
 
   /* --------------------------------------------------- 2 · the details work -- */
 
-  console.log("\n\x1b[1m2 · the details a customer needs are present and usable\x1b[0m");
+  console.log(
+    "\n\x1b[1m2 · the details a customer needs are present and usable\x1b[0m",
+  );
 
   check(
     "a phone number is published",

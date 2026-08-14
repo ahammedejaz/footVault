@@ -10,13 +10,13 @@
 Five rulings came back on the audit. Each one moved the plan, and in two cases
 it moved it away from the obvious fix toward the mechanism underneath.
 
-| Ruling | Effect on this plan |
-| --- | --- |
-| 1 — body is truth; **the blind spot is the more important half** | The one-line meta fix is A1. The gate extension is **A2**, and it is the larger item: `audit:literals` must read `meta_title`/`meta_description` and must learn time literals. |
-| 2 — code fixed, copy not; drive values through tokens | Three new tokens, one new setting, **and** a new gate that catches the privacy page's class of drift — which is not a number and needs a different mechanism (A7). |
-| 3 — canonical is a launch blocker; **`notApplicable` is never a pass** | B1 plus a new `audit:seo` gate whose central design rule is that absence fails. Proven by a negative control that removes the export. |
-| 4 — Kadapa is the highest-value item | Promoted out of "content polish" into its own cross-cutting batch (**Batch K**) that touches metadata, schema, three pages and the address. |
-| 5 — recommend, don't default | §Batch C carries a recommendation with reasoning and the counter-case. **Vercel Analytics + Search Console.** |
+| Ruling                                                                 | Effect on this plan                                                                                                                                                            |
+| ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1 — body is truth; **the blind spot is the more important half**       | The one-line meta fix is A1. The gate extension is **A2**, and it is the larger item: `audit:literals` must read `meta_title`/`meta_description` and must learn time literals. |
+| 2 — code fixed, copy not; drive values through tokens                  | Three new tokens, one new setting, **and** a new gate that catches the privacy page's class of drift — which is not a number and needs a different mechanism (A7).             |
+| 3 — canonical is a launch blocker; **`notApplicable` is never a pass** | B1 plus a new `audit:seo` gate whose central design rule is that absence fails. Proven by a negative control that removes the export.                                          |
+| 4 — Kadapa is the highest-value item                                   | Promoted out of "content polish" into its own cross-cutting batch (**Batch K**) that touches metadata, schema, three pages and the address.                                    |
+| 5 — recommend, don't default                                           | §Batch C carries a recommendation with reasoning and the counter-case. **Vercel Analytics + Search Console.**                                                                  |
 
 ---
 
@@ -24,8 +24,8 @@ it moved it away from the obvious fix toward the mechanism underneath.
 
 ### BotID does not exist in this repository
 
-Batch D precondition 4 is *"BotID is on checkout and coupon-check — Group 3 from
-the security work."* Measured:
+Batch D precondition 4 is _"BotID is on checkout and coupon-check — Group 3 from
+the security work."_ Measured:
 
 ```
 grep -rni "botid|@vercel/botid" src scripts package.json vercel.json docs
@@ -144,8 +144,8 @@ and error correction, cancellation before dispatch, the replacement-only
 position stated in the same words as the returns page, governing law and
 jurisdiction, registered business name and GSTIN.
 
-Resolve the wording collision the audit found: Terms says *"refund that line in
-full"* for an out-of-stock item while Returns says *"We do not offer refunds."*
+Resolve the wording collision the audit found: Terms says _"refund that line in
+full"_ for an out-of-stock item while Returns says _"We do not offer refunds."_
 The intent is reconcilable — a shop-side failure is not a change of mind — but
 the words must be made to agree, because a customer quoting one at the other
 wins on the shop's own copy.
@@ -164,6 +164,7 @@ placeholder and goes on the owner list — never a guessed value.
 Two defects that compound, fixed together.
 
 **Fix.**
+
 1. Render `site_settings.contact.whatsapp` as a real `wa.me` link — in the footer
    contact block beside the phone, and on the contact page. The
    `SOCIAL_ICONS.whatsapp` icon already exists and is unused.
@@ -192,16 +193,16 @@ The heart of ruling 2. Three values, three different right answers — the rulin
 asked for values driven from `site_settings` **and** from the estimate logic, and
 picking correctly per value is what stops this becoming five new settings rows.
 
-| Value | Today | Fix | Why this mechanism |
-| --- | --- | --- | --- |
-| Dispatch cutoff "4pm" | literal, wrong by 5h | **`{{dispatch_cutoff}}` reading `PICKUP_CUTOFF_HOUR_IST`** | `estimate.ts:44-50` argues explicitly that the cutoff belongs in code because it is not a price and nothing on any screen edits it. A token reading the constant honours that and still makes the page impossible to leave behind. No new setting. |
-| "3–5 working days" nationwide | literal, wrong for most of India | **`{{delivery_examples}}` from a new `site_settings.delivery_examples` row** | The real figures are per-PIN and live. See below. |
-| Privacy "7 days" deletion | literal, unbacked | **`{{deletion_window}}`** from the same new row, or owner-confirmed prose | A genuine policy commitment with no code behind it. |
+| Value                         | Today                            | Fix                                                                          | Why this mechanism                                                                                                                                                                                                                                 |
+| ----------------------------- | -------------------------------- | ---------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Dispatch cutoff "4pm"         | literal, wrong by 5h             | **`{{dispatch_cutoff}}` reading `PICKUP_CUTOFF_HOUR_IST`**                   | `estimate.ts:44-50` argues explicitly that the cutoff belongs in code because it is not a price and nothing on any screen edits it. A token reading the constant honours that and still makes the page impossible to leave behind. No new setting. |
+| "3–5 working days" nationwide | literal, wrong for most of India | **`{{delivery_examples}}` from a new `site_settings.delivery_examples` row** | The real figures are per-PIN and live. See below.                                                                                                                                                                                                  |
+| Privacy "7 days" deletion     | literal, unbacked                | **`{{deletion_window}}`** from the same new row, or owner-confirmed prose    | A genuine policy commitment with no code behind it.                                                                                                                                                                                                |
 
 **On `delivery_examples`, and the tension it resolves.** The brief asks for real
 per-destination estimates (Delhi 7, Hyderabad and Bangalore 4, local 3).
-`estimate.ts` states the opposing doctrine: *"Null in means unknown out — never a
-default, because a default here is a promise the shop has not checked."* Those
+`estimate.ts` states the opposing doctrine: _"Null in means unknown out — never a
+default, because a default here is a promise the shop has not checked."_ Those
 three figures were a measurement on one day, not settings — hardcoding them into
 the page would recreate the exact defect the module was built to remove, just
 with better numbers.
@@ -294,6 +295,42 @@ Flagged under the stop-and-ask rule.
 
 # Batch K — Kadapa
 
+> ## AMENDED 2026-08-14 — the premise below is wrong. The town is PRODDATUR.
+>
+> Everything in this batch assumed the shop is in Kadapa city and that
+> "Cuddapah" is the older spelling of the same place. Both halves are wrong.
+>
+> **Cuddapah is the anglicised name of Kadapa, and Kadapa is a different town —
+> 51 km south.** The shop is in **Proddatur**, a town inside YSR Kadapa
+> _district_. Four sources agree and were checked rather than assumed:
+>
+> - the owner's Google listing, "Foot vault branded store", DCSR Colony,
+>   516360 — 4.8★ from 16 reviews, rendered and read at street zoom;
+> - the GST certificate: DCSR Colony, Mydukur Road, Proddatur, 516361;
+> - the Shiprocket pickup PIN, 516360, which is a Proddatur PIN
+>   (516360/516361/516362) and was correct all along;
+> - `docs/admin-guide.md`, which names the pickup location **DCSR**.
+>
+> **So the local-search asset is Proddatur, not Kadapa.** Restating "Kadapa" as
+> the lead name would have optimised the shop for a town it is not in, which is
+> worse than the original defect: a customer who searched Kadapa and drove there
+> would find nothing. The "both names present" rule below is void — there is one
+> town name, and it is Proddatur. The district may be named as context.
+>
+> **Already done** (2026-08-14, not by this batch): K1, K2, K4, K5 and K6 are
+> corrected to Proddatur in production and in the seed. `audit:literals` and
+> `audit:privacy` are green against them.
+>
+> **Still open:** K3 and K7. K3 is blocked on the GBP listing name, and the
+> listing already exists — the task is claim-and-verify, not create. K7 is
+> untouched. The `audit:seo` assertion below must be rewritten to assert
+> **Proddatur**, and to fail on "Cuddapah" appearing anywhere on the storefront.
+>
+> The original text is kept below unedited, because the reason it was wrong is
+> the useful part: it was derived from `site_settings.contact.address`, and that
+> row said the wrong town. A plan inherits its premises from the data it
+> measured.
+
 Ruling 4 promoted this out of content polish. It is cheap, it is measurable, and
 it is the difference between matching half the local searches and matching all of
 them. Measured today: **"Cuddapah" ×12 on the homepage, "Kadapa" ×0 site-wide.**
@@ -303,15 +340,15 @@ Cuddapah is retained as the secondary form**, because the older spelling is stil
 what a good share of searchers type and dropping it would trade one half of the
 audience for the other.
 
-| # | Surface | Change |
-| --- | --- | --- |
-| K1 | `site_settings.contact.address` | `…Kadapa (Cuddapah), Andhra Pradesh 516360`. Feeds footer, contact page and schema from one row. |
-| K2 | `siteConfig.description` | `…from our store in Kadapa (Cuddapah), Andhra Pradesh.` Flows to the root description, OG and Twitter on every page. |
-| K3 | `LocalBusiness` schema (B3) | `addressLocality: "Kadapa"`. `name` must match the GBP listing **exactly** — so K1 and the GBP listing are decided together, not separately. |
-| K4 | `pages.about` (A8) | The location in prose, both names, with the RTC bus stand landmark. |
-| K5 | `pages.contact` (A5) | Same, in the address block. |
-| K6 | `pages.shipping` (A6) | "We ship across India from our store in Kadapa (Cuddapah), Andhra Pradesh." |
-| K7 | Category descriptions (B6) | Where a category description mentions the shop, it uses the same form. |
+| #   | Surface                         | Change                                                                                                                                       |
+| --- | ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| K1  | `site_settings.contact.address` | `…Kadapa (Cuddapah), Andhra Pradesh 516360`. Feeds footer, contact page and schema from one row.                                             |
+| K2  | `siteConfig.description`        | `…from our store in Kadapa (Cuddapah), Andhra Pradesh.` Flows to the root description, OG and Twitter on every page.                         |
+| K3  | `LocalBusiness` schema (B3)     | `addressLocality: "Kadapa"`. `name` must match the GBP listing **exactly** — so K1 and the GBP listing are decided together, not separately. |
+| K4  | `pages.about` (A8)              | The location in prose, both names, with the RTC bus stand landmark.                                                                          |
+| K5  | `pages.contact` (A5)            | Same, in the address block.                                                                                                                  |
+| K6  | `pages.shipping` (A6)           | "We ship across India from our store in Kadapa (Cuddapah), Andhra Pradesh."                                                                  |
+| K7  | Category descriptions (B6)      | Where a category description mentions the shop, it uses the same form.                                                                       |
 
 **Test.** A new `audit:seo` assertion: both `Kadapa` and `Cuddapah` appear in the
 rendered `LocalBusiness` schema, in `site_settings.contact.address`, and on the
@@ -342,8 +379,8 @@ it was needed.
 
 ## B2 · A new `audit:seo` gate where absence is failure · **Launch blocker (ruling 3)**
 
-The ruling's second clause is the design brief: *`notApplicable` must never be
-counted as a pass anywhere in the SEO gates.*
+The ruling's second clause is the design brief: _`notApplicable` must never be
+counted as a pass anywhere in the SEO gates._
 
 This is the same failure shape as `audit:literals` (A2) and as the reachability
 gate (B7): a check that reports "nothing to see" when the thing it checks is
@@ -354,17 +391,17 @@ default on `canonical`.
 (`build:stage`, not `next dev` — a dev server re-renders per request and cannot
 support cache or metadata claims). For every indexable route:
 
-| Assertion | Absence behaviour |
-| --- | --- |
-| A `<link rel="canonical">` exists, is absolute, self-referencing, query-stripped | **FAIL** — never skip |
-| `<title>` exists, unique across routes, ≤ 60 rendered chars including the template | FAIL |
-| `<meta name="description">` exists, unique, 120–160 chars | FAIL |
-| OG title/description/image present | FAIL |
-| Every `application/ld+json` block parses and carries `@context` + `@type` | FAIL |
-| `Organization` **and** `LocalBusiness` present on `/` | FAIL |
-| `AggregateRating` absent wherever `reviewCount = 0` | FAIL |
-| Both place names present (Batch K) | FAIL |
-| Returns description carries no refund/exchange claim (A1) | FAIL |
+| Assertion                                                                          | Absence behaviour     |
+| ---------------------------------------------------------------------------------- | --------------------- |
+| A `<link rel="canonical">` exists, is absolute, self-referencing, query-stripped   | **FAIL** — never skip |
+| `<title>` exists, unique across routes, ≤ 60 rendered chars including the template | FAIL                  |
+| `<meta name="description">` exists, unique, 120–160 chars                          | FAIL                  |
+| OG title/description/image present                                                 | FAIL                  |
+| Every `application/ld+json` block parses and carries `@context` + `@type`          | FAIL                  |
+| `Organization` **and** `LocalBusiness` present on `/`                              | FAIL                  |
+| `AggregateRating` absent wherever `reviewCount = 0`                                | FAIL                  |
+| Both place names present (Batch K)                                                 | FAIL                  |
+| Returns description carries no refund/exchange claim (A1)                          | FAIL                  |
 
 **The negative control, which is the part the ruling asked for.** The gate is not
 trusted until it has been shown to fail: remove the `metadata` export added in
@@ -426,8 +463,8 @@ unreachable at build. That path must still emit valid dates rather than
 ## B5 · Withhold the sitemap while the shop is hidden · **Medium**
 
 **Fix.** `src/app/sitemap.ts` returns an empty array when `isIndexable()` is
-false, matching what `robots.ts` already documents as the intent: *"the sitemap
-is withheld rather than advertising every URL we are asking not to be indexed."*
+false, matching what `robots.ts` already documents as the intent: _"the sitemap
+is withheld rather than advertising every URL we are asking not to be indexed."_
 Today the link is withheld and the document is not — 62 URLs are served at
 `/sitemap.xml` right now.
 
@@ -446,12 +483,12 @@ check runs only in the indexable branch.
 The largest body of work in the plan and where most of the achievable on-site
 gain sits. Measured gaps from the audit:
 
-| Surface | Now | Target |
-| --- | --- | --- |
-| Category descriptions | **12 of 15 empty**; fallback yields 12 near-identical boilerplate strings | A real paragraph each, written for the department |
-| Product descriptions | min 72 / avg 126 / max 192 **characters** | Enough to be worth reading and to rank; 35 SKUs makes this tractable |
-| Product meta descriptions | avg 54, max 99 chars | 120–160, unique, carrying brand + model + category |
-| Product titles | 34 fine, 1 at 87 rendered chars | ≤ 60 rendered |
+| Surface                   | Now                                                                       | Target                                                               |
+| ------------------------- | ------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| Category descriptions     | **12 of 15 empty**; fallback yields 12 near-identical boilerplate strings | A real paragraph each, written for the department                    |
+| Product descriptions      | min 72 / avg 126 / max 192 **characters**                                 | Enough to be worth reading and to rank; 35 SKUs makes this tractable |
+| Product meta descriptions | avg 54, max 99 chars                                                      | 120–160, unique, carrying brand + model + category                   |
+| Product titles            | 34 fine, 1 at 87 rendered chars                                           | ≤ 60 rendered                                                        |
 
 **Files.** Database — `categories.description`, `products.description`,
 `products.meta_title`, `products.meta_description`.
@@ -513,7 +550,7 @@ install GA4 now.**
 
 The integration argument is weaker than it looks. **Search Console is a separate,
 free Google product the owner gets regardless**, and it is the thing that
-actually answers their question — *what did people search to reach the shop*.
+actually answers their question — _what did people search to reach the shop_.
 GA4's integration surfaces that data inside GA4; it does not produce data the
 owner cannot have without GA4. So the choice is not "search-query data or none".
 It is "search-query data in one place, or the same data in two".
@@ -525,15 +562,15 @@ its failure is undetectable.** `docs/operations.md` is explicit that silence at
 the report sink proves nothing, because browser-to-sink delivery has never been
 demonstrated.
 
-| | Vercel Analytics | GA4 |
-| --- | --- | --- |
-| Script origin | **same-origin** `/…/script.js` | `www.googletagmanager.com` |
-| Beacon origin | **same-origin** | `*.google-analytics.com`, `*.analytics.google.com`, regional endpoints |
-| New CSP surface | **none** — covered by existing `'self'` | ≥3 host families across ≥2 directives |
-| Silent-failure candidates | **0** | one per host, incl. regional endpoints — the classic omission |
-| Cookies / identifiers | none | `_ga`, pseudonymous client ID |
-| DPDP posture | privacy-notice update only | materially stronger consent argument + cross-border transfer |
-| Consent banner needed | no | realistically yes |
+|                           | Vercel Analytics                        | GA4                                                                    |
+| ------------------------- | --------------------------------------- | ---------------------------------------------------------------------- |
+| Script origin             | **same-origin** `/…/script.js`          | `www.googletagmanager.com`                                             |
+| Beacon origin             | **same-origin**                         | `*.google-analytics.com`, `*.analytics.google.com`, regional endpoints |
+| New CSP surface           | **none** — covered by existing `'self'` | ≥3 host families across ≥2 directives                                  |
+| Silent-failure candidates | **0**                                   | one per host, incl. regional endpoints — the classic omission          |
+| Cookies / identifiers     | none                                    | `_ga`, pseudonymous client ID                                          |
+| DPDP posture              | privacy-notice update only              | materially stronger consent argument + cross-border transfer           |
+| Consent banner needed     | no                                      | realistically yes                                                      |
 
 The last row compounds badly at this shop's scale. A banner means the funnel
 measures only consenting visitors — and at near-zero traffic, a partial and
@@ -576,12 +613,12 @@ that. A snippet pasted into the layout does not.
 
 **Fix.** Four events, matching what the owner asked for:
 
-| Event | Fires | Properties |
-| --- | --- | --- |
-| `product_view` | product page render | `slug`, `category`, `brand` |
-| `add_to_bag` | bag mutation succeeds | `slug`, `size`, `qty` |
-| `checkout_start` | checkout page render with a bag | `item_count`, `value_band` |
-| `purchase` | payment confirmed | `order_value_band`, `payment_method`, `item_count` |
+| Event            | Fires                           | Properties                                         |
+| ---------------- | ------------------------------- | -------------------------------------------------- |
+| `product_view`   | product page render             | `slug`, `category`, `brand`                        |
+| `add_to_bag`     | bag mutation succeeds           | `slug`, `size`, `qty`                              |
+| `checkout_start` | checkout page render with a bag | `item_count`, `value_band`                         |
+| `purchase`       | payment confirmed               | `order_value_band`, `payment_method`, `item_count` |
 
 **No personal data. Stated as a rule and gated, not as an intention.** No email,
 no phone, no address, no name, no order number, no line contents tied to a
@@ -594,7 +631,7 @@ checkout page, payment confirmation.
 **Test.** A new `audit:analytics` assertion that intercepts outgoing beacons on a
 real page load and fails if any payload key matches a personal-data denylist
 (`email`, `phone`, `address`, `name`, `order_number`, `pin`). Asserting on the
-*wire*, not on the call sites, because the call sites are what changes.
+_wire_, not on the call sites, because the call sites are what changes.
 
 **Risk.** The `purchase` event fires on a money path. It must be incapable of
 failing the payment — fire-and-forget, wrapped, never awaited in the
@@ -658,19 +695,20 @@ to submit while `robots.txt` disallows everything.
 
 ## Preconditions, all five, each with its current state
 
-| # | Precondition | State |
-| --- | --- | --- |
-| 1 | Real product photography is live | ❌ **120 of 123 images are placeholder SVGs.** Also gates Product rich results (audit B7) — Google's Product image requirement excludes SVG |
-| 2 | Policy pages published with real values, no placeholders | ⏳ Batch A |
-| 3 | Contact details real, including WhatsApp | ❌ owner confirmation outstanding (A5, audit A12) |
-| 4 | **BotID on checkout and coupon-check** | ❌ **not built — does not exist in this repository** |
-| 5 | Metadata, sitemap, robots, structured data correct | ⏳ Batch B + K |
+| #   | Precondition                                             | State                                                                                                                                       |
+| --- | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Real product photography is live                         | ❌ **120 of 123 images are placeholder SVGs.** Also gates Product rich results (audit B7) — Google's Product image requirement excludes SVG |
+| 2   | Policy pages published with real values, no placeholders | ⏳ Batch A                                                                                                                                  |
+| 3   | Contact details real, including WhatsApp                 | ❌ owner confirmation outstanding (A5, audit A12)                                                                                           |
+| 4   | **BotID on checkout and coupon-check**                   | ❌ **not built — does not exist in this repository**                                                                                        |
+| 5   | Metadata, sitemap, robots, structured data correct       | ⏳ Batch B + K                                                                                                                              |
 
 ## D1 · The flip
 
 **Fix.** Set `SITE_INDEXABLE=true` in Vercel Production only, redeploy.
 
 **Test.** In this order:
+
 1. `audit:build-smoke` before the deploy — the merge policy requires it.
 2. `audit:headers` green under **both** values. It already covers the exact trap
    this code path was written for: the early return that would have deleted every
@@ -706,32 +744,32 @@ Re-run Lighthouse on the live domain and record it.
 
 # Findings → work items
 
-| Audit | Severity | Item | Files | Test | Risk |
-| --- | --- | --- | --- | --- | --- |
-| A1 | Critical | A1 returns meta | db | `audit:literals`, `audit:seo` | copy is a legal promise |
-| A1 | Critical | **A2 literals gate blind spot** | `literals.ts` | must fail first, then green | false positives on size guide |
-| A2 | Critical | A3 privacy rewrite | db | A7 | needs owner + counsel |
-| A6 | High | A4 terms rewrite | db | A2, `audit:seo` | blocked on GSTIN/legal name |
-| A5 | High | A5 WhatsApp + contact page | footer, db, tokens | `audit:reachability`, `audit:seo` | number unconfirmed — gates deploy |
-| A3, A4, A7 | High | A6 tokenise time values | tokens, settings, admin, gates | `audit:delivery-copy` | live API dependency |
-| A2 | High | A7 privacy processor gate | new gate | negative control | host→processor mapping |
-| A9, A11 | Medium | A8 about rewrite | db | `audit:seo` | needs owner facts |
-| A10 | Low | A9 dead code + dead row | `site-config.ts`, db | existing gates | public row near money path |
-| D5 | High | **Batch K — Kadapa** | settings, schema, 3 pages | `audit:seo` | K3 name must match GBP |
-| B3 | **Blocker** | B1 homepage canonical | `page.tsx` | B2 negative control | none |
-| B3 | **Blocker** | **B2 `audit:seo`, absence = failure** | new gate | removes B1's export, must go red | route drift |
-| B4 | High | B3 Organization + LocalBusiness | new component | B2 | `sameAs` needs owner |
-| B5 | High | B4 sitemap lastmod | `sitemap.ts`, queries | B2 | SSG-zero-paths |
-| B6 | Medium | B5 withhold sitemap when hidden | `sitemap.ts` | `audit:headers` both values | ordering vs B4 |
-| B8 | Medium | B6 content depth | db | B2 + boilerplate rule | gate is a weak proxy |
-| B10 | Medium | B7 reachability per page | `customer-reachability.ts` | negative control | `MAX_PAGES` cap |
-| B11 | Low | B8 AI crawler position | `robots.ts` | — | none |
-| C1 | High | C1 analytics interface | new module | C3 | low |
-| C1 | High | C2 funnel events, no PII | analytics + call sites | wire denylist | fires on money path |
-| C2 | High | **C3 prove CSP on the wire** | new gate | A/B build + beacon assertion | passing while dead |
-| C7 | High | C4 consent + notice | db | — | not legal advice |
-| C8 | Owner | C5 Search Console | maybe layout | — | — |
-| — | **Blocked** | D1 the flip | env | `audit:headers`, `audit:seo`, Lighthouse | not reversible |
+| Audit      | Severity    | Item                                  | Files                          | Test                                     | Risk                              |
+| ---------- | ----------- | ------------------------------------- | ------------------------------ | ---------------------------------------- | --------------------------------- |
+| A1         | Critical    | A1 returns meta                       | db                             | `audit:literals`, `audit:seo`            | copy is a legal promise           |
+| A1         | Critical    | **A2 literals gate blind spot**       | `literals.ts`                  | must fail first, then green              | false positives on size guide     |
+| A2         | Critical    | A3 privacy rewrite                    | db                             | A7                                       | needs owner + counsel             |
+| A6         | High        | A4 terms rewrite                      | db                             | A2, `audit:seo`                          | blocked on GSTIN/legal name       |
+| A5         | High        | A5 WhatsApp + contact page            | footer, db, tokens             | `audit:reachability`, `audit:seo`        | number unconfirmed — gates deploy |
+| A3, A4, A7 | High        | A6 tokenise time values               | tokens, settings, admin, gates | `audit:delivery-copy`                    | live API dependency               |
+| A2         | High        | A7 privacy processor gate             | new gate                       | negative control                         | host→processor mapping            |
+| A9, A11    | Medium      | A8 about rewrite                      | db                             | `audit:seo`                              | needs owner facts                 |
+| A10        | Low         | A9 dead code + dead row               | `site-config.ts`, db           | existing gates                           | public row near money path        |
+| D5         | High        | **Batch K — Kadapa**                  | settings, schema, 3 pages      | `audit:seo`                              | K3 name must match GBP            |
+| B3         | **Blocker** | B1 homepage canonical                 | `page.tsx`                     | B2 negative control                      | none                              |
+| B3         | **Blocker** | **B2 `audit:seo`, absence = failure** | new gate                       | removes B1's export, must go red         | route drift                       |
+| B4         | High        | B3 Organization + LocalBusiness       | new component                  | B2                                       | `sameAs` needs owner              |
+| B5         | High        | B4 sitemap lastmod                    | `sitemap.ts`, queries          | B2                                       | SSG-zero-paths                    |
+| B6         | Medium      | B5 withhold sitemap when hidden       | `sitemap.ts`                   | `audit:headers` both values              | ordering vs B4                    |
+| B8         | Medium      | B6 content depth                      | db                             | B2 + boilerplate rule                    | gate is a weak proxy              |
+| B10        | Medium      | B7 reachability per page              | `customer-reachability.ts`     | negative control                         | `MAX_PAGES` cap                   |
+| B11        | Low         | B8 AI crawler position                | `robots.ts`                    | —                                        | none                              |
+| C1         | High        | C1 analytics interface                | new module                     | C3                                       | low                               |
+| C1         | High        | C2 funnel events, no PII              | analytics + call sites         | wire denylist                            | fires on money path               |
+| C2         | High        | **C3 prove CSP on the wire**          | new gate                       | A/B build + beacon assertion             | passing while dead                |
+| C7         | High        | C4 consent + notice                   | db                             | —                                        | not legal advice                  |
+| C8         | Owner       | C5 Search Console                     | maybe layout                   | —                                        | —                                 |
+| —          | **Blocked** | D1 the flip                           | env                            | `audit:headers`, `audit:seo`, Lighthouse | not reversible                    |
 
 ---
 
@@ -799,17 +837,17 @@ Re-run Lighthouse on the live domain and record it.
 Ordered so gates land before the work they judge, and so nothing waits on an
 owner reply that could have been asked for earlier.
 
-| Stage | Items | Why here |
-| --- | --- | --- |
-| 0 | Owner questions 1–5 sent | Longest lead time. Ask on day one. |
-| 1 | **A2, B2, A7, B7** — the four gate changes | Ruling 1's point: build the detector first, watch it fail, then fix. |
-| 2 | **A1, B1** | One row and four lines; both now provably fixed by stage 1. |
-| 3 | **A6, A5, K1–K7** | Token mechanism and the Kadapa sweep together — both touch the same pages. |
-| 4 | **A3, A4, A8, A9** | The rewrites, once the owner's facts are in. |
-| 5 | **B3, B4, B5, B6, B8** | Schema, sitemap, content depth. |
-| 6 | **C1, C2, C3, C4** | Analytics behind its interface, proven on the wire. |
-| 7 | Full battery, `audit:build-smoke`, deploy | Typecheck + full lint literally last. |
-| 8 | **D1** | Only when all five preconditions are true and the owner says the word. |
+| Stage | Items                                      | Why here                                                                   |
+| ----- | ------------------------------------------ | -------------------------------------------------------------------------- |
+| 0     | Owner questions 1–5 sent                   | Longest lead time. Ask on day one.                                         |
+| 1     | **A2, B2, A7, B7** — the four gate changes | Ruling 1's point: build the detector first, watch it fail, then fix.       |
+| 2     | **A1, B1**                                 | One row and four lines; both now provably fixed by stage 1.                |
+| 3     | **A6, A5, K1–K7**                          | Token mechanism and the Kadapa sweep together — both touch the same pages. |
+| 4     | **A3, A4, A8, A9**                         | The rewrites, once the owner's facts are in.                               |
+| 5     | **B3, B4, B5, B6, B8**                     | Schema, sitemap, content depth.                                            |
+| 6     | **C1, C2, C3, C4**                         | Analytics behind its interface, proven on the wire.                        |
+| 7     | Full battery, `audit:build-smoke`, deploy  | Typecheck + full lint literally last.                                      |
+| 8     | **D1**                                     | Only when all five preconditions are true and the owner says the word.     |
 
 Stages 1–2 are worth doing as one merge: a gate that fails, and the fix that makes
 it pass, read as a single change and prove each other.

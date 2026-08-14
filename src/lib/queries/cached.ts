@@ -93,8 +93,15 @@ export const CHROME_CACHE_TAG = "chrome";
  * would have sat behind up-to-an-hour-old entries while the Terms page still
  * named a court, which is the sort of wait that gets described as "it will fix
  * itself" and then does not.
+ *
+ * v7 — the town. The shop is in Proddatur; six surfaces said Cuddapah, a city
+ * 51 km away, and the correction touches `site_settings.contact` as well as
+ * three page bodies. The settings row is read through `cachedSiteSettings` on
+ * every route, so without the bump the footer of the entire site would have gone
+ * on naming the wrong town behind an hour-old entry while the pages named the
+ * right one.
  */
-const SHAPE_VERSION = "v6";
+const SHAPE_VERSION = "v7";
 
 /**
  * Which database the entry was read from.

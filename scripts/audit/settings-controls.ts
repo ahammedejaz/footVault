@@ -388,7 +388,7 @@ async function main() {
       ["contact-phone", "9111100001"],
       ["contact-whatsapp", "9111100002"],
       ["contact-email", "qa-settings@example.com"],
-      ["contact-address", "12 Gate Street, Cuddapah 516360"],
+      ["contact-address", "12 Gate Street, Proddatur 516360"],
       ["social-instagram", "https://instagram.com/footvault.qa"],
       ["social-facebook", "https://facebook.com/footvault.qa"],
     ];

@@ -27,7 +27,7 @@
  * produce on demand, like a courier outage during a festival sale.
  *
  * **The rates are real.** Every figure comes from a live serviceability call
- * against this account, Cuddapah 516360 → Bangalore 560001, 1 kg, ₹1,000
+ * against this account, Proddatur 516360 → Bangalore 560001, 1 kg, ₹1,000
  * declared: Delhivery Surface `rate 191.36`, `freight 139.36`, `cod_charges 52`,
  * `rto_charges 142`. Made-up numbers would let a rounding rule pass that a real
  * rate breaks.

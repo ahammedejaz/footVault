@@ -120,7 +120,7 @@ const lanes: { place: string; days: number; expected: string }[] = [
   { place: "Delhi", days: 7, expected: "2026-08-17" },
   { place: "Hyderabad", days: 4, expected: "2026-08-14" },
   { place: "Bangalore", days: 4, expected: "2026-08-14" },
-  { place: "Cuddapah (local)", days: 3, expected: "2026-08-13" },
+  { place: "Proddatur (local)", days: 3, expected: "2026-08-13" },
 ];
 
 for (const lane of lanes) {

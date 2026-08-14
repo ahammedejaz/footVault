@@ -633,7 +633,7 @@ async function main() {
       walletLowBalancePaise: null,
     };
 
-    // Measured against the live account: Delhivery Surface, Cuddapah to
+    // Measured against the live account: Delhivery Surface, Proddatur to
     // Bengaluru, 0.9kg. rate already includes the cash-collection fee.
     /**
      * Delhivery Surface on the tested lane, as quoted live on 2026-08-08:

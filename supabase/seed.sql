@@ -364,7 +364,7 @@ values ('home_hero', '/seed/hero-desktop.svg', '/seed/hero-mobile.svg', 'Every s
 
 -- --- CMS pages ------------------------------------------------------------
 insert into public.pages (slug, title, body, meta_title, meta_description, is_published) values
-  ('about', 'About Foot Vault', 'Foot Vault is a footwear shop in Kadapa — still widely written Cuddapah — in Andhra Pradesh. There is a real shop with real shelves, near the RTC bus stand, and this website sells from the same stock.
+  ('about', 'About Foot Vault', 'Foot Vault is a footwear shop in Proddatur, in the YSR Kadapa district of Andhra Pradesh. There is a real shop with real shelves, near the RTC bus stand, and this website sells from the same stock.
 
 That last part is the whole point of it, so it is worth saying plainly rather than leaving it to be assumed. Nothing here is drop-shipped and nothing is ordered in after you buy it. When your order arrives with us, somebody walks to a shelf, takes the box down, opens it, checks the pair inside and packs it.
 
@@ -376,7 +376,7 @@ That last part is the whole point of it, so it is worth saying plainly rather th
 
 **If something is wrong.** One message sorts it out. Ring the shop or send a WhatsApp; the number and our opening hours are on the contact page. You will get somebody who can walk to the shelf and look.
 
-Come and see us if you are nearby. Trying a pair on is still the best way to buy shoes, and we would rather you did that than guess.', 'About', 'Foot Vault is a footwear shop in Kadapa (Cuddapah), Andhra Pradesh. The same shelves that serve the counter serve this website.', true),
+Come and see us if you are nearby. Trying a pair on is still the best way to buy shoes, and we would rather you did that than guess.', 'About', 'Foot Vault is a footwear shop in Proddatur, in the YSR Kadapa district of Andhra Pradesh. The same shelves that serve the counter serve this website.', true),
   ('contact', 'Contact us', 'The quickest way to reach us is WhatsApp, on {{contact_whatsapp}}. We answer during shop hours, usually within the hour. If you would rather talk, ring the shop on {{contact_phone}} — it is the same people at the same counter.
 
 Prefer email? Write to {{contact_email}}. Replying to any email we have sent you about an order lands in the same inbox, so you can simply hit reply.
@@ -385,12 +385,12 @@ For an order that already exists, send the order number — it looks like FV-202
 
 **If a parcel has arrived damaged, ring or send a WhatsApp message rather than emailing.** That claim closes {{return_window}} after delivery, and an email may not be read in time. The returns page lists what to send us.
 
-**Where we are.** {{contact_address}}. Kadapa and Cuddapah are the same city — both spellings are in everyday use here, and the post arrives under either.
+**Where we are.** {{contact_address}}. That is Proddatur, in the YSR Kadapa district of Andhra Pradesh.
 
 **When we are open.** {{business_hours}}.
 
-You are welcome to come in and try a pair on. There is nothing to book and no appointment to make: come to the counter and ask. Trying shoes on is still the best way to buy them, and somebody who can walk to the shelf will be standing in front of you.', null, 'Phone, WhatsApp, email and the address of the Foot Vault shop in Kadapa (Cuddapah), Andhra Pradesh, with our opening hours.', true),
-  ('shipping', 'Shipping', 'We ship across India from our shop in Kadapa (Cuddapah), Andhra Pradesh.
+You are welcome to come in and try a pair on. There is nothing to book and no appointment to make: come to the counter and ask. Trying shoes on is still the best way to buy them, and somebody who can walk to the shelf will be standing in front of you.', null, 'Phone, WhatsApp, email and the address of the Foot Vault shop in Proddatur, YSR Kadapa district, Andhra Pradesh, with our opening hours.', true),
+  ('shipping', 'Shipping', 'We ship across India from our shop in Proddatur, Andhra Pradesh.
 
 Orders placed before {{dispatch_cutoff}} are handed to the courier the same day. Anything later goes with the next day''s collection.
 
@@ -404,7 +404,7 @@ The amount you pay now covers delivery, and it is taken off what the courier col
 
 Pay on Delivery is offered on orders of {{cod_minimum_order_value}} and above. Below that, paying online is the only option, because the delivery charge would be most of the order.
 
-Not every courier will collect cash at every pin code. If yours is one they will not, the option is not offered and you can pay online instead — the order still comes to the same address. A very small number of pin codes have no courier service from us at all, and checkout will say so before you pay rather than take an order we cannot deliver.', null, 'What delivery costs, when your order leaves our shop in Kadapa, and how Pay on Delivery works. Free delivery over {{free_shipping_threshold}}.', true),
+Not every courier will collect cash at every pin code. If yours is one they will not, the option is not offered and you can pay online instead — the order still comes to the same address. A very small number of pin codes have no courier service from us at all, and checkout will say so before you pay rather than take an order we cannot deliver.', null, 'What delivery costs, when your order leaves our shop in Proddatur, and how Pay on Delivery works. Free delivery over {{free_shipping_threshold}}.', true),
   ('returns', 'Returns and damage', 'Please read this before you buy. Our policy is narrower than most online shops and we would rather you know that now than discover it later.
 
 **We do not offer refunds.** Not on change of mind, not on size, not on colour. Once an order is placed it is yours.

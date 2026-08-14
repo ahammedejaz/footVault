@@ -350,9 +350,10 @@ async function checkPlaceholders(): Promise<void> {
 /**
  * `src/lib/legal.ts` is imported by exactly one module.
  *
- * The registered place of business on the GST certificate is Proddatur, PIN
- * 516361. The shop Shiprocket collects from is Cuddapah, PIN 516360. They share
- * a building name and nothing else, and the owner's instruction was explicit:
+ * The registered place of business on the GST certificate is DCSR Colony,
+ * Proddatur, PIN 516361. The shop Shiprocket collects from is the same street
+ * in the same town under PIN 516360. It is the PIN that differs, a delivery
+ * quote is keyed on the pickup PIN, and the owner's instruction was explicit:
  * the registered address is a legal statement on the Terms page and must not be
  * wired to anything.
  *
@@ -396,8 +397,8 @@ function checkLegalIsolation(): void {
     fail(
       file,
       "imports src/lib/legal.ts. REGISTERED_ADDRESS is the GST certificate's " +
-        "principal place of business (Proddatur, 516361), not the shop and not " +
-        "the courier pickup (Cuddapah, 516360). Read the header of legal.ts.",
+        "principal place of business (516361), not the address the courier " +
+        "collects from (516360). Read the header of legal.ts.",
     );
   }
 

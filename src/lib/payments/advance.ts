@@ -22,7 +22,7 @@ import { MIN_CHARGEABLE_PAISE } from "@/lib/payments/types";
  *
  * ### Worked, against real rates from this account
  *
- * Cuddapah 516360 → Bangalore 560001, 1 kg, ₹1,000 declared, Delhivery Surface
+ * Proddatur 516360 → Bangalore 560001, 1 kg, ₹1,000 declared, Delhivery Surface
  * (`rate: 191.36`, `freight_charge: 139.36`, `cod_charges: 52`,
  * `rto_charges: 142`):
  *

@@ -4,7 +4,7 @@
  * ## The problem
  *
  * The shop told every customer "about 4 days". The real figures from the live
- * serviceability response are Delhi 7, Hyderabad and Bangalore 4, Cuddapah
+ * serviceability response are Delhi 7, Hyderabad and Bangalore 4, Proddatur
  * local 3 — and the correct number was already in the response the shop fetches
  * on every quote. It simply was not shown on most surfaces, and where it was
  * shown it was expressed as *"about 4 days after dispatch"*, which quietly

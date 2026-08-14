@@ -607,7 +607,7 @@ balance = goods_total + delivery_fee − advance
 The customer's total is identical either way; only the timing changes. What
 changes for the shop is that a refused parcel is already paid for.
 
-Worked against real rates from this account — Cuddapah 516360 → Bangalore
+Worked against real rates from this account — Proddatur 516360 → Bangalore
 560001, 1 kg, ₹1,000 declared, Delhivery Surface (`rate 191.36 = freight 139.36
 + cod 52.00`, `rto_charges 142.00`):
 

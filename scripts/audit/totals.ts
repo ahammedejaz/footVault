@@ -15,7 +15,7 @@
  * in `audit:shipping` and `audit:checkout`. Each section below names which.
  *
  * **The rates are real.** Every figure comes from a live serviceability call
- * against this account on 2026-08-08, Cuddapah 516360 → Bangalore 560001, 1 kg,
+ * against this account on 2026-08-08, Proddatur 516360 → Bangalore 560001, 1 kg,
  * ₹1,000 declared:
  *
  *   Delhivery Surface   rate 191.36   freight 139.36   cod 52.00   rto 142.00
