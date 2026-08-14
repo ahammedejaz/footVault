@@ -741,3 +741,73 @@ row (reason `rto_return`) to the pressing admin through the same
 transaction-local GUCs the cancel path uses. A damaged parcel never reaches the
 stock update — its units left the ledger at sale and a write-off means they
 never re-enter, so the ledger reconciles without a row. `20260809170000`.
+
+---
+
+## What 2026-08-15 added
+
+### `product_images_follow_colour_rename()` + `product_variants_colour_follows_images`
+
+| | |
+|---|---|
+| Fires | `after update of color on product_variants`, for each row |
+| Grants | `service_role` only; PUBLIC revoked, matching every other trigger function |
+| Migration | `20260815020000` |
+
+A colourway is a text string repeated across the sizes that share it, and
+`product_images.color` matches it by exact equality. Nothing kept the two in
+step: renaming "Navy" to "Midnight" in the variant editor left the Navy
+photographs matching a colourway that no longer existed, the gallery fell
+through to whatever was untagged — nothing, on a seeded product — and the
+colourway silently lost its photography.
+
+It is a trigger rather than a step inside `saveVariant` for two reasons. It has
+to be in the **same transaction** as the rename, and two PostgREST calls are
+two transactions. And a rule that lives in one Server Action holds only for
+callers who used that action; the seed renames colourways, a SQL fix-up renames
+colourways, and so will whatever writes variants next year.
+
+**It distinguishes a rename from a split.** A whole-colourway rename arrives as
+N single-row updates, so the guard is *"does any other variant of this product
+still carry the old string"*: every update but the last is a no-op and the last
+one moves the images. Renaming one size out of several leaves the old colourway
+alive and its photographs with it. A **merge** — renaming the last "Navy" to an
+existing "Midnight" — moves the photographs, deliberately, because the
+alternative is leaving them tagged with a colourway that is shown on no page at
+all; the image manager prints where each photograph appears so a merge nobody
+intended is visible where it was made.
+
+Proven on staging in both directions and by `rebuild:stage` from empty;
+asserted from outside by `audit:image-colour` §7.
+
+### `courier_events`
+
+| | |
+|---|---|
+| Columns | 20 · Indexes | 4 · Policies | 1 (`admins manage courier events`) |
+| Migration | `20260815030000` |
+
+Every inbound courier signal — webhook push, reconciliation sweep and the
+admin's "Refresh tracking" button alike — with what we made of it. The three
+paths parse into one `CourierSignal` and call one `applyCourierSignal`, and they
+deduplicate **against each other** through `event_key`, which is derived from
+the *transition* (parcel, status text, the courier's own timestamp) rather than
+from the request body: a webhook retry, a re-delivery, and a sweep that
+rediscovers the same transition half an hour later all collapse into one row.
+
+**It is not `shipment_events`**, which is `not null references shipments(id)`
+and therefore structurally cannot hold the row that matters most: a payload that
+matched no order. An event we cannot attribute is precisely the one somebody has
+to look at, and a receiver with nowhere to put it must choose between dropping
+it and 500ing at the courier — which on a webhook means retries until the portal
+disables the subscription.
+
+`needs_attention and resolved_at is null` is the dashboard's whole predicate and
+is the partial index `courier_events_attention_idx`. On a healthy shop it matches
+nothing.
+
+`status_at` is `timestamptz` because the IST resolution happens once, at the
+edge (`src/lib/shipping/courier-time.ts`), and everything downstream reads an
+instant rather than re-deciding what a bare `2026-08-14 16:41:59` meant.
+`status_id` is recorded and dispatched on by nothing — see
+`docs/shipping-webhook.md` §2.

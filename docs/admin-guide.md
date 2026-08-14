@@ -448,6 +448,33 @@ going to pay for, and without this anyone could empty your shelves for free.
 
 It never touches an order where money is genuinely in flight.
 
+### When the courier says something odd
+
+Every half hour the shop asks Shiprocket about every parcel that has a courier
+assigned and has not yet arrived, and from 2026-08-15 Shiprocket can also push
+the same news the moment it happens (your developer set that up; §8 has the two
+fields you have to fill in).
+
+**The shop moves an order by itself for exactly two things a courier can say:**
+*delivered*, which starts the 24-hour replacement clock, and *RTO*, which means
+the parcel is coming back. That is the whole list, on purpose.
+
+Anything else — "Canceled", "Lost", a word no courier has used before — appears
+as a **red strip at the top of your dashboard**, naming the order, quoting the
+courier's own word, and telling you how much money the shop is currently holding
+on it. Nothing happens to the order. That is deliberate: whether a parcel is
+really dead is something only the Shiprocket panel knows, and the shop will not
+move a customer's money on a guess.
+
+The strip has one button, *"I have dealt with this"*. It clears the row and
+records that you cleared it. **It does not refund anything** — refunds are made
+where refunds are made, from the order's own panel or the Razorpay dashboard.
+
+The same strip catches a second thing no courier can tell you about: a parcel
+handed to Shiprocket that **never got a courier assigned** and has been sitting
+for three days with money already taken. That is a parcel nobody is going to
+deliver, and until now nothing noticed it.
+
 ### Cancelling and status changes
 
 Both are buttons on the order screen now, and only the legal next steps are
@@ -526,6 +553,27 @@ written to the server log instead, and no order is affected either way.
 ## 8 · Other jobs waiting on you
 
 Shiprocket (section 4) is the big one. These four are the rest.
+
+### 8.0 · The courier webhook — two fields in the Shiprocket panel
+
+Shiprocket can tell the shop the moment a parcel's status changes, instead of
+the shop asking every half hour. The receiver is built and deployed; it needs
+two things from you, and it refuses every request until it has them.
+
+1. Your developer sets `COURIER_WEBHOOK_TOKEN` in Vercel and gives you the value.
+2. **Shiprocket → Settings → API → Webhooks:**
+   - Webhook URL: `https://www.footvault.in/api/parcel/inbound`
+   - Auth Token Type: leave it on **`Authorization`**
+   - Auth Token: the value from step 1
+   - Method: POST
+
+Then press **Test Webhook**. Shiprocket's test names a parcel this shop has
+never heard of, so the *correct* result is a red strip on your dashboard saying
+*"A courier update arrived for a parcel this shop cannot find."* That means it
+worked. Clear it with "I have dealt with this".
+
+The full version, including what to do if it does not arrive, is in
+`docs/shipping-webhook.md`.
 
 ### 8.1 · The Razorpay confirmation setting — ask your developer
 
