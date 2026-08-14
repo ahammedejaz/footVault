@@ -54,6 +54,9 @@ import {
   rawAwbDigits,
   readWebhookSignal,
 } from "../../src/lib/shipping/inbound";
+import { chromium } from "playwright";
+
+import { createAccount, sessionCookies } from "./fixtures";
 import { BASE_URL } from "./routes";
 import { scanned } from "./scanned";
 
@@ -148,6 +151,7 @@ async function main() {
 
   const orderIds: string[] = [];
   const eventKeys: string[] = [];
+  let ownerUserId: string | null = null;
 
   /** A packed, paid order with an AWB — the shape FV-2026-00668 is in. */
   async function fixtureOrder(suffix: string): Promise<{
@@ -729,6 +733,137 @@ async function main() {
       );
     }
 
+    /* ═══ 8 · a human can see it, and clear it ═══════════════════════════ */
+    console.log("\n\x1b[1m8 · the raised event is on an owner's screen\x1b[0m");
+
+    /**
+     * The hole this section exists to close.
+     *
+     * Everything above proves the event is *recorded*. Nothing above proves
+     * anybody will ever see it — and a queue nobody sees is the state this whole
+     * deploy exists to end. This repository has already paid for that
+     * distinction twice: two settings toggles shipped and sat unreachable for
+     * two phases because every gate asserted the stored value and none asserted
+     * that a control was on screen and operable.
+     *
+     * So: a real admin session, the real dashboard, the alert located by the
+     * words a person reads, the amount asserted as *rendered text*, and the
+     * only control it offers actually pressed.
+     */
+    const owner = await createAccount("courieradmin");
+    {
+      const { error } = await db
+        .from("profiles")
+        .update({ role: "admin" })
+        .eq("id", owner.userId);
+      if (error) throw new Error(`could not promote the probe: ${error.message}`);
+    }
+    ownerUserId = owner.userId;
+
+    const browser = await chromium.launch();
+    try {
+      const context = await browser.newContext({
+        viewport: { width: 1400, height: 1000 },
+      });
+      await context.addCookies(await sessionCookies(owner.session));
+      const page = await context.newPage();
+      await page.goto(`${BASE_URL}/admin`, { waitUntil: "load" });
+
+      const strip = page.getByRole("status").filter({
+        hasText: /courier said something|courier updates are waiting/i,
+      });
+      await strip.first().waitFor({ state: "visible", timeout: 30_000 });
+      ok(
+        "the dashboard carries a courier strip a person can read",
+        await strip.first().isVisible(),
+        "located by the sentence, not by a class name",
+      );
+
+      const stripText = await strip.first().innerText();
+      ok(
+        "it names the order the courier was talking about",
+        stripText.includes(cancelled.orderNumber),
+        cancelled.orderNumber,
+      );
+      ok(
+        "and quotes the courier's own word rather than paraphrasing it",
+        stripText.includes("Canceled"),
+        "a paraphrase of a status nobody has interpreted is a guess in the owner's voice",
+      );
+      /**
+       * The money, as text on a screen. `refundPanelState` computes it live and
+       * a fixture order with no `payments` row has nothing captured, so the
+       * honest render is "nothing is refundable" — asserted rather than skipped,
+       * because the branch that must never appear here is a bare ₹0.00 next to
+       * a cancelled parcel.
+       */
+      ok(
+        "and says something definite about the money",
+        /refundable/i.test(stripText),
+        stripText.match(/[^.]*refundable[^.]*\./)?.[0]?.trim().slice(0, 90) ?? "(no sentence)",
+      );
+
+      /**
+       * The button **inside the row that names this order**, not the first
+       * button in the strip.
+       *
+       * The first version pressed `strip.getByRole("button").first()` and
+       * asserted against this order's event — and the strip lists every raised
+       * event newest-first, of which this run creates three. So it cleared a
+       * different parcel's row and then reported that pressing the button did
+       * nothing. A gate that operates one control and asserts about another is
+       * the shape that produced "the loader is not wired" twice in
+       * audit:image-upload; scoping to the list item is the fix in both cases.
+       */
+      const row = strip
+        .first()
+        .locator("li")
+        .filter({ hasText: cancelled.orderNumber });
+      await row.first().waitFor({ state: "visible", timeout: 20_000 });
+      const dealtWith = row
+        .first()
+        .getByRole("button", { name: /i have dealt with this/i });
+      ok(
+        "the only control its row offers is findable by its visible name",
+        await dealtWith.isVisible(),
+        "there is deliberately no refund button here",
+      );
+
+      await dealtWith.click();
+      await page.waitForTimeout(2500);
+
+      const cleared = await one<{ resolved_at: string | null; resolved_by: string | null }>(
+        "resolved event read",
+        db
+          .from("courier_events")
+          .select("resolved_at, resolved_by")
+          .eq("order_id", cancelled.id)
+          .maybeSingle(),
+      );
+      ok(
+        "pressing it records who cleared it and when",
+        cleared?.resolved_at !== null && cleared?.resolved_by === owner.userId,
+        `resolved_at ${cleared?.resolved_at ?? "(null)"}, by ${cleared?.resolved_by === owner.userId ? "this admin" : cleared?.resolved_by ?? "(null)"}`,
+      );
+
+      const cancelledStill = await one<{ status: string; payment_status: string }>(
+        "post-resolve order read",
+        db
+          .from("orders")
+          .select("status, payment_status")
+          .eq("id", cancelled.id)
+          .single(),
+      );
+      ok(
+        "and changes nothing about the order or its money",
+        cancelledStill?.status === "shipped" &&
+          cancelledStill?.payment_status === "paid",
+        `${cancelledStill?.status} / ${cancelledStill?.payment_status} — clearing the flag is not a decision about the parcel`,
+      );
+    } finally {
+      await browser.close();
+    }
+
     /**
      * The URL itself. Shiprocket's portal refuses a webhook address containing
      * any of four substrings, and "sr" as a bare substring rules out a great
@@ -747,6 +882,7 @@ async function main() {
       );
     }
   } finally {
+    if (ownerUserId) await db.auth.admin.deleteUser(ownerUserId).catch(() => {});
     if (eventKeys.length > 0) {
       const { error } = await db
         .from("courier_events")
