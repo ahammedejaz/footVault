@@ -50,6 +50,7 @@ import { normaliseCrop } from "../../src/lib/images/crop";
 import { isDerivative } from "../../src/lib/images/srcset";
 import { adminClient, createAccount, sessionCookies } from "./fixtures";
 import { BASE_URL } from "./routes";
+import { scanned } from "./scanned";
 
 const SHOT_WIDTHS = [390, 768, 1024, 1440] as const;
 
@@ -628,6 +629,8 @@ async function main() {
     console.log("\n\x1b[1m8 · screenshots at the four widths\x1b[0m");
 
     mkdirSync("screenshots", { recursive: true });
+    scanned("viewport widths screenshotted", SHOT_WIDTHS.length, 2);
+
     for (const width of SHOT_WIDTHS) {
       const shotContext = await browser.newContext({
         viewport: { width, height: 1000 },

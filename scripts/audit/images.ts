@@ -51,6 +51,7 @@ import {
   resolveCrop,
 } from "../../src/lib/images/crop";
 import { isDerivative, snapWidth } from "../../src/lib/images/srcset";
+import { scanned } from "./scanned";
 
 let failed = 0;
 let passed = 0;
@@ -199,6 +200,18 @@ async function main() {
     { label: "small 400×400 (below the warning)", width: 400, height: 400 },
     { label: "extreme panorama 4000×600", width: 4000, height: 600 },
   ];
+
+  /**
+   * Both sets are asserted before the loop rather than trusted.
+   *
+   * `cases` is a literal here and cannot shrink by accident, but
+   * `CANONICAL_WIDTHS` is imported from `src/lib/images/constants.ts` — and the
+   * assertion inside the loop is `result.variants.map(w).join(",") ===
+   * CANONICAL_WIDTHS.join(",")`, which for an empty list compares "" to "" and
+   * passes for a pipeline that emitted nothing at all.
+   */
+  scanned("awkward source photographs", cases.length, 6);
+  scanned("canonical widths the pipeline must emit", CANONICAL_WIDTHS.length, 2);
 
   for (const testCase of cases) {
     const source = await markedImage(testCase.width, testCase.height);

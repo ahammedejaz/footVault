@@ -20,6 +20,7 @@
 import { chromium } from "playwright";
 
 import { BASE_URL } from "./routes";
+import { scanned } from "./scanned";
 
 const SLUG = "nike-air-max-90-mens";
 const WIDTHS = [360, 390] as const;
@@ -30,6 +31,16 @@ async function main() {
   console.log(`\nThe product gallery at rest — /product/${SLUG}\n`);
 
   const browser = await chromium.launch();
+
+  /**
+   * Two viewports, and the gate is meaningless at one.
+   *
+   * 390 is the iPhone the owner photographs on and 360 is the commonest Android
+   * width in India; the whole point of this harness is the *pair*, because the
+   * sliver that tells a customer the gallery scrolls is present at one and was
+   * absent at the other.
+   */
+  scanned("viewport widths", WIDTHS.length, 2);
 
   for (const width of WIDTHS) {
     const context = await browser.newContext({
@@ -73,6 +84,23 @@ async function main() {
 
     if (!geometry) {
       console.log(`  [${width}] FAIL  no gallery scroller found`);
+      failures++;
+      await context.close();
+      continue;
+    }
+
+    /**
+     * An empty scroller used to reach `first.left` and die with a TypeError.
+     * That is not a silent pass — the harness exits non-zero either way — but
+     * "Cannot read properties of undefined" sends the next person to this file
+     * rather than to the product with no photographs, which is where the
+     * problem is. It is reported as the failure it is.
+     */
+    if (geometry.slides.length === 0) {
+      console.log(
+        `  [${width}] FAIL  the gallery rendered no slides — ` +
+          `/product/${SLUG} has no photographs the viewer will show`,
+      );
       failures++;
       await context.close();
       continue;

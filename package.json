@@ -54,6 +54,7 @@
     "audit:image-upload": "NODE_OPTIONS=--conditions=react-server tsx scripts/audit/image-upload.ts",
     "audit:settings-visibility": "tsx scripts/audit/settings-visibility.ts",
     "audit:images": "NODE_OPTIONS=--conditions=react-server tsx scripts/audit/images.ts",
+    "audit:image-colour": "NODE_OPTIONS=--conditions=react-server tsx scripts/audit/image-colour.ts",
     "audit:image-editor": "NODE_OPTIONS=--conditions=react-server tsx scripts/audit/image-editor.ts",
     "audit:actions": "tsx scripts/audit/server-actions.ts",
     "audit:zero-stock": "tsx scripts/audit/zero-stock.ts",

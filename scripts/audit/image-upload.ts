@@ -60,6 +60,7 @@ import { inspect } from "../../src/lib/images/pipeline";
 import { derivativeLoader, isDerivative } from "../../src/lib/images/srcset";
 import { adminClient, createAccount, sessionCookies } from "./fixtures";
 import { BASE_URL } from "./routes";
+import { scanned } from "./scanned";
 
 const BUCKET = "product-images";
 
@@ -360,6 +361,13 @@ async function main() {
     }
 
     console.log("\n\x1b[1m5 · every width the loader can ask for exists\x1b[0m");
+
+    /**
+     * The list is imported, so an empty one would make this section print
+     * nothing and count as a pass — the loop is the only thing that asserts a
+     * width exists at all.
+     */
+    scanned("widths the loader can ask for", CANONICAL_WIDTHS.length, 2);
 
     for (const width of CANONICAL_WIDTHS) {
       const url = derivativeLoader({ src: newest.url, width });
