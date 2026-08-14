@@ -154,22 +154,54 @@ export function toSummary(row: RawProduct): ProductSummary {
   // in the colour that happens to be photographed.
   const sizes = toSizes(row.variants);
 
+  /**
+   * A photograph with no colour belongs to **every** colourway.
+   *
+   * That is what the column has meant since the day it was added — the
+   * migration says so in as many words ("NULL means 'applies to every
+   * colourway'") — and until 2026-08-15 the reader did not implement it. It
+   * fell back to the untagged set only when a colourway owned *no* photography
+   * of its own, which made the same untagged row visible on one product and
+   * invisible on another. Woodland's upload appeared because its single
+   * colourway had nothing else; the Asics upload never appeared on any page,
+   * because Peacoat Navy already had two seeded drawings and won.
+   *
+   * Three readings were available and this is the one taken:
+   *
+   *   - **always** (here): untagged means every colourway, so an upload that
+   *     names no colour is visible everywhere. The owner cannot make a
+   *     photograph invisible by forgetting a field.
+   *   - *fallback only* (what it did): the intermittent behaviour above. Its
+   *     symptom is un-diagnosable from the shop floor, because the two products
+   *     differ in seed data rather than in anything the owner did.
+   *   - *never*: a colourway with no photography of its own renders an empty
+   *     gallery, which is the worst outcome on a page whose entire job is to
+   *     show the shoe.
+   *
+   * The cost of "always" is that a shot which genuinely belongs to one
+   * colourway has to say so — which is exactly the control the admin now has,
+   * and the image manager prints where each photograph is shown so an untagged
+   * one is visible as untagged.
+   */
   const colors: ProductColor[] = [];
   for (const variant of row.variants) {
     if (!variant.is_active) continue;
     if (colors.some((c) => c.name === variant.color)) continue;
-    const own = images.filter((image) => image.color === variant.color);
     colors.push({
       name: variant.color,
       hex: variant.color_hex,
       family: variant.color_family,
       sizes: toSizes(row.variants, variant.color),
-      // A colourway with no photography of its own falls back to the shared
-      // set, so a half-uploaded product still renders a gallery.
-      images: (own.length > 0
-        ? own
-        : images.filter((i) => i.color === null)
-      ).map(toImage),
+      /**
+       * Merged back into the product's own order rather than concatenated.
+       * `images` is already primary-first then `sort_order`, so filtering it
+       * twice and re-joining would put every untagged photograph after every
+       * tagged one regardless of where the owner arranged it. One filter over
+       * the ordered list keeps the arrangement they made.
+       */
+      images: images
+        .filter((image) => image.color === variant.color || image.color === null)
+        .map(toImage),
     });
   }
 

@@ -122,10 +122,22 @@ export default async function AdminProductPage({
           lowStockThreshold={LOW_STOCK_THRESHOLD}
         />
 
+        {/*
+          The colourways come from the variants, because that is the only place
+          a colourway exists: `product_variants.color` is a text string and the
+          storefront matches photographs to swatches by exact equality. Derived
+          here rather than inside the manager so the two controls that use it —
+          the upload picker and the per-photograph select — cannot end up with
+          two different ideas of what this product's colours are.
+
+          Order follows the variant list rather than being sorted, so the names
+          appear in the order the owner sees them in the size editor above.
+        */}
         <ImageManager
           productId={product.id}
           productName={product.name}
           images={product.images}
+          colourways={[...new Set(product.variants.map((v) => v.color))]}
           targetFill={targetFillFraction(settings.images)}
         />
 

@@ -15,6 +15,7 @@ import {
   deleteProductImage,
   moveProductImage,
   setImageAlt,
+  setImageColor,
 } from "@/lib/actions/admin/products";
 import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
@@ -42,11 +43,14 @@ export function ImageManager({
   productId,
   productName,
   images,
+  colourways,
   targetFill,
 }: {
   productId: string;
   productName: string;
   images: AdminImage[];
+  /** This product's real colourways, from its variants. See the upload panel. */
+  colourways: readonly string[];
   /** The fraction the fill guide is drawn at, from the owner's settings. */
   targetFill: number;
 }) {
@@ -74,6 +78,7 @@ export function ImageManager({
           productId={productId}
           productName={productName}
           existingCount={images.length}
+          colourways={colourways}
           targetFill={targetFill}
           onAdded={() => router.refresh()}
         />
@@ -115,16 +120,17 @@ export function ImageManager({
                   ) : (
                     <Chip tone="neutral">{index + 1}</Chip>
                   )}
-                  {image.color ? (
-                    <span className="text-muted-foreground text-xs">
-                      {image.color} only
-                    </span>
-                  ) : null}
+                  <ColourReach colour={image.color} colourways={colourways} />
                 </div>
                 <AltTextField
                   imageId={image.id}
                   value={image.altText ?? ""}
                   productName={productName}
+                />
+                <ColourField
+                  imageId={image.id}
+                  value={image.color}
+                  colourways={colourways}
                 />
               </div>
 
@@ -249,6 +255,127 @@ function AltTextField({
         placeholder={`Describe it — blank reads as "${productName}"`}
         autoComplete="off"
       />
+    </div>
+  );
+}
+
+/**
+ * Where this photograph is actually shown, said in words.
+ *
+ * The old version printed "{colour} only" when a colour was set and nothing at
+ * all when it was not — so the state that caused the 2026-08-14 report, an
+ * upload with no colour on a product whose colourways all have their own
+ * photography, rendered as blank space. Blank space reads as "normal".
+ *
+ * Three states now, and the third is the one that did not exist:
+ *
+ *   - a colour this product still has → shown on that swatch, and on it alone;
+ *   - no colour → shown on every swatch, which is what the storefront now does
+ *     with an untagged image rather than only using it as a fallback;
+ *   - a colour this product no longer has → **shown nowhere**. That is what a
+ *     photograph tagged "Navy" looks like after Navy was deleted, and it is
+ *     invisible on the shop with nothing to say so. The database trigger keeps
+ *     a *rename* in step; a deleted colourway leaves this behind, and this line
+ *     is how anybody finds out.
+ */
+function ColourReach({
+  colour,
+  colourways,
+}: {
+  colour: string | null;
+  colourways: readonly string[];
+}) {
+  if (colour === null) {
+    return (
+      <span className="text-muted-foreground text-xs">
+        shown on every colourway
+      </span>
+    );
+  }
+  if (!colourways.includes(colour)) {
+    return (
+      <Chip tone="bad">
+        {colour} — this product has no such colourway, so it is shown nowhere
+      </Chip>
+    );
+  }
+  return (
+    <span className="text-muted-foreground text-xs">
+      shown on {colour} only
+    </span>
+  );
+}
+
+/**
+ * The colourway control, saved on change rather than behind a button.
+ *
+ * A `<select>` has no equivalent of the alt box's blur-to-save: changing the
+ * value *is* the decision, and a Save beside every photograph would be ten
+ * buttons that all say the same word — the argument `AltTextField` already
+ * makes one field up.
+ *
+ * It renders even on a single-colourway product, unlike the one on the upload
+ * panel, and the asymmetry is deliberate: this list is where a photograph that
+ * is already tagged gets corrected, including one tagged with a colourway that
+ * has since been deleted, and hiding the control would leave that row with no
+ * way back.
+ */
+function ColourField({
+  imageId,
+  value,
+  colourways,
+}: {
+  imageId: string;
+  value: string | null;
+  colourways: readonly string[];
+}) {
+  const router = useRouter();
+  const [pending, setPending] = React.useState(false);
+
+  /**
+   * A colour the product no longer has is still offered, as itself, so the
+   * select can show what the row actually holds. Without it the control would
+   * silently display "Every colourway" for a row that is tagged — and the first
+   * unrelated edit would write that lie back.
+   */
+  const options =
+    value !== null && !colourways.includes(value)
+      ? [...colourways, value]
+      : colourways;
+
+  async function choose(next: string) {
+    setPending(true);
+    const result = await setImageColor({ id: imageId, color: next });
+    setPending(false);
+    if (!result.ok) {
+      toast.failed(result.message);
+      return;
+    }
+    toast.done(
+      next ? `Filed under ${next}` : "Shown on every colourway",
+    );
+    router.refresh();
+  }
+
+  return (
+    <div>
+      <label htmlFor={`colour-${imageId}`} className="sr-only">
+        Which colourway this photograph is of
+      </label>
+      <select
+        id={`colour-${imageId}`}
+        value={value ?? ""}
+        disabled={pending}
+        onChange={(event) => void choose(event.target.value)}
+        className="border-input bg-background h-9 w-full rounded-sm border px-2 text-sm sm:max-w-[16rem]"
+      >
+        <option value="">Every colourway</option>
+        {options.map((name) => (
+          <option key={name} value={name}>
+            {name}
+          </option>
+        ))}
+      </select>
     </div>
   );
 }

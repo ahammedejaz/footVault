@@ -747,6 +747,62 @@ async function readGallery(
   return { images: galleryOrder(data ?? []) };
 }
 
+/**
+ * A colourway is a text string repeated across the sizes that share it, so the
+ * only thing that makes one *real* is a variant carrying it. This is where a
+ * colour arriving from a form is checked against that.
+ *
+ * `null` is a value rather than an absence: it means "applies to every
+ * colourway", which is what the column has meant since it was added and what
+ * the storefront now implements (see `toSummary`). An empty string from a
+ * `<select>` normalises to it.
+ *
+ * Validated server-side rather than trusted from the picker for the usual
+ * reason — the picker is a control, not an enforcement point, and a Server
+ * Action is a public POST endpoint whose id ships in the browser bundle. The
+ * failure it prevents is not malicious, though: it is a colourway renamed in
+ * one tab while another tab still holds the old list, which would write a
+ * colour matching nothing and make the photograph invisible on every page.
+ */
+async function resolveImageColour(
+  supabase: Supabase,
+  productId: string,
+  colour: string | null,
+): Promise<{ colour: string | null } | { message: string }> {
+  if (colour === null) return { colour: null };
+
+  const { data, error } = await supabase
+    .from("product_variants")
+    .select("color")
+    .eq("product_id", productId);
+  if (error) {
+    console.error("[admin] could not read colourways:", error.message);
+    return { message: "Could not read this product's colours. Nothing has been changed." };
+  }
+
+  const known = new Set((data ?? []).map((row) => row.color));
+  if (!known.has(colour)) {
+    return {
+      message:
+        `This product has no "${colour}" colourway any more. Reload the page — ` +
+        "somebody may have renamed it — and choose again.",
+    };
+  }
+  return { colour };
+}
+
+/**
+ * The colourway field, as it arrives from a `<select>`.
+ *
+ * `""` is what an unselected option posts and it means "every colourway", the
+ * same as `undefined` — a distinction no owner would recognise, so it is not
+ * one the schema keeps.
+ */
+const imageColour = z
+  .union([z.string().trim().max(60), z.null()])
+  .optional()
+  .transform((value) => (value ? value : null));
+
 const addImageSchema = z.object({
   productId: z.uuid("That is not a product."),
   /**
@@ -799,6 +855,16 @@ const addImageSchema = z.object({
     .max(200, "Keep the description under 200 characters.")
     .optional()
     .transform((value) => (value && value.length > 0 ? value : null)),
+  /**
+   * Which colourway this photograph is of, or null for "every colourway".
+   *
+   * Optional in the schema and required in the panel's own reasoning: the
+   * upload control defaults to "every colourway" rather than to the first
+   * colour, because a photograph shown on all of them is wrong in a way the
+   * owner can see and correct, whereas one filed under the wrong colour is
+   * invisible on the page they were looking at.
+   */
+  color: imageColour,
 });
 
 export async function addProductImage(
@@ -816,11 +882,21 @@ export async function addProductImage(
         return { ok: false, reason: "error", message: gallery.message };
       }
 
+      const colour = await resolveImageColour(
+        supabase,
+        parsed.data.productId,
+        parsed.data.color,
+      );
+      if ("message" in colour) {
+        return { ok: false, reason: "invalid", message: colour.message };
+      }
+
       const { data, error } = await supabase
         .from("product_images")
         .insert({
           product_id: parsed.data.productId,
           url: parsed.data.url,
+          color: colour.colour,
           original_path: parsed.data.originalPath ?? null,
           /**
            * Normalised again on the way in, cheaply and deliberately. The value
@@ -901,6 +977,85 @@ export async function setImageAlt(
       const slug = await productSlug(supabase, data.product_id);
       revalidateCatalog(slug ? [slug] : []);
       revalidateAdmin(data.product_id);
+      return { ok: true };
+    },
+  );
+}
+
+const imageColourSchema = z.object({
+  id: z.uuid("That is not a photograph."),
+  color: imageColour,
+});
+
+/**
+ * Which colourway a photograph belongs to, changed after the fact.
+ *
+ * This is the half of the model that never existed. `product_images.color` has
+ * been indexed and read by the storefront since Phase 3, and it was written by
+ * exactly one thing: the seed. Every photograph the owner has ever uploaded
+ * landed with `color = null`, and on a product whose colourways already had
+ * seeded artwork that meant the gallery never showed it — the whole of the
+ * 2026-08-14 report.
+ *
+ * It exists **separately from the upload** rather than only on the panel
+ * because of the 124 rows already in the shop: four of them are untagged and
+ * two of those are real photographs the owner took. Retagging is the only way
+ * to fix a row that is already there, and re-uploading a photograph to change
+ * one field would be a worse answer than the bug.
+ *
+ * The product is read from the row rather than taken from the caller, so the
+ * colour can only ever be validated against the colourways of the product the
+ * photograph actually belongs to.
+ */
+export async function setImageColor(
+  input: unknown,
+): Promise<AdminResult<object>> {
+  return adminAction<object>(
+    "setImageColor",
+    "adminMutation",
+    async ({ supabase }) => {
+      const parsed = imageColourSchema.safeParse(input);
+      if (!parsed.success) return invalid(parsed.error);
+
+      const { data: image, error: readError } = await supabase
+        .from("product_images")
+        .select("product_id")
+        .eq("id", parsed.data.id)
+        .maybeSingle();
+      if (readError) {
+        console.error("[admin] setImageColor read failed:", readError.message);
+        return {
+          ok: false,
+          reason: "error",
+          message: "Could not read that photograph.",
+        };
+      }
+      if (!image) {
+        return {
+          ok: false,
+          reason: "invalid",
+          message: "That photograph has already gone.",
+        };
+      }
+
+      const colour = await resolveImageColour(
+        supabase,
+        image.product_id,
+        parsed.data.color,
+      );
+      if ("message" in colour) {
+        return { ok: false, reason: "invalid", message: colour.message };
+      }
+
+      const { error } = await supabase
+        .from("product_images")
+        .update({ color: colour.colour })
+        .eq("id", parsed.data.id);
+      if (error) return writeFailure(error, "photograph");
+
+      const slug = await productSlug(supabase, image.product_id);
+      revalidateCatalog(slug ? [slug] : []);
+      revalidateAdmin(image.product_id);
       return { ok: true };
     },
   );

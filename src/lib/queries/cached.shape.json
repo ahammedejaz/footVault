@@ -1,5 +1,5 @@
 {
-  "shapeVersion": "v8",
+  "shapeVersion": "v9",
   "hash": "4a4cd643093e3250",
   "shapes": {
     "cachedCategoryTree": "Array<{ children: <circular>; description: (null | string); id: string; name: string; slug: string }>",

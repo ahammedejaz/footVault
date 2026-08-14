@@ -140,6 +140,7 @@ export function ImageUploadPanel({
   productId,
   productName,
   existingCount,
+  colourways,
   targetFill,
   onAdded,
 }: {
@@ -147,6 +148,16 @@ export function ImageUploadPanel({
   productName: string;
   /** Drives the two-shot guidance: what is still missing. */
   existingCount: number;
+  /**
+   * This product's real colourways, in the order the variant editor lists them.
+   *
+   * Derived from `product_variants.color` on the server rather than typed here,
+   * because a colourway that is not on a variant does not exist: the storefront
+   * builds the swatches from the variants and matches photographs to them by
+   * exact string. A free-text box would let the owner file a photograph under
+   * "navy" against a "Navy" colourway and see it vanish.
+   */
+  colourways: readonly string[];
   /**
    * The fraction the fill guide is drawn at, read from the owner's settings on
    * the server. Passed in rather than fetched here so the guide is correct on
@@ -157,8 +168,25 @@ export function ImageUploadPanel({
 }) {
   const inputRef = React.useRef<HTMLInputElement>(null);
   const altId = React.useId();
+  const colourId = React.useId();
   const [staged, setStaged] = React.useState<Staged | null>(null);
   const [altText, setAltText] = React.useState("");
+  /**
+   * Which colourway this shot is of. `""` is "every colourway" and is the
+   * default on purpose.
+   *
+   * Defaulting to the first colourway would be the tidier-looking choice and is
+   * the wrong one: a photograph filed under the wrong colour is invisible on
+   * the page the owner was looking at, whereas one shown on all of them is
+   * wrong in a way they can see immediately and fix from the list below. The
+   * expensive mistake is the silent one.
+   *
+   * It is **not** carried across shots the way the crop is. Two photographs in
+   * a row are usually the same shoe from two angles, but they are just as often
+   * the next colourway — and inheriting a colour would file the second one
+   * under the first one's name without anybody choosing it.
+   */
+  const [colour, setColour] = React.useState("");
   const [phase, setPhase] = React.useState<Phase>({ step: "idle" });
   const [crop, setCrop] = React.useState<Crop>(DEFAULT_CROP);
   const [frame, setFrame] = React.useState<Frame | null>(null);
@@ -224,6 +252,7 @@ export function ImageUploadPanel({
 
     setStaged(next);
     setAltText("");
+    setColour("");
     setAutoFramed(null);
     setSubject(null);
     /**
@@ -311,6 +340,7 @@ export function ImageUploadPanel({
     if (staged) URL.revokeObjectURL(staged.previewUrl);
     setStaged(null);
     setAltText("");
+    setColour("");
     setFrame(null);
     setSubject(null);
     setAutoFramed(null);
@@ -352,6 +382,7 @@ export function ImageUploadPanel({
       originalPath: processed.originalPath,
       crop: processed.crop,
       altText: altText.trim(),
+      color: colour,
     });
     setPhase({ step: "idle" });
 
@@ -509,6 +540,50 @@ export function ImageUploadPanel({
                 Whole photograph
               </Button>
             </div>
+
+            {/*
+              Rendered only when the product has more than one colourway.
+
+              A single-colourway product has exactly one answer, and a select
+              with one real option plus "every colourway" asks the owner to make
+              a distinction that has no consequence on their shop — the two
+              choices render identically on every page. On a product with two or
+              three, the same control decides whether the photograph is ever
+              seen, so it earns the row.
+            */}
+            {colourways.length > 1 ? (
+              <div>
+                <label
+                  htmlFor={colourId}
+                  className="mb-1 block text-sm font-medium"
+                >
+                  Which colourway is this?
+                </label>
+                <select
+                  id={colourId}
+                  value={colour}
+                  onChange={(event) => setColour(event.target.value)}
+                  disabled={busy}
+                  aria-describedby={`${colourId}-why`}
+                  className="border-input bg-background h-11 w-full rounded-sm border px-3 text-sm"
+                >
+                  <option value="">Every colourway</option>
+                  {colourways.map((name) => (
+                    <option key={name} value={name}>
+                      {name}
+                    </option>
+                  ))}
+                </select>
+                <p
+                  id={`${colourId}-why`}
+                  className="text-muted-foreground mt-1 text-xs text-pretty"
+                >
+                  The product page shows a colourway&rsquo;s own photographs plus
+                  everything marked &ldquo;every colourway&rdquo;. Naming one
+                  here keeps a Navy shot off the White swatch.
+                </p>
+              </div>
+            ) : null}
 
             <div>
               <label htmlFor={altId} className="mb-1 block text-sm font-medium">

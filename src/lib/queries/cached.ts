@@ -108,8 +108,19 @@ export const CHROME_CACHE_TAG = "chrome";
  * rendering it — a link to an account that does not exist — until the hour ran
  * out. Any owner-visible `site_settings` change needs this; it is not only for
  * page copy.
+ *
+ * v9 — the first bump where **no type changed at all**, and the reason is worth
+ * stating because the shapes gate cannot see it. `toSummary` now merges the
+ * untagged photographs into every colourway's gallery instead of falling back
+ * to them only when a colourway had none. `ProductColor.images` is the same
+ * `ProductImage[]` it always was; what changed is which images are in it. A v8
+ * entry written by the old reader holds the old gallery, `unstable_cache` keys
+ * on the key parts and never on the code that produced the value, and a deploy
+ * calls no `updateTag` — so without this the fix would have been invisible on
+ * every already-cached product page until the hour ran out. A *value* changing
+ * meaning is as much a reason to bump as a field appearing.
  */
-const SHAPE_VERSION = "v8";
+const SHAPE_VERSION = "v9";
 
 /**
  * Which database the entry was read from.
