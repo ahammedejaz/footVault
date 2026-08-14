@@ -181,3 +181,53 @@ session it would overwrite the shop's entire contact block with
 I found this because I made the neighbouring mistake yesterday in this same
 session — `AUDIT_BASE_URL` moves the browser, not the credentials. Not fixed: no
 new batches. Worth a guard before anyone runs the suite in a hurry.
+
+---
+
+## 8 · Deploy record
+
+Commit `9d9ae31` → production, promoted **~70 s** after the push. Verified by
+alias with **"YSR Kadapa district"** — a phrase that cannot exist in the old tree,
+where the same sentence read "Kadapa — still widely written Cuddapah".
+
+Counted on the live site, **both hostnames**, apex and www identical:
+
+| Route | cuddapah | kadapa | proddatur | raw `{{…}}` |
+|---|---|---|---|---|
+| `/` | 0 | 0 | 12 | 0 |
+| `/page/about` | 0 | 4 | 14 | 0 |
+| `/page/contact` | 0 | 4 | 18 | 0 |
+| `/page/shipping` | 0 | 0 | 14 | 0 |
+| `/page/terms` | 0 | 0 | 12 | 0 |
+| `/page/privacy` | 0 | 0 | 10 | 0 |
+| `/page/returns` | 0 | 0 | 10 | 0 |
+| `/shop` | 0 | 0 | 10 | 0 |
+
+Spot checks on the live response:
+
+- footer address on an unrelated route (`/shop`): "…Near RTC Bus Stand,
+  **Proddatur**, Andhra Pradesh 516360" — the settings row propagated everywhere,
+  which is what the `SHAPE_VERSION` bump was for;
+- map embed: new timestamp `1786715127420` present, old `1786712602016` absent;
+- `frame-src`: unchanged, `api.razorpay.com checkout.razorpay.com
+  www.google.com` — no CSP edit was needed and none was made;
+- `https://wa.me/917337579733` still on the contact page.
+
+Gates: `audit:literals` PASS, `audit:privacy` PASS (5 sections),
+`audit:build-smoke` PASS, `audit:contact` red on the two social URLs only.
+`typecheck` and `lint` clean, run last.
+
+---
+
+## 9 · Still open
+
+1. **The two social URLs** — still the seed fixtures, still live in the footer.
+   `audit:contact` stays red until they are confirmed or cleared.
+2. **A zoomed map URL**, if you want one — §4 explains how to tell before you
+   paste it.
+3. **K3 / B3** — the GBP listing name, and then `LocalBusiness` + `sameAs`.
+   Neither added, per your instruction.
+4. **K7** — category descriptions that mention the shop.
+5. `site_settings.payment_methods` — public, read by nothing, says online
+   payment is off while the shop takes online payments.
+6. A guard on `audit:settings-controls` (§7).
