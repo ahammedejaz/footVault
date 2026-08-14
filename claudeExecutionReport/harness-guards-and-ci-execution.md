@@ -183,3 +183,27 @@ traffic.
 `git status src` is **empty** — no application file changed, so the push is a
 no-op for the storefront and there is nothing to verify by alias that was not
 verified in the last report. What matters here is the CI run, recorded below.
+
+---
+
+## 7 · CI record
+
+Commit `0957c63`, run **31825867687** — both jobs green:
+
+```
+Typecheck, lint, build:      success  (2m28s)
+Guard the service_role key:  success
+```
+
+The two rewritten checks, quoted from the Ubuntu run rather than from my
+machine:
+
+```
+97 "use client" files scanned, none value-imports a server-only module.
+28 "use server" files scanned, all export only async functions.
+```
+
+Those are the same counts the local run printed, which is the point: the numbers
+now agree across bash and zsh, GNU grep and BSD grep, because neither check
+depends on a shell any more. Before this commit the local run of one printed
+`1 "use server" files` and the other printed nothing at all, and both exited 0.
