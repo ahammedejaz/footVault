@@ -22,9 +22,28 @@ import {
   FIXTURE_SLUGS,
   type QaFixture,
 } from "./fixtures";
-import { assertServerNotProduction } from "./clients";
+import { assertNotProduction, assertServerNotProduction } from "./clients";
 import { AUDIT_ROUTES, BASE_URL } from "./routes";
 import { auditStates, jarFor, type AuditState } from "./states";
+
+/*
+  The credential guard, on a harness that does not write.
+
+  That is the point of it. "This file only reads" is a fact about the file
+  *today*, and the next edit that adds one `.insert(` to reproduce a state
+  invalidates it — silently, against whatever database `.env.local` happens to
+  name. The whole reason the guard moved from a rule about files into a property
+  of the credential (see clients.ts) is that a rule of the first kind is only
+  ever as complete as the last person to think about it, and it had been
+  believed complete four times.
+
+  Two guards, two different questions, and neither answers the other:
+  `assertNotProduction` is about the database *this process* holds credentials
+  for; `assertServerNotProduction` below is about the database the *server at
+  BASE_URL* is backed by. On 2026-08-14 the second was missing and production
+  picked up two guest carts while the first one passed.
+*/
+assertNotProduction("run audit:a11y");
 
 /**
  * Wait for the real page, not its skeleton.

@@ -18,7 +18,7 @@
  */
 import { chromium, type Page } from "playwright";
 
-import { adminClient } from "./clients";
+import { adminClient, assertServerNotProduction } from "./clients";
 import { createAccount, sessionCookies } from "./fixtures";
 import { removeWitness } from "./refusal";
 
@@ -38,6 +38,10 @@ async function fill(page: Page, name: string, value: string) {
 }
 
 async function main() {
+  // The browser writes wherever BASE points, which the credential
+  // guard cannot see. See clients.ts.
+  await assertServerNotProduction(BASE, "run audit:address-book");
+
   console.log("\nThe address book\n");
 
   const account = await createAccount("fv-qa.addrbook");

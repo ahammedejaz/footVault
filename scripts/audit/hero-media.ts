@@ -48,7 +48,7 @@
  * has a predicate for either.
  */
 import "./clients";
-import { assertNotProduction } from "./clients";
+import { assertNotProduction, assertServerNotProduction } from "./clients";
 
 assertNotProduction("run the hero media audit");
 
@@ -263,6 +263,10 @@ async function atWidth(browser: Browser, width: number, videoConfigured: boolean
 }
 
 async function main() {
+  // The browser writes wherever BASE_URL points, which the credential
+  // guard cannot see. See clients.ts.
+  await assertServerNotProduction(BASE_URL, "run audit:hero-media");
+
   mkdirSync("screenshots", { recursive: true });
 
   /* Is a video configured at all? Read the served HTML, which is also the

@@ -21,6 +21,24 @@ import { chromium } from "playwright";
 
 import { BASE_URL } from "./routes";
 import { scanned } from "./scanned";
+import { assertNotProduction, assertServerNotProduction } from "./clients";
+
+/*
+  Both guards, on a harness that reads.
+
+  `assertNotProduction` refuses the *credential* this process resolved;
+  `assertServerNotProduction` refuses the *database the server at BASE_URL is
+  backed by*. They are different questions and neither answers the other — on
+  2026-08-14 the first passed while a browser driven at a production build put
+  two guest carts into the live shop.
+
+  Added here even though this file only reads, because "it only reads" is a fact
+  about the file today and the next edit that reproduces a state with one
+  `.insert(` invalidates it. `audit:fixtures-guard` now requires both of every
+  harness that opens a browser, so the next one is covered on the day it is
+  written rather than after the next incident.
+*/
+assertNotProduction("run audit:gallery");
 
 const SLUG = "nike-air-max-90-mens";
 const WIDTHS = [360, 390] as const;
@@ -28,6 +46,10 @@ const WIDTHS = [360, 390] as const;
 let failures = 0;
 
 async function main() {
+  // The browser writes wherever BASE_URL points, which the credential
+  // guard cannot see. See clients.ts.
+  await assertServerNotProduction(BASE_URL, "run audit:gallery");
+
   console.log(`\nThe product gallery at rest — /product/${SLUG}\n`);
 
   const browser = await chromium.launch();

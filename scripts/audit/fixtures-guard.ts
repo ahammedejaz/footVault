@@ -226,6 +226,78 @@ console.log("\n every harness that can write is refused against production:");
 }
 
 /**
+ * Every harness that drives a browser carries **both** guards.
+ *
+ * The two answer different questions and neither answers the other.
+ * `assertNotProduction` is about the database this *process* holds credentials
+ * for; `assertServerNotProduction` is about the database the *server at
+ * BASE_URL* is backed by. On 2026-08-14 the second was missing across the suite
+ * and production picked up two guest carts while the first passed cleanly — the
+ * browser wrote to the live shop through a `next start` reading `.env.local`,
+ * and every write the admin client made went to staging.
+ *
+ * The commit that followed added the server guard to all nineteen. It did not
+ * add the credential guard to the four that had never needed one, because those
+ * four do not write — `a11y`, `admin-pages`, `keyboard`, `keyboard-checkout`.
+ * **"It does not write" is a fact about a file today.** The next edit that adds
+ * one `.insert(` to reproduce a state invalidates it, silently, and the harness
+ * that had no guard is the one that will not grow one in the same commit.
+ *
+ * So the rule is about what a harness *drives*, not about what it currently
+ * does: if it opens a browser at BASE_URL, it carries both. Importing
+ * `./fixtures` satisfies the credential half, because that module calls the
+ * refusal at module scope.
+ */
+console.log("\n every harness that drives a browser carries both guards:");
+{
+  /*
+    This file is exempt from its own rule for a reason worth stating: the
+    pattern below is written out here as a regex literal, so the source of this
+    gate contains the string it searches for and matches itself. It opens no
+    browser.
+  */
+  const exempt = new Set([
+    "clients.ts",
+    "refusal-probe.ts",
+    "fixtures-guard.ts",
+  ]);
+  /** Opens a browser. `chromium.launch` is the only way any of them does it. */
+  const DRIVES_BROWSER = /chromium\.launch\(/;
+  const CREDENTIAL_GUARD =
+    /(^|[^r])assertNotProduction\(|(^|\n)import\s+(?:[^;]*\sfrom\s+)?["']\.\/fixtures["']/;
+  const SERVER_GUARD = /assertServerNotProduction\(/;
+
+  let drivers = 0;
+  for (const file of readdirSync("scripts/audit").sort()) {
+    if (!file.endsWith(".ts") || exempt.has(file)) continue;
+    const source = readFileSync(`scripts/audit/${file}`, "utf8");
+    if (!DRIVES_BROWSER.test(source)) continue;
+    drivers += 1;
+    check(
+      `${file} carries the credential guard`,
+      CREDENTIAL_GUARD.test(source),
+      true,
+    );
+    check(`${file} carries the server guard`, SERVER_GUARD.test(source), true);
+  }
+
+  /*
+    A zero-item scan here would print nothing and pass, which is the failure this
+    repository has shipped three times — a shell loop that word-split, a grep
+    whose flag did not exist on BSD, and a column list nobody had added to. If
+    no harness appears to drive a browser, the pattern is wrong, not the suite.
+  */
+  if (drivers === 0) {
+    console.error(
+      "\n  No harness matched `chromium.launch(`. That is not a pass — either\n" +
+        "  the suite stopped driving browsers or this pattern is wrong.\n",
+    );
+    process.exit(1);
+  }
+  console.log(`  —     ${drivers} browser-driving harnesses checked.`);
+}
+
+/**
  * **The factories actually refuse — proved by running them, not by reading.**
  *
  * Everything above this line is a regex over source text, and every wave of

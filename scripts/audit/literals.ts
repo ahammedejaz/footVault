@@ -153,8 +153,21 @@ const ALLOWED = new Map<string, string>([
 
 console.log("\n\x1b[1m1 · no currency literal in a component or a page\x1b[0m");
 
+/*
+  `--cached --others --exclude-standard`, not a plain `git ls-files`, and the
+  reason is the one `audit:privacy` §5 already found the hard way: **a file that
+  has not been committed yet is invisible to `git ls-files`**, and a new
+  component is exactly where a fresh rupee literal lives. The sequence is
+  ordinary — write the component, type "Free over ₹2,499" into it, run the
+  gates, see green, commit — and this rule exists precisely to stop that
+  sentence reaching a page a fourth time.
+
+  `--exclude-standard` keeps `.gitignore` honoured, so `node_modules` and
+  `.next` stay out. The two lists are unioned by git itself and cannot
+  double-count: `--cached` is the index, `--others` is only what is not in it.
+*/
 const files = execSync(
-  "git ls-files 'src/components/**/*.tsx' 'src/app/**/*.tsx'",
+  "git ls-files --cached --others --exclude-standard 'src/components/**/*.tsx' 'src/app/**/*.tsx'",
   { encoding: "utf8" },
 )
   .split("\n")
@@ -177,7 +190,18 @@ for (const file of files) {
       if (trimmed.includes("*/")) inBlockComment = false;
       return;
     }
-    if (trimmed.startsWith("/*")) {
+    /*
+      `{/*` as well as `/*`, because a JSX comment opens with a brace and this
+      file is full of them. Without it a rupee figure inside `{/* … *\/}` was
+      reported as a violation — a false positive, and a false positive on a rule
+      like this one is worse than a gap: it is the reason somebody eventually
+      deletes the rule. Found on 2026-08-15 by a comment in the courier alert
+      strip explaining why a null amount must not render as ₹0.00.
+
+      Only comment *lines* are skipped, not code with a trailing comment — that
+      is what the `//` strip below the loop is for.
+    */
+    if (trimmed.startsWith("/*") || trimmed.startsWith("{/*")) {
       if (!trimmed.includes("*/")) inBlockComment = true;
       return;
     }
@@ -286,9 +310,12 @@ const ALLOWED_PAISE = new Map<string, string>([
   ],
 ]);
 
-const paiseFiles = execSync("git ls-files 'src/**/*.ts' 'src/**/*.tsx'", {
-  encoding: "utf8",
-})
+/* Untracked files too — see section 1. A new module is where a fresh
+   `free_above_paise: 249900` gets typed, and it is untracked until it is not. */
+const paiseFiles = execSync(
+  "git ls-files --cached --others --exclude-standard 'src/**/*.ts' 'src/**/*.tsx'",
+  { encoding: "utf8" },
+)
   .split("\n")
   .filter(Boolean);
 
