@@ -191,6 +191,92 @@ export function isProductionUrl(url: string): boolean {
  * The production case keeps its own message because it is the one mistake that
  * has actually nearly happened, and it deserves to be recognised by name.
  */
+/**
+ * The database behind a *server*, which is a different question from the
+ * database behind this process's credentials.
+ *
+ * ## The half `assertNotProduction` cannot see
+ *
+ * That guard is keyed on the credential and it works — proven in both
+ * directions on 2026-08-14. It still did not stop production picking up two
+ * guest carts that day, because nothing it can see was wrong: the harness held
+ * staging credentials, passed, and then drove a browser at
+ * `AUDIT_BASE_URL=http://localhost:3213` — a `next start` serving a production
+ * build, reading `.env.local`, talking to the live shop.
+ *
+ * Every write the *admin client* made went to staging. Every write the
+ * *browser* made went to production. The visible symptom was `no active cart to
+ * convert`: the cart existed, in the other database.
+ *
+ * `AUDIT_BASE_URL` moves the browser, the credentials move the client, and a
+ * guard on either says nothing about the other.
+ *
+ * ## What this can see, and what it cannot
+ *
+ * It reads the project ref out of the served markup, because production serves
+ * every catalogue image from Supabase storage and the host is therefore a fact
+ * about the response — no debug route, which would then exist in production.
+ *
+ * **This is positive evidence only, and the limit is worth stating rather than
+ * discovering.** Staging serves its seeded images from local static media
+ * (`/_next/image?url=%2F_next%2Fstatic%2Fmedia%2F…`), so *no* Supabase host
+ * appears there at all. Absence therefore cannot mean "not production" — it
+ * means "this check found nothing", and the run proceeds. A production server
+ * with no Supabase-hosted image would pass, and that is not the shape of this
+ * production today: 122 product images, all in the storage bucket.
+ *
+ * What it does catch is the accident that actually happened, and the split-brain
+ * variant of it, both loudly.
+ */
+export async function assertServerNotProduction(
+  baseUrl: string,
+  action: string,
+): Promise<void> {
+  const expected = projectRefOf(SUPABASE_URL);
+  let served: string | null = null;
+
+  for (const path of ["/", "/shop"]) {
+    let html: string;
+    try {
+      html = await (await fetch(`${baseUrl}${path}`)).text();
+    } catch {
+      continue;
+    }
+    const found = /https:\/\/([a-z0-9]{15,})\.supabase\.co/.exec(html);
+    if (found) {
+      served = found[1];
+      break;
+    }
+  }
+
+  if (served === PRODUCTION_PROJECT_REF) {
+    throw new Error(
+      `Refusing to ${action}: ${baseUrl} is serving the production database.\n\n` +
+        `  The server there is backed by ${PRODUCTION_PROJECT_REF}, the live shop.\n` +
+        `  This harness types QA values into real forms, so the browser writes them\n` +
+        `  wherever that server points — no matter what credentials this process\n` +
+        `  holds, and this process's credentials are ${expected || "(unset)"}.\n\n` +
+        `  Run \`npm run dev:stage\` and point AUDIT_BASE_URL at it.`,
+    );
+  }
+
+  if (served !== null && served !== expected) {
+    throw new Error(
+      `Refusing to ${action}: the browser and this process disagree.\n\n` +
+        `  ${baseUrl} is serving  ${served}\n` +
+        `  these credentials hold ${expected || "(unset)"}\n\n` +
+        `  Writes would land in two databases and the assertions would read the\n` +
+        `  wrong one. This is what produced "no active cart to convert" on\n` +
+        `  2026-08-14.`,
+    );
+  }
+}
+
+/** The subdomain of a Supabase URL — the project ref, or "" if it is not one. */
+function projectRefOf(url: string): string {
+  return /https:\/\/([a-z0-9]+)\.supabase\.co/.exec(url)?.[1] ?? "";
+}
+
 export function assertNotProduction(action: string): void {
   if (isStagingUrl(SUPABASE_URL) || isLocalUrl(SUPABASE_URL)) return;
 
@@ -265,7 +351,9 @@ export type ClientOptions = {
   allowProduction?: boolean;
 };
 
-export function anonClient(options: ClientOptions = {}): SupabaseClient<Database> {
+export function anonClient(
+  options: ClientOptions = {},
+): SupabaseClient<Database> {
   if (!options.allowProduction) assertNotProduction("open an anon client");
   return createClient<Database>(SUPABASE_URL, ANON_KEY, {
     auth: { persistSession: false },

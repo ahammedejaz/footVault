@@ -53,7 +53,7 @@
 // clients first: this writes settings into staging and must never reach the
 // live shop.
 import "./clients";
-import { assertNotProduction } from "./clients";
+import { assertNotProduction, assertServerNotProduction } from "./clients";
 
 assertNotProduction("run settings-controls");
 
@@ -105,7 +105,15 @@ type Control = {
    */
   options?: Record<string, string | RegExp>;
   /** Which settings row it lands in. */
-  row: "shipping" | "shipping_defaults" | "store_name" | "store_tagline" | "contact" | "social" | "announcement" | "images";
+  row:
+    | "shipping"
+    | "shipping_defaults"
+    | "store_name"
+    | "store_tagline"
+    | "contact"
+    | "social"
+    | "announcement"
+    | "images";
   /** Read the stored value out of that row's `value`. */
   read: (value: unknown) => unknown;
 };
@@ -119,83 +127,340 @@ type Control = {
  */
 const CONTROLS: Control[] = [
   /* ── delivery and Pay on Delivery · 18 ─────────────────────────────────── */
-  { id: "free-above", label: "Free delivery at or above", kind: "money", row: "shipping", read: (v) => obj(v).free_above_paise },
-  { id: "delivery-mode", label: "How the delivery charge is decided", kind: "radio", row: "shipping",
-    options: { live: "Charge the courier's rate", flat: "Charge one flat amount" },
-    read: (v) => obj(v).shipping_rate_mode },
-  { id: "delivery-flat", label: "Flat delivery charge", kind: "money", row: "shipping", read: (v) => obj(v).flat_shipping_fee_paise },
-  { id: "flat-deposit-mode", label: "Deposit taken on a Pay-on-Delivery order", kind: "radio", row: "shipping",
-    options: { unset: "Not chosen yet", multiplier: "A multiple of the flat delivery charge", fixed: "A fixed amount" },
-    read: (v) => obj(v).flat_cod_deposit_mode },
-  { id: "flat-deposit-multiplier", label: "Times the flat delivery charge", kind: "number", row: "shipping", read: (v) => obj(v).flat_cod_deposit_multiplier },
-  { id: "flat-deposit-fixed", label: "Deposit taken upfront", kind: "money", row: "shipping", read: (v) => obj(v).flat_cod_deposit_paise },
-  { id: "cod-enabled", label: "Offer Pay on Delivery", kind: "checkbox", row: "shipping", read: (v) => obj(v).cod_enabled },
-  { id: "waive-cod-fee", label: "Waive the cash-handling fee when delivery is free", kind: "checkbox", row: "shipping", read: (v) => obj(v).waive_cod_fee_above_threshold },
-  { id: "cod-minimum", label: "Smallest order that may pay on delivery", kind: "money", row: "shipping", read: (v) => obj(v).cod_minimum_order_value_paise },
-  { id: "cod-cap", label: "Most that may be taken upfront", kind: "money", row: "shipping", read: (v) => obj(v).cod_advance_maximum_paise },
-  { id: "include-gst", label: "Recover the 18% GST on delivery in the upfront amount", kind: "checkbox", row: "shipping", read: (v) => obj(v).include_gst_in_advance },
-  { id: "prepaid-discount-mode", label: "Kind of discount", kind: "radio", row: "shipping",
+  {
+    id: "free-above",
+    label: "Free delivery at or above",
+    kind: "money",
+    row: "shipping",
+    read: (v) => obj(v).free_above_paise,
+  },
+  {
+    id: "delivery-mode",
+    label: "How the delivery charge is decided",
+    kind: "radio",
+    row: "shipping",
+    options: {
+      live: "Charge the courier's rate",
+      flat: "Charge one flat amount",
+    },
+    read: (v) => obj(v).shipping_rate_mode,
+  },
+  {
+    id: "delivery-flat",
+    label: "Flat delivery charge",
+    kind: "money",
+    row: "shipping",
+    read: (v) => obj(v).flat_shipping_fee_paise,
+  },
+  {
+    id: "flat-deposit-mode",
+    label: "Deposit taken on a Pay-on-Delivery order",
+    kind: "radio",
+    row: "shipping",
+    options: {
+      unset: "Not chosen yet",
+      multiplier: "A multiple of the flat delivery charge",
+      fixed: "A fixed amount",
+    },
+    read: (v) => obj(v).flat_cod_deposit_mode,
+  },
+  {
+    id: "flat-deposit-multiplier",
+    label: "Times the flat delivery charge",
+    kind: "number",
+    row: "shipping",
+    read: (v) => obj(v).flat_cod_deposit_multiplier,
+  },
+  {
+    id: "flat-deposit-fixed",
+    label: "Deposit taken upfront",
+    kind: "money",
+    row: "shipping",
+    read: (v) => obj(v).flat_cod_deposit_paise,
+  },
+  {
+    id: "cod-enabled",
+    label: "Offer Pay on Delivery",
+    kind: "checkbox",
+    row: "shipping",
+    read: (v) => obj(v).cod_enabled,
+  },
+  {
+    id: "waive-cod-fee",
+    label: "Waive the cash-handling fee when delivery is free",
+    kind: "checkbox",
+    row: "shipping",
+    read: (v) => obj(v).waive_cod_fee_above_threshold,
+  },
+  {
+    id: "cod-minimum",
+    label: "Smallest order that may pay on delivery",
+    kind: "money",
+    row: "shipping",
+    read: (v) => obj(v).cod_minimum_order_value_paise,
+  },
+  {
+    id: "cod-cap",
+    label: "Most that may be taken upfront",
+    kind: "money",
+    row: "shipping",
+    read: (v) => obj(v).cod_advance_maximum_paise,
+  },
+  {
+    id: "include-gst",
+    label: "Recover the 18% GST on delivery in the upfront amount",
+    kind: "checkbox",
+    row: "shipping",
+    read: (v) => obj(v).include_gst_in_advance,
+  },
+  {
+    id: "prepaid-discount-mode",
+    label: "Kind of discount",
+    kind: "radio",
+    row: "shipping",
     options: { flat: "A fixed amount off", percent: "A percentage off" },
-    read: (v) => obj(obj(v).prepaid_discount).mode },
-  { id: "prepaid-discount-value", label: /Discount amount/, kind: "number", row: "shipping", read: (v) => obj(obj(v).prepaid_discount).value },
-  { id: "max-total-discount-percent", label: /Most a coupon and this discount can take off together/, kind: "number", row: "shipping", read: (v) => obj(v).max_total_discount_percent },
-  { id: "courier-selection-mode", label: "How the courier is chosen", kind: "radio", row: "shipping",
-    options: { shiprocket: "Let Shiprocket decide", cheapest: "Always the cheapest", best_rated: "Best record, within a price limit" },
-    read: (v) => obj(v).courier_selection_mode },
-  { id: "courier-price-tolerance", label: "How much more a better courier may cost", kind: "number", row: "shipping", read: (v) => obj(v).courier_price_tolerance_percent },
-  { id: "rto-policy", label: "What a customer who paid online gets back", kind: "radio", row: "shipping",
-    options: { actual_freight: "Everything except what the journey cost", flat: "Everything except a fixed amount", none: "Everything, nothing deducted" },
-    read: (v) => obj(v).rto_deduction_policy },
-  { id: "rto-flat", label: "Fixed amount kept back", kind: "money", row: "shipping", read: (v) => obj(v).rto_deduction_flat_paise },
-  { id: "prepaid-estimate", label: "Estimated delivery charge for paying online", kind: "money", row: "shipping", read: (v) => obj(v).prepaid_estimate_fee_paise },
-  { id: "fallback-behaviour", label: "Pay on Delivery during an outage", kind: "radio", row: "shipping",
-    options: { refuse_cod: "Do not offer it", allow_all: "Offer it, secured by the deposit" },
-    read: (v) => obj(v).fallback_behaviour },
-  { id: "wallet-low", label: "Warn when the wallet falls below", kind: "money", row: "shipping", read: (v) => obj(v).wallet_low_balance_paise },
+    read: (v) => obj(obj(v).prepaid_discount).mode,
+  },
+  {
+    id: "prepaid-discount-value",
+    label: /Discount amount/,
+    kind: "number",
+    row: "shipping",
+    read: (v) => obj(obj(v).prepaid_discount).value,
+  },
+  {
+    id: "max-total-discount-percent",
+    label: /Most a coupon and this discount can take off together/,
+    kind: "number",
+    row: "shipping",
+    read: (v) => obj(v).max_total_discount_percent,
+  },
+  {
+    id: "courier-selection-mode",
+    label: "How the courier is chosen",
+    kind: "radio",
+    row: "shipping",
+    options: {
+      shiprocket: "Let Shiprocket decide",
+      cheapest: "Always the cheapest",
+      best_rated: "Best record, within a price limit",
+    },
+    read: (v) => obj(v).courier_selection_mode,
+  },
+  {
+    id: "courier-price-tolerance",
+    label: "How much more a better courier may cost",
+    kind: "number",
+    row: "shipping",
+    read: (v) => obj(v).courier_price_tolerance_percent,
+  },
+  {
+    id: "rto-policy",
+    label: "What a customer who paid online gets back",
+    kind: "radio",
+    row: "shipping",
+    options: {
+      actual_freight: "Everything except what the journey cost",
+      flat: "Everything except a fixed amount",
+      none: "Everything, nothing deducted",
+    },
+    read: (v) => obj(v).rto_deduction_policy,
+  },
+  {
+    id: "rto-flat",
+    label: "Fixed amount kept back",
+    kind: "money",
+    row: "shipping",
+    read: (v) => obj(v).rto_deduction_flat_paise,
+  },
+  {
+    id: "prepaid-estimate",
+    label: "Estimated delivery charge for paying online",
+    kind: "money",
+    row: "shipping",
+    read: (v) => obj(v).prepaid_estimate_fee_paise,
+  },
+  {
+    id: "fallback-behaviour",
+    label: "Pay on Delivery during an outage",
+    kind: "radio",
+    row: "shipping",
+    options: {
+      refuse_cod: "Do not offer it",
+      allow_all: "Offer it, secured by the deposit",
+    },
+    read: (v) => obj(v).fallback_behaviour,
+  },
+  {
+    id: "wallet-low",
+    label: "Warn when the wallet falls below",
+    kind: "money",
+    row: "shipping",
+    read: (v) => obj(v).wallet_low_balance_paise,
+  },
 
   /* ── the shop's parcel · 5 ─────────────────────────────────────────────── */
-  { id: "parcel-weight", label: /Packed weight/, kind: "number", row: "shipping_defaults", read: (v) => obj(v).default_parcel_weight_grams },
-  { id: "parcel-length", label: /Box length/, kind: "number", row: "shipping_defaults", read: (v) => obj(v).default_parcel_length_cm },
-  { id: "parcel-breadth", label: /Box breadth/, kind: "number", row: "shipping_defaults", read: (v) => obj(v).default_parcel_breadth_cm },
-  { id: "parcel-height", label: /Box height/, kind: "number", row: "shipping_defaults", read: (v) => obj(v).default_parcel_height_cm },
-  { id: "pickup-pin", label: "Pickup PIN code", kind: "text", row: "shipping_defaults", read: (v) => obj(v).pickup_postcode },
+  {
+    id: "parcel-weight",
+    label: /Packed weight/,
+    kind: "number",
+    row: "shipping_defaults",
+    read: (v) => obj(v).default_parcel_weight_grams,
+  },
+  {
+    id: "parcel-length",
+    label: /Box length/,
+    kind: "number",
+    row: "shipping_defaults",
+    read: (v) => obj(v).default_parcel_length_cm,
+  },
+  {
+    id: "parcel-breadth",
+    label: /Box breadth/,
+    kind: "number",
+    row: "shipping_defaults",
+    read: (v) => obj(v).default_parcel_breadth_cm,
+  },
+  {
+    id: "parcel-height",
+    label: /Box height/,
+    kind: "number",
+    row: "shipping_defaults",
+    read: (v) => obj(v).default_parcel_height_cm,
+  },
+  {
+    id: "pickup-pin",
+    label: "Pickup PIN code",
+    kind: "text",
+    row: "shipping_defaults",
+    read: (v) => obj(v).pickup_postcode,
+  },
 
   /* ── the shop · 8 ──────────────────────────────────────────────────────── */
-  { id: "store-name", label: "Shop name", kind: "text", row: "store_name", read: (v) => v },
-  { id: "store-tagline", label: "Tagline", kind: "text", row: "store_tagline", read: (v) => v },
-  { id: "contact-phone", label: "Phone", kind: "text", row: "contact", read: (v) => obj(v).phone },
-  { id: "contact-whatsapp", label: "WhatsApp", kind: "text", row: "contact", read: (v) => obj(v).whatsapp },
-  { id: "contact-email", label: "Email", kind: "text", row: "contact", read: (v) => obj(v).email },
-  { id: "contact-address", label: "Shop address", kind: "text", row: "contact", read: (v) => obj(v).address },
-  { id: "social-instagram", label: "Instagram", kind: "text", row: "social", read: (v) => obj(v).instagram },
-  { id: "social-facebook", label: "Facebook", kind: "text", row: "social", read: (v) => obj(v).facebook },
+  {
+    id: "store-name",
+    label: "Shop name",
+    kind: "text",
+    row: "store_name",
+    read: (v) => v,
+  },
+  {
+    id: "store-tagline",
+    label: "Tagline",
+    kind: "text",
+    row: "store_tagline",
+    read: (v) => v,
+  },
+  {
+    id: "contact-phone",
+    label: "Phone",
+    kind: "text",
+    row: "contact",
+    read: (v) => obj(v).phone,
+  },
+  {
+    id: "contact-whatsapp",
+    label: "WhatsApp",
+    kind: "text",
+    row: "contact",
+    read: (v) => obj(v).whatsapp,
+  },
+  {
+    id: "contact-email",
+    label: "Email",
+    kind: "text",
+    row: "contact",
+    read: (v) => obj(v).email,
+  },
+  {
+    id: "contact-address",
+    label: "Shop address",
+    kind: "text",
+    row: "contact",
+    read: (v) => obj(v).address,
+  },
+  {
+    id: "social-instagram",
+    label: "Instagram",
+    kind: "text",
+    row: "social",
+    read: (v) => obj(v).instagram,
+  },
+  {
+    id: "social-facebook",
+    label: "Facebook",
+    kind: "text",
+    row: "social",
+    read: (v) => obj(v).facebook,
+  },
   /*
     Phase 10 Batch C. The announcement had no control at all until this batch —
     the strip rendered from a row only SQL could edit. Five controls, one row.
   */
-  { id: "announcement-active", label: "Shown to customers", kind: "checkbox", row: "announcement", read: (v) => obj(v).is_active },
-  { id: "announcement-text", label: "What it says", kind: "text", row: "announcement", read: (v) => obj(v).text },
-  { id: "announcement-href", label: "Where it links", kind: "text", row: "announcement", read: (v) => obj(v).href },
-  { id: "announcement-starts", label: "When it starts", kind: "text", row: "announcement", read: (v) => obj(v).starts_at },
-  { id: "announcement-ends", label: "When it ends", kind: "text", row: "announcement", read: (v) => obj(v).ends_at },
+  {
+    id: "announcement-active",
+    label: "Shown to customers",
+    kind: "checkbox",
+    row: "announcement",
+    read: (v) => obj(v).is_active,
+  },
+  {
+    id: "announcement-text",
+    label: "What it says",
+    kind: "text",
+    row: "announcement",
+    read: (v) => obj(v).text,
+  },
+  {
+    id: "announcement-href",
+    label: "Where it links",
+    kind: "text",
+    row: "announcement",
+    read: (v) => obj(v).href,
+  },
+  {
+    id: "announcement-starts",
+    label: "When it starts",
+    kind: "text",
+    row: "announcement",
+    read: (v) => obj(v).starts_at,
+  },
+  {
+    id: "announcement-ends",
+    label: "When it ends",
+    kind: "text",
+    row: "announcement",
+    read: (v) => obj(v).ends_at,
+  },
   /*
     The image editor's one owner-facing number. Located by its visible label
     like everything else here — and the label is the long one on purpose,
     because "Target fill" would be a control whose meaning lives only in a
     hint nobody reads twice.
   */
-  { id: "target-fill", label: /How much of the frame a shoe should fill/, kind: "number", row: "images", read: (v) => obj(v).target_fill_percent },
+  {
+    id: "target-fill",
+    label: /How much of the frame a shoe should fill/,
+    kind: "number",
+    row: "images",
+    read: (v) => obj(v).target_fill_percent,
+  },
 ];
 
 function obj(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+  return value && typeof value === "object"
+    ? (value as Record<string, unknown>)
+    : {};
 }
 
 const byId = new Map(CONTROLS.map((control) => [control.id, control]));
 
 function control(id: string): Control {
   const found = byId.get(id);
-  if (!found) throw new Error(`no control named ${id} — the table and the script disagree`);
+  if (!found)
+    throw new Error(
+      `no control named ${id} — the table and the script disagree`,
+    );
   return found;
 }
 
@@ -245,23 +510,44 @@ function locate(page: Page, entry: Control, value?: string): Locator {
  */
 async function legendIsVisible(page: Page, entry: Control): Promise<boolean> {
   const text = await page.locator("body").innerText();
-  const label = typeof entry.label === "string" ? entry.label : entry.label.source;
+  const label =
+    typeof entry.label === "string" ? entry.label : entry.label.source;
   return text.toLowerCase().includes(label.toLowerCase());
 }
 
-async function setValue(page: Page, id: string, value: string | boolean): Promise<boolean> {
+async function setValue(
+  page: Page,
+  id: string,
+  value: string | boolean,
+): Promise<boolean> {
   const entry = control(id);
   if (entry.kind === "radio" && !(await legendIsVisible(page, entry))) {
-    check(`${id} — the group is introduced by "${labelOf(entry)}"`, false, "legend missing");
+    check(
+      `${id} — the group is introduced by "${labelOf(entry)}"`,
+      false,
+      "legend missing",
+    );
     return false;
   }
-  const target = locate(page, entry, typeof value === "string" ? value : undefined);
+  const target = locate(
+    page,
+    entry,
+    typeof value === "string" ? value : undefined,
+  );
   if ((await target.count()) === 0) {
-    check(`${id} — a human can find "${entry.label}" on the page`, false, "no control carries that label");
+    check(
+      `${id} — a human can find "${entry.label}" on the page`,
+      false,
+      "no control carries that label",
+    );
     return false;
   }
   if (!(await target.isVisible())) {
-    check(`${id} — the control is visible, not merely in the DOM`, false, "hidden");
+    check(
+      `${id} — the control is visible, not merely in the DOM`,
+      false,
+      "hidden",
+    );
     return false;
   }
   if (await target.isDisabled()) {
@@ -336,6 +622,17 @@ function labelOf(entry: Control): string {
 /* ------------------------------------------------------------------ main -- */
 
 async function main() {
+  /*
+    First, before an account is created or a row is read.
+
+    The credential guard ran at module scope and covers what this process
+    writes. This covers what the *browser* writes, which is a different
+    database whenever AUDIT_BASE_URL says so — on 2026-08-14 that was a
+    production build while the credentials were staging, and production picked
+    up two guest carts from a run whose guard had passed. See clients.ts.
+  */
+  await assertServerNotProduction(BASE_URL, "run settings-controls");
+
   const admin = adminClient();
 
   /** Everything this run will touch, captured to be put back in the finally. */
@@ -355,7 +652,10 @@ async function main() {
       .select("value")
       .eq("key", row)
       .maybeSingle();
-    if (error) throw new Error(`could not read ${row}, refusing to run: ${error.message}`);
+    if (error)
+      throw new Error(
+        `could not read ${row}, refusing to run: ${error.message}`,
+      );
     original.set(row, (data?.value ?? null) as Json);
   }
 
@@ -369,7 +669,9 @@ async function main() {
   }
 
   const browser = await chromium.launch();
-  const context = await browser.newContext({ viewport: { width: 1400, height: 1000 } });
+  const context = await browser.newContext({
+    viewport: { width: 1400, height: 1000 },
+  });
   await context.addCookies(await sessionCookies(account.session));
   const page = await context.newPage();
 
@@ -421,7 +723,11 @@ async function main() {
       stored the naive string would round-trip visibly but mean a different
       moment on every machine that read it.
     */
-    await assertStored(page, "announcement-starts", "2026-01-05T10:30:00+05:30");
+    await assertStored(
+      page,
+      "announcement-starts",
+      "2026-01-05T10:30:00+05:30",
+    );
     await assertStored(page, "announcement-ends", "2027-01-05T18:45:00+05:30");
 
     /*
@@ -491,7 +797,8 @@ async function main() {
     for (const [id, value] of parcel) await setValue(page, id, value);
     await setValue(page, "pickup-pin", "516360");
     await save(page, "shipping_defaults");
-    for (const [id, , expected] of parcel) await assertStored(page, id, expected);
+    for (const [id, , expected] of parcel)
+      await assertStored(page, id, expected);
     await assertStored(page, "pickup-pin", "516360");
 
     /*
@@ -657,7 +964,8 @@ async function main() {
         .from("site_settings")
         .update({ value })
         .eq("key", row);
-      if (error) console.error(`  !! could not restore ${row}: ${error.message}`);
+      if (error)
+        console.error(`  !! could not restore ${row}: ${error.message}`);
     }
     console.log("\n  restored every settings row this run touched");
     await admin.auth.admin.deleteUser(account.userId).catch(() => {});
@@ -666,7 +974,9 @@ async function main() {
 
   console.log(
     `\n\x1b[1m${passed} passed, ${failed} failed\x1b[0m` +
-      (failures.length ? `\n\n${failures.map((f) => `  · ${f}`).join("\n")}` : ""),
+      (failures.length
+        ? `\n\n${failures.map((f) => `  · ${f}`).join("\n")}`
+        : ""),
   );
 
   /**

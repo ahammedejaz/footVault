@@ -34,8 +34,22 @@
  *   - shapes changed, SHAPE_VERSION same   -> FAIL. This is the bug.
  *   - shapes changed, SHAPE_VERSION bumped -> FAIL until the snapshot is
  *     re-recorded, so the *next* change is still caught.
+ *   - shapes unchanged, SHAPE_VERSION bumped -> FAIL until re-recorded, for the
+ *     same reason as the case above and not because the bump was wrong.
  *
- * `npm run shapes` checks. `npm run shapes:write` re-records.
+ * That fourth case is legitimate and this file used to read as though it were
+ * not. `SHAPE_VERSION` is a cache **key part**, and `cached.ts` documents it as
+ * the only lever that clears Vercel's Data Cache — a fresh deploy and
+ * `--force` were both tried against the live project and the stale entry
+ * survived both. So it is also bumped when the *content* behind an unchanged
+ * shape has to be re-read: v4 for tokenised prose, v6 and v7 for the launch
+ * copy and the Proddatur correction, none of which moved a type. The snapshot
+ * still has to be re-recorded, because its job is to make the *next* shape
+ * change visible and it can only do that from the current version.
+ *
+ * `npm run shapes` checks. `npm run shapes:write` re-records. CI runs the
+ * check, so a bump without a re-record is a red build on main — which is
+ * exactly what v6 did on 2026-08-14.
  *
  * Reading a *type* rather than a runtime value is deliberate: the shape that
  * matters is the one the compiler believes in, and it is knowable without a

@@ -1,3 +1,5 @@
+import type * as React from "react";
+
 import Link from "next/link";
 import { Logo } from "@/components/brand/logo";
 import {
@@ -35,8 +37,47 @@ const SOCIAL_ICONS = {
   whatsapp: WhatsAppIcon,
 } as const;
 
-function iconFor(name: string) {
-  return SOCIAL_ICONS[name as keyof typeof SOCIAL_ICONS];
+/**
+ * The glyph for a network name, or nothing.
+ *
+ * The `| undefined` is the whole point and it used to be missing. Written as a
+ * bare `SOCIAL_ICONS[name as keyof typeof SOCIAL_ICONS]`, the cast asserts the
+ * key exists, so the compiler believed the result was always a component — and
+ * the `{Icon ? … : null}` that guarded the render read as a condition that is
+ * always true. The guard was dead to the type checker and load-bearing at
+ * runtime, which is the pair that hides. `site_settings.social` is an
+ * owner-edited jsonb object; any key at all can appear in it.
+ */
+function iconFor(
+  name: string,
+): React.ComponentType<{ className?: string }> | undefined {
+  return Object.hasOwn(SOCIAL_ICONS, name)
+    ? SOCIAL_ICONS[name as keyof typeof SOCIAL_ICONS]
+    : undefined;
+}
+
+/**
+ * The accounts the shop actually has, in a form that can be rendered.
+ *
+ * Two conditions, and the second one is the reason this is a function.
+ *
+ * **A cleared field is not an account.** `site_settings.social.facebook` was
+ * emptied on 2026-08-14 because there is no Facebook account — so the icon has
+ * to disappear with it rather than link nowhere. That is data, not code: the
+ * icons stay in `SOCIAL_ICONS` so that an account added later renders without a
+ * deploy, and the row being absent is what removes it.
+ *
+ * **An icon the map does not know is not renderable.** Without this, a settings
+ * row naming a network this component has no glyph for produced an `<a>`
+ * containing only screen-reader text: a focusable, invisible link that a
+ * keyboard user lands on and cannot see. It looked like nothing was there, which
+ * is exactly why nobody would have reported it.
+ */
+function renderableSocials(social: SocialSettings) {
+  return Object.entries(social).flatMap(([name, href]) => {
+    const Icon = iconFor(name);
+    return href && Icon ? [{ name, href, Icon }] : [];
+  });
 }
 
 export async function SiteFooter() {
@@ -51,9 +92,7 @@ export async function SiteFooter() {
     address: "",
   });
   const social = setting<SocialSettings>(settings, "social", {});
-  const socialLinks = Object.entries(social).filter(([, href]) =>
-    Boolean(href),
-  );
+  const socialLinks = renderableSocials(social);
 
   return (
     <footer data-surface="ink" className="mt-auto">
@@ -75,25 +114,22 @@ export async function SiteFooter() {
 
             {socialLinks.length > 0 ? (
               <ul className="mt-4 flex gap-1">
-                {socialLinks.map(([name, href]) => {
-                  const Icon = iconFor(name);
-                  return (
-                    <li key={name}>
-                      <a
-                        href={href}
-                        rel="noopener noreferrer me"
-                        target="_blank"
-                        className="hover:text-orange flex size-11 items-center justify-center rounded-lg transition-colors"
-                      >
-                        {Icon ? <Icon className="size-4" aria-hidden /> : null}
-                        <span className="sr-only">
-                          Foot Vault on{" "}
-                          {name.charAt(0).toUpperCase() + name.slice(1)}
-                        </span>
-                      </a>
-                    </li>
-                  );
-                })}
+                {socialLinks.map(({ name, href, Icon }) => (
+                  <li key={name}>
+                    <a
+                      href={href}
+                      rel="noopener noreferrer me"
+                      target="_blank"
+                      className="hover:text-orange flex size-11 items-center justify-center rounded-lg transition-colors"
+                    >
+                      <Icon className="size-4" aria-hidden />
+                      <span className="sr-only">
+                        Foot Vault on{" "}
+                        {name.charAt(0).toUpperCase() + name.slice(1)}
+                      </span>
+                    </a>
+                  </li>
+                ))}
               </ul>
             ) : null}
           </div>

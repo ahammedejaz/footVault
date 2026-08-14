@@ -100,8 +100,16 @@ export const CHROME_CACHE_TAG = "chrome";
  * every route, so without the bump the footer of the entire site would have gone
  * on naming the wrong town behind an hour-old entry while the pages named the
  * right one.
+ *
+ * v8 — the same lesson, one message later. `site_settings.social` lost its
+ * Facebook key, and the footer reads that row through `cachedSiteSettings` on
+ * every route. A v7 entry written before the row changed still holds the
+ * Facebook URL, so the deploy that removes the icon would have gone on
+ * rendering it — a link to an account that does not exist — until the hour ran
+ * out. Any owner-visible `site_settings` change needs this; it is not only for
+ * page copy.
  */
-const SHAPE_VERSION = "v7";
+const SHAPE_VERSION = "v8";
 
 /**
  * Which database the entry was read from.
