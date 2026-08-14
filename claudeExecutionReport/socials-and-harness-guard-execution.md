@@ -206,3 +206,53 @@ Not done, per your instruction.
 
 `customer-reachability.ts` is the one that actually fired, so it is the one I
 would do first.
+
+---
+
+## 6 · Deploy record
+
+Commit `1f45cdf`. **CI run 31809646051 — success**, the first green run since
+this morning:
+
+```
+✓ Typecheck   ✓ Lint   ✓ Cached shapes match SHAPE_VERSION
+✓ Build       ✓ Assert "use server" files export only async functions
+```
+
+Promoted **~64 s** after the push. Verified by alias with `_footvault` — a
+string that cannot exist in the old tree, where the Instagram URL was the seed
+fixture `https://instagram.com/footvault`.
+
+| Check | `footvault.in` | `www.footvault.in` |
+|---|---|---|
+| `rel="noopener noreferrer me"` links | **1** | **1** |
+| Instagram href | `https://www.instagram.com/_footvault/` | same |
+| "facebook" anywhere in the page | **0** | **0** |
+| `hl=en` anywhere | **0** | **0** |
+
+Nothing else regressed:
+
+| Route | raw `{{…}}` | cuddapah | proddatur | `wa.me/917337579733` |
+|---|---|---|---|---|
+| `/` | 0 | 0 | 12 | 3 |
+| `/page/contact` | 0 | 0 | 18 | 5 |
+| `/page/terms` | 0 | 0 | 12 | 3 |
+
+`sameAs` returns **0 occurrences** on `/` and `/page/contact` — none was added,
+and B3 stays blocked on the listing name.
+
+`audit:contact`: *"The shop's published contact details are the shop's own."*
+Fully green, exit 0.
+
+---
+
+## 7 · Still open
+
+1. **B3 / K3** — `LocalBusiness` and `sameAs`, blocked on the final Google
+   listing name. The listing exists with 16 reviews.
+2. **19 harnesses** need `assertServerNotProduction`, and `interactions.ts`
+   needs both guards (§5). One line each; not done, per instruction.
+3. **K7** — category descriptions mentioning the shop.
+4. `site_settings.payment_methods` — public, read by nothing, says online
+   payment is off while the shop takes online payments.
+5. A zoomed map embed, if you want one.
