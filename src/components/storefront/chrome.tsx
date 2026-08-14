@@ -23,7 +23,30 @@ export function StorefrontChrome({ children }: { children: React.ReactNode }) {
       </a>
       <AnnouncementBar />
       <SiteHeader />
-      <main id="main" className="flex-1">
+      {/*
+        `tabIndex={-1}` is what makes the skip link above actually work.
+
+        Following `href="#main"` moves the *sequential focus navigation starting
+        point* to the target in Chrome and Firefox even when the target cannot
+        hold focus — `document.activeElement` stays `<body>`, and the next Tab
+        lands on the first control inside main anyway. **Safari does neither.**
+        For a non-focusable target it moves neither focus nor the starting
+        point, so a VoiceOver user who presses "Skip to content" and then Tab
+        goes straight back to the top of the header, past every category and
+        every brand, one keystroke at a time. This shop's customers are on
+        phones and a large share of them are on iOS.
+
+        Making main focusable-but-not-tabbable fixes it everywhere: the link
+        moves real focus here, and the next Tab is the first control on the
+        page. Measured on /search — Tab, Enter, Tab reaches the search box,
+        against roughly 127 stops of header if the skip link is not used.
+
+        The focus ring it draws around the content area is deliberately **not**
+        suppressed. It is one frame of "you are here" at exactly the moment
+        somebody has jumped, and this repository's own rule is that switching an
+        outline off needs a reason — "it looked odd" is not one.
+      */}
+      <main id="main" tabIndex={-1} className="flex-1">
         {children}
       </main>
       <SiteFooter />

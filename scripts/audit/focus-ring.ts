@@ -50,6 +50,54 @@ type Ring = {
 };
 
 /**
+ * The indicator on whatever is focused right now.
+ *
+ * Split out of `tabToRing` so a caller that arrived by some other route — the
+ * skip link, say — can measure the same five properties without walking there.
+ * One implementation, because two would drift on the day the halo changes.
+ */
+async function ringOf(
+  page: Page,
+  selector: string,
+  ringHost?: string,
+): Promise<Ring> {
+  return page.evaluate(
+    ([match, host]) => {
+      const active = document.activeElement as HTMLElement | null;
+      if (!active || !active.matches(match)) {
+        return {
+          found: false,
+          tag: match,
+          focusVisible: false,
+          outlineStyle: "none",
+          outlineWidth: 0,
+          outlineColor: "",
+          boxShadow: "none",
+        };
+      }
+      const target = host
+        ? ((active.closest(host) as HTMLElement | null) ?? active)
+        : active;
+      const style = getComputedStyle(target);
+      return {
+        found: true,
+        tag: `${active.tagName.toLowerCase()}${
+          active.getAttribute("data-slot")
+            ? `[${active.getAttribute("data-slot")}]`
+            : ""
+        }`,
+        focusVisible: active.matches(":focus-visible"),
+        outlineStyle: style.outlineStyle,
+        outlineWidth: Number.parseFloat(style.outlineWidth) || 0,
+        outlineColor: style.outlineColor,
+        boxShadow: style.boxShadow,
+      };
+    },
+    [selector, ringHost ?? ""] as const,
+  );
+}
+
+/**
  * Tab until `selector` holds focus, then measure it.
  *
  * Tab rather than `.focus()` on purpose: `:focus-visible` is a statement about
@@ -273,10 +321,79 @@ async function main() {
     */
     const searchPage = await browser.newPage();
     await searchPage.goto(`${BASE_URL}/search`, { waitUntil: "load" });
-    assertRing(
-      "the /search input",
-      await tabToRing(searchPage, "input.h-12"),
+
+    /**
+     * **Through the skip link, because that is the question.**
+     *
+     * This used to Tab from the top of the document with a budget of 150 stops,
+     * and it went red. The diagnosis, 2026-08-15: the input *is* reachable that
+     * way — at roughly stop 127, because the site header carries the whole
+     * mega-nav and a keyboard walk crosses every category and every brand
+     * before it reaches the page. Worse, the count is not stable: focusing a
+     * nav trigger opens its panel and inserts more stops, so the total drifts
+     * either side of 150 and the check failed intermittently for a reason that
+     * had nothing to do with focus indicators.
+     *
+     * A budget of 150 brute-force stops is not a property worth asserting. It
+     * degrades every time the owner adds a category, and it measures a path no
+     * keyboard user takes when the page offers a skip link. **How many
+     * keystrokes to reach the search box** is the real question, and the answer
+     * should be three.
+     *
+     * Which makes this a stronger check than the one it replaces, because it
+     * now fails on the thing that was actually broken: `<main>` had no
+     * `tabindex="-1"`, so in Safari "Skip to content" moved neither focus nor
+     * the focus starting point and the next Tab went back to the header.
+     */
+    const skip = searchPage.getByRole("link", { name: /skip to content/i });
+    await searchPage.keyboard.press("Tab");
+    check(
+      "the skip link is the first thing a keyboard reaches",
+      await skip.evaluate((el) => el === document.activeElement),
+      "on a page whose header carries the whole mega-nav, this link is the difference between three keystrokes and a hundred and thirty",
     );
+
+    await searchPage.keyboard.press("Enter");
+    await searchPage.waitForTimeout(300);
+    check(
+      "and it puts focus inside main, not merely near it",
+      await searchPage.evaluate(
+        () => document.activeElement?.id === "main",
+      ),
+      "without tabindex=-1 this is <body>, which Chrome recovers from and Safari does not",
+    );
+
+    /**
+     * Five, not one: the budget is what matters, not the exact position. A page
+     * that grows a "filter" control above its search box is not broken, and a
+     * check that hard-codes one keystroke would report that as a regression.
+     */
+    const SKIP_BUDGET = 5;
+    let stopsAfterSkip = -1;
+    for (let stop = 1; stop <= SKIP_BUDGET; stop++) {
+      await searchPage.keyboard.press("Tab");
+      const landed = await searchPage.evaluate(() =>
+        Boolean(document.activeElement?.matches("input.h-12")),
+      );
+      if (landed) {
+        stopsAfterSkip = stop;
+        break;
+      }
+    }
+    check(
+      `the /search input is ${SKIP_BUDGET} keystrokes or fewer past the skip link`,
+      stopsAfterSkip > 0,
+      stopsAfterSkip > 0
+        ? `reached at ${stopsAfterSkip} — Tab, Enter, ${"Tab, ".repeat(stopsAfterSkip).replace(/, $/, "")}`
+        : `not reached within ${SKIP_BUDGET}`,
+    );
+
+    // And the indicator itself, now that focus is beside it.
+    if (stopsAfterSkip > 0) {
+      await searchPage.waitForTimeout(500);
+      assertRing("the /search input", await ringOf(searchPage, "input.h-12"));
+    }
+
     await searchPage.close();
 
     await shop.close();
