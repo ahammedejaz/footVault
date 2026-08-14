@@ -61,6 +61,8 @@ const GATES = [
   "audit:customer-copy",
   "audit:settings-visibility",
   "audit:homepage-tokens",
+  "audit:privacy",
+  "audit:contact",
   // Database-backed, read-mostly.
   "audit:refunds",
   "audit:coupons",

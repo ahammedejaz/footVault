@@ -142,6 +142,22 @@ const RAZORPAY_FRAME = [
 ];
 
 /**
+ * The Google map embedded on `/page/contact`, so a customer can navigate to the
+ * shop.
+ *
+ * `www.google.com` and nothing else. The embed loads its tiles, fonts and API
+ * calls from `maps.gstatic.com` and `maps.googleapis.com`, and none of those
+ * belong here: they are fetched *inside* the iframe, which is a separate
+ * browsing context governed by Google's own policy, not by ours. `frame-src`
+ * governs the one thing this document does, which is ask for the frame.
+ *
+ * Listing more would be listing origins this page never contacts — a CSP is
+ * read later as a statement of where the shop sends people, and
+ * `audit:privacy` now reads it exactly that way.
+ */
+const GOOGLE_MAPS_FRAME = ["https://www.google.com"];
+
+/**
  * `'unsafe-eval'`, in development only, and it is not optional.
  *
  * React uses `eval` in dev to rebuild server-side error stacks in the browser.
@@ -243,8 +259,13 @@ export const CSP_DIRECTIVES: Record<string, string[]> = {
     ...RAZORPAY_CONNECT,
   ],
 
-  /* The checkout modal. Losing this is losing payments. */
-  "frame-src": RAZORPAY_FRAME,
+  /*
+    The checkout modal — losing the Razorpay half is losing payments — and the
+    map on the contact page. The map is the only non-payment frame the shop
+    embeds, and adding it here is what makes it render at all: under enforce
+    mode an un-allowed frame is not a degraded map, it is an empty box.
+  */
+  "frame-src": [...RAZORPAY_FRAME, ...GOOGLE_MAPS_FRAME],
 
   /*
     Razorpay's iframe-mode checkout keeps bank and 3-D Secure redirects inside

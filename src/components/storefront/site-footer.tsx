@@ -5,6 +5,7 @@ import {
   InstagramIcon,
   WhatsAppIcon,
 } from "@/components/brand/social-icons";
+import { ContactDetails } from "@/components/storefront/contact-details";
 import { prerenderOrDefer } from "@/lib/prerender";
 import {
   cachedCategoryTree,
@@ -64,35 +65,13 @@ export async function SiteFooter() {
             <p className="text-muted-foreground mt-5 max-w-xs text-sm text-pretty">
               {siteConfig.description}
             </p>
-            {contact.phone || contact.email || contact.address ? (
-              <address className="mt-5 space-y-1 text-sm not-italic">
-                {contact.phone ? (
-                  <p>
-                    <a
-                      href={`tel:${contact.phone.replace(/\s/g, "")}`}
-                      className="hit-44 hover:text-orange inline-flex min-h-9 items-center font-mono transition-colors"
-                    >
-                      {contact.phone}
-                    </a>
-                  </p>
-                ) : null}
-                {contact.email ? (
-                  <p>
-                    <a
-                      href={`mailto:${contact.email}`}
-                      className="hit-44 text-muted-foreground hover:text-orange inline-flex min-h-9 items-center transition-colors"
-                    >
-                      {contact.email}
-                    </a>
-                  </p>
-                ) : null}
-                {contact.address ? (
-                  <p className="text-muted-foreground max-w-xs">
-                    {contact.address}
-                  </p>
-                ) : null}
-              </address>
-            ) : null}
+            {/*
+              Was three hand-written branches for phone, email and address —
+              and no WhatsApp, which is why the shop's warranty channel had no
+              link anywhere on the site. Shared with the contact page now, so
+              adding a detail adds it to both. See contact-details.tsx.
+            */}
+            <ContactDetails contact={contact} />
 
             {socialLinks.length > 0 ? (
               <ul className="mt-4 flex gap-1">

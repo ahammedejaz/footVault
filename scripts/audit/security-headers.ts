@@ -118,7 +118,9 @@ const REQUIRED = [
 ] as const;
 
 async function main(): Promise<void> {
-  console.log("\n" + BOLD + "1 · the headers survive SITE_INDEXABLE=true" + RESET + "\n");
+  console.log(
+    "\n" + BOLD + "1 · the headers survive SITE_INDEXABLE=true" + RESET + "\n",
+  );
 
   const closed = await headersFor(false);
   const open = await headersFor(true);
@@ -129,11 +131,19 @@ async function main(): Promise<void> {
     report(
       Boolean(inClosed) && inClosed === inOpen,
       `${key} identical with indexing off and on`,
-      inOpen ? `"${inOpen}"` : "ABSENT when indexable — the early return is back",
+      inOpen
+        ? `"${inOpen}"`
+        : "ABSENT when indexable — the early return is back",
     );
   }
 
-  console.log("\n" + BOLD + "2 · noindex is the only thing indexing changes" + RESET + "\n");
+  console.log(
+    "\n" +
+      BOLD +
+      "2 · noindex is the only thing indexing changes" +
+      RESET +
+      "\n",
+  );
 
   report(
     closed.get("x-robots-tag") === "noindex, nofollow, noarchive",
@@ -158,7 +168,13 @@ async function main(): Promise<void> {
     onlyDifference.length ? onlyDifference.join(", ") : "no difference at all",
   );
 
-  console.log("\n" + BOLD + "3 · Permissions-Policy does not break checkout" + RESET + "\n");
+  console.log(
+    "\n" +
+      BOLD +
+      "3 · Permissions-Policy does not break checkout" +
+      RESET +
+      "\n",
+  );
 
   const permissions = open.get("permissions-policy") ?? "";
   report(
@@ -181,7 +197,9 @@ async function main(): Promise<void> {
     );
   }
 
-  console.log("\n" + BOLD + "4 · no one-way doors were added to HSTS" + RESET + "\n");
+  console.log(
+    "\n" + BOLD + "4 · no one-way doors were added to HSTS" + RESET + "\n",
+  );
 
   const hsts = open.get("strict-transport-security");
   report(
@@ -197,7 +215,11 @@ async function main(): Promise<void> {
   );
 
   console.log(
-    "\n" + BOLD + `5 · a real response carries them (${BASE_URL})` + RESET + "\n",
+    "\n" +
+      BOLD +
+      `5 · a real response carries them (${BASE_URL})` +
+      RESET +
+      "\n",
   );
 
   let live: Response | null = null;
@@ -283,13 +305,29 @@ const MUST_ALLOW: { directive: string; origin: string; why: string }[] = [
     origin: "https://api.razorpay.com",
     why: "the modal's own API calls",
   },
+  {
+    /*
+      Not payments, and here for the same reason they are: it is load-bearing
+      and its failure is silent. Under enforce mode a frame whose origin is not
+      listed is not a degraded map, it is an empty box that looks exactly like a
+      Google outage — and the CSP header is baked into the build manifest, so the
+      mistake cannot be caught by restarting a server and re-reading the header.
+      This is the cheap check that a later tidy-up of frame-src takes the contact
+      page's map with it.
+    */
+    directive: "frame-src",
+    origin: "https://www.google.com",
+    why: "the map embedded on /page/contact",
+  },
 ];
 
 async function cspSections(
   config: Map<string, string>,
   live: Response | null,
 ): Promise<void> {
-  console.log("\n" + BOLD + "6 · the CSP is the mode it says it is" + RESET + "\n");
+  console.log(
+    "\n" + BOLD + "6 · the CSP is the mode it says it is" + RESET + "\n",
+  );
 
   const enforcing = CSP_MODE === "enforce";
   const expectedName = enforcing
@@ -317,7 +355,9 @@ async function cspSections(
     config.get(otherName) ? "both are present" : "absent, correctly",
   );
 
-  console.log("\n" + BOLD + "7 · every measured origin survives" + RESET + "\n");
+  console.log(
+    "\n" + BOLD + "7 · every measured origin survives" + RESET + "\n",
+  );
 
   for (const { directive, origin, why } of MUST_ALLOW) {
     const values = CSP_DIRECTIVES[directive] ?? [];
@@ -357,7 +397,9 @@ async function cspSections(
     enforcing ? "active" : "inert here, and noisy — correctly omitted",
   );
 
-  console.log("\n" + BOLD + "8 · the classifier separates news from noise" + RESET + "\n");
+  console.log(
+    "\n" + BOLD + "8 · the classifier separates news from noise" + RESET + "\n",
+  );
 
   const legacy = parseCspReport({
     "csp-report": {
@@ -457,7 +499,9 @@ async function cspSections(
     different[0] ? cspFingerprint(different[0]) : "—",
   );
 
-  console.log("\n" + BOLD + "9 · the report endpoint takes a real report" + RESET + "\n");
+  console.log(
+    "\n" + BOLD + "9 · the report endpoint takes a real report" + RESET + "\n",
+  );
 
   if (!live) {
     report(false, `no server on ${BASE_URL}`, "run npm run dev:stage first");

@@ -68,3 +68,6 @@ CLAUDE.md
 # Never in the repository. See docs/admin-guide.md section 12.
 backup-*.sql
 *.dump
+
+# Playwright MCP scratch output (snapshots, console logs)
+.playwright-mcp/

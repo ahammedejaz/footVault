@@ -36,7 +36,8 @@ import { join } from "node:path";
 
 import { chromium, type Browser, type Page } from "playwright";
 
-import { buildFixture } from "./fixtures";
+import { adminClient, buildFixture } from "./fixtures";
+import { whatsappHref } from "../../src/lib/contact";
 import { BASE_URL } from "./routes";
 
 let failures = 0;
@@ -199,6 +200,32 @@ async function crawl(
   return harvested;
 }
 
+/**
+ * The WhatsApp number the shop publishes, from the same row the page renders.
+ *
+ * Read through the audit client factories, so it is staging's value against
+ * staging's pages. `audit:contact` is the one that asks whether the production
+ * value is real; this one asks only whether the link mechanism works.
+ */
+async function storedWhatsApp(): Promise<string> {
+  const { data, error } = await adminClient()
+    .from("site_settings")
+    .select("value")
+    .eq("key", "contact")
+    .maybeSingle();
+  /*
+    Thrown rather than swallowed to "". An unreadable row and an unset number
+    are different problems with the same empty string, and reporting the second
+    when it is the first is how a gate tells you the shop is broken while the
+    real answer is that the harness could not reach the database.
+  */
+  if (error) throw new Error(`site_settings.contact unreadable: ${error.message}`);
+  const value = data?.value;
+  if (!value || typeof value !== "object") return "";
+  const held = (value as Record<string, unknown>).whatsapp;
+  return typeof held === "string" ? held : "";
+}
+
 /* --------------------------------------------------------------- main ---- */
 
 async function main() {
@@ -238,6 +265,63 @@ async function main() {
 
     for (const [route, reason] of Object.entries(EXCLUDED)) {
       console.log(`  SKIP  ${route} — ${reason}`);
+    }
+
+    /**
+     * The one channel the crawl above structurally cannot see.
+     *
+     * `visibleLinks` harvests `a[href^="/"]` — internal links, which is the
+     * right harvest for "can a customer click their way to every page". A
+     * WhatsApp link is external, so it was invisible to this harness, and on
+     * 2026-08-14 the audit found there were **zero** `wa.me` links anywhere on
+     * the site while the returns policy told a customer with a damaged parcel
+     * to "Call or WhatsApp the store" inside 24 hours. Reachability was green
+     * throughout.
+     *
+     * That is this gate's own failure mode, described in its header: a check
+     * that reports on the shape it looks for rather than on the thing that
+     * matters. So the shop's warranty channel is asserted directly, on the two
+     * surfaces that carry it, and the href is compared against what
+     * `whatsappHref` builds from the setting rather than merely existing —
+     * a link to a mistyped number is worse than no link, because it looks
+     * answered.
+     */
+    console.log(`\n— the WhatsApp route the returns policy relies on —`);
+    let stored = "";
+    let readFailure: string | null = null;
+    try {
+      stored = await storedWhatsApp();
+    } catch (error) {
+      readFailure = error instanceof Error ? error.message : "unknown";
+    }
+    const expectedHref = readFailure ? null : whatsappHref(stored);
+    if (!expectedHref) {
+      check(
+        "site_settings.contact.whatsapp normalises to a wa.me link",
+        false,
+        readFailure ?? "unset or unusable — audit:contact explains which",
+      );
+    } else {
+      const page = await browser.newPage();
+      try {
+        for (const path of ["/page/contact", "/"]) {
+          await page.goto(`${BASE_URL}${path}`, {
+            waitUntil: "domcontentloaded",
+          });
+          const hrefs = await page.$$eval('a[href^="https://wa.me/"]', (as) =>
+            as.map((a) => (a as HTMLAnchorElement).href),
+          );
+          check(
+            `${path} links to WhatsApp`,
+            hrefs.some((href) => href.startsWith(expectedHref)),
+            hrefs.length === 0
+              ? "no wa.me link on the page"
+              : `found ${hrefs.join(", ")}, expected ${expectedHref}`,
+          );
+        }
+      } finally {
+        await page.close();
+      }
     }
   } finally {
     await browser.close();

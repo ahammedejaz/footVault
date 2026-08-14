@@ -49,6 +49,36 @@
  */
 export const PICKUP_CUTOFF_HOUR_IST = 11;
 
+/**
+ * The cutoff as a customer reads it — "11am".
+ *
+ * Exported so the shipping policy page can carry the real hour instead of a
+ * typed one. It carried "before 4pm" for two phases while pickup was at 11:00:
+ * five hours of orders told they went out today when they went out tomorrow,
+ * and no way for anyone to notice, because the page was prose and the constant
+ * was code.
+ *
+ * `{{dispatch_cutoff}}` in `src/lib/content-tokens.ts` resolves through here, so
+ * moving the pickup slot is still the one line this module's header promises —
+ * and the sentence on the page moves with it. That is deliberately *not* a new
+ * `site_settings` row: the argument above for keeping the hour in code (it is
+ * not a price, and nothing on any screen edits it) is still right, and a token
+ * that reads the constant gets ruling 2's actual requirement — the page cannot
+ * be left behind — without paying for a settings key nobody would ever open.
+ */
+export function formatPickupCutoff(): string {
+  /*
+    Widened deliberately, the same way `CSP_MODE` is asserted in `src/lib/csp.ts`
+    and for the same reason: TypeScript narrows the constant to its initializer,
+    so `hour === 12` reads as an impossible comparison and the branch that has to
+    survive somebody moving the pickup slot would not compile until after they
+    moved it. Annotating keeps every branch type-checked at every value.
+  */
+  const hour: number = PICKUP_CUTOFF_HOUR_IST;
+  if (hour === 12) return "midday";
+  return hour < 12 ? `${hour}am` : `${hour - 12}pm`;
+}
+
 /** Widen the courier's median into a range, because a median is not a promise. */
 const RANGE_PADDING_DAYS = 1;
 

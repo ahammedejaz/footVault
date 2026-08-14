@@ -363,20 +363,38 @@ insert into public.banners (placement, image_url, mobile_image_url, headline, su
 values ('home_hero', '/seed/hero-desktop.svg', '/seed/hero-mobile.svg', 'Every size we hold, shown on every shoe', 'Sneakers, formal shoes, boots and sandals for men, women and kids.', 'Shop all footwear', '/shop', 0);
 
 -- --- CMS pages ------------------------------------------------------------
-insert into public.pages (slug, title, body, meta_description, is_published) values
-  ('about', 'About Foot Vault', 'Foot Vault is an independent footwear shop. We stock sneakers, formal shoes, boots, sports shoes and sandals for men, women and kids, from brands people actually ask for.
+insert into public.pages (slug, title, body, meta_title, meta_description, is_published) values
+  ('about', 'About Foot Vault', 'Foot Vault is a footwear shop in Kadapa — still widely written Cuddapah — in Andhra Pradesh. There is a real shop with real shelves, near the RTC bus stand, and this website sells from the same stock.
 
-We hold every size we list. If a size shows as sold out on a product page, it is genuinely out of stock — we do not hide sizes to make a size run look fuller than it is.
+That last part is the whole point of it, so it is worth saying plainly rather than leaving it to be assumed. Nothing here is drop-shipped and nothing is ordered in after you buy it. When your order arrives with us, somebody walks to a shelf, takes the box down, opens it, checks the pair inside and packs it.
 
-Orders are packed and dispatched from our own shelves, not a drop-shipper''s. If something is wrong with what arrives, one message sorts it out.', 'An independent footwear shop stocking sneakers, formal shoes, boots and sandals for men, women and kids.', true),
-  ('contact', 'Contact us', 'The fastest way to reach us is WhatsApp — we answer during shop hours and usually within the hour.
+**The size counts are real.** If a product page says one pair is left in your size, there is one pair on the shelf. A size shown as sold out is genuinely gone — we do not hide sizes to make a run look fuller than it is, and we would rather show you an honest gap than a full grid you cannot buy from.
 
-For an existing order, send your order number (it looks like FV-2026-00147) and we can pull it up straight away.
+**What we stock.** Sneakers, formal shoes, boots, sports shoes and sandals, for men, women and kids. The brands are the ones people come in and ask for by name — at the moment Nike, adidas, Puma, ASICS, New Balance, Skechers, Campus, Bata, Metro, Red Chief, Woodland and Crocs. It is a narrower range than a marketplace carries, deliberately: everything on the site is something we would put in front of somebody across the counter.
 
-Our contact details and opening hours are in the footer of every page, and they are kept current from the shop''s own settings.', 'Phone, WhatsApp and email for Foot Vault, plus our shop address and opening hours.', true),
-  ('shipping', 'Shipping', 'We ship across India from our store in Cuddapah, Andhra Pradesh.
+**What we do not do, said here rather than in the small print.** We do not offer refunds, and we cannot exchange for a different size. If a pair arrives damaged we replace it, and there is a short window to tell us. The returns page explains it properly, and it is worth two minutes before you buy rather than after — a policy you only discover afterwards is a policy designed to catch you out, and this one is not.
 
-Orders placed before 4pm on a working day are dispatched the same day. Most addresses receive in 3–5 working days; remote pin codes can take longer.
+**If something is wrong.** One message sorts it out. Ring the shop or send a WhatsApp; the number and our opening hours are on the contact page. You will get somebody who can walk to the shelf and look.
+
+Come and see us if you are nearby. Trying a pair on is still the best way to buy shoes, and we would rather you did that than guess.', 'About', 'Foot Vault is a footwear shop in Kadapa (Cuddapah), Andhra Pradesh. The same shelves that serve the counter serve this website.', true),
+  ('contact', 'Contact us', 'The quickest way to reach us is WhatsApp, on {{contact_whatsapp}}. We answer during shop hours, usually within the hour. If you would rather talk, ring the shop on {{contact_phone}} — it is the same people at the same counter.
+
+Prefer email? Write to {{contact_email}}. Replying to any email we have sent you about an order lands in the same inbox, so you can simply hit reply.
+
+For an order that already exists, send the order number — it looks like FV-2026-00147 — and we can pull it up straight away.
+
+**If a parcel has arrived damaged, ring or send a WhatsApp message rather than emailing.** That claim closes {{return_window}} after delivery, and an email may not be read in time. The returns page lists what to send us.
+
+**Where we are.** {{contact_address}}. Kadapa and Cuddapah are the same city — both spellings are in everyday use here, and the post arrives under either.
+
+**When we are open.** {{business_hours}}.
+
+You are welcome to come in and try a pair on. There is nothing to book and no appointment to make: come to the counter and ask. Trying shoes on is still the best way to buy them, and somebody who can walk to the shelf will be standing in front of you.', null, 'Phone, WhatsApp, email and the address of the Foot Vault shop in Kadapa (Cuddapah), Andhra Pradesh, with our opening hours.', true),
+  ('shipping', 'Shipping', 'We ship across India from our shop in Kadapa (Cuddapah), Andhra Pradesh.
+
+Orders placed before {{dispatch_cutoff}} are handed to the courier the same day. Anything later goes with the next day''s collection.
+
+How long the journey then takes depends on where it is going, and we would rather show you the real figure than an average. Enter your pin code on any product page and we will give you the dates for your own address, taken from the courier that will actually be carrying the parcel. Checkout shows them again before you pay.
 
 **Paying online** — delivery is free on orders of {{free_shipping_threshold}} or more. Below that you pay what the courier charges to reach your pin code. The exact figure appears as soon as you enter your pin code, never added at the last step.
 
@@ -386,7 +404,7 @@ The amount you pay now covers delivery, and it is taken off what the courier col
 
 Pay on Delivery is offered on orders of {{cod_minimum_order_value}} and above. Below that, paying online is the only option, because the delivery charge would be most of the order.
 
-Not every courier will collect cash at every pin code. If yours is one they will not, the option is not offered and you can pay online instead — the order still comes to the same address. A very small number of pin codes have no courier service from us at all, and checkout will say so before you pay rather than take an order we cannot deliver.', 'Delivery times, shipping charges and free shipping threshold for Foot Vault orders.', true),
+Not every courier will collect cash at every pin code. If yours is one they will not, the option is not offered and you can pay online instead — the order still comes to the same address. A very small number of pin codes have no courier service from us at all, and checkout will say so before you pay rather than take an order we cannot deliver.', null, 'What delivery costs, when your order leaves our shop in Kadapa, and how Pay on Delivery works. Free delivery over {{free_shipping_threshold}}.', true),
   ('returns', 'Returns and damage', 'Please read this before you buy. Our policy is narrower than most online shops and we would rather you know that now than discover it later.
 
 **We do not offer refunds.** Not on change of mind, not on size, not on colour. Once an order is placed it is yours.
@@ -395,8 +413,8 @@ Not every courier will collect cash at every pin code. If yours is one they will
 
 **If a pair arrives damaged, we will replace it.** That is the one thing we cover, and it comes with a hard deadline:
 
-- Contact us **within 24 hours of the parcel being delivered**. After that we cannot help, because we can no longer tell damage in transit from damage in use.
-- Call or WhatsApp the store on the number on our contact page. Do not wait for an email reply.
+- Contact us **within {{return_window}} of the parcel being delivered**. After that we cannot help, because we can no longer tell damage in transit from damage in use.
+- Call or WhatsApp the store on the number on our contact page, or email {{contact_email}}. With only {{return_window}}, call or WhatsApp first rather than waiting on an email reply.
 - Keep the box, the packaging and the courier label. Send us photographs of the damage and of the packaging it arrived in — the courier will not accept a claim without them.
 - Do not wear the pair. A sole that has been outside cannot be assessed or replaced.
 
@@ -408,29 +426,74 @@ If we agree the pair was damaged in transit, we send a replacement of the same i
 
 **If we get it wrong** — the wrong shoe, the wrong size, or damage that happened before it left us — you get everything back, with nothing deducted. That is not the same as a change of mind, and we do not treat it as one.
 
-Nothing on this page affects your statutory rights under Indian consumer law.', 'Foot Vault replaces items damaged in shipment, reported within 24 hours of delivery. No refunds, no online returns.', true),
+Nothing on this page affects your statutory rights under Indian consumer law.', null, 'Replacement only: no refunds, no size exchanges, no online returns. Tell us within {{return_window}} if your parcel arrives damaged and we will replace it.', true),
   ('size-guide', 'Size guide', 'Every size on this site is UK. The conversions below are the ones we use.
 
 UK 6 = EU 40 = US 7. UK 7 = EU 41 = US 8. UK 8 = EU 42 = US 9. UK 9 = EU 43 = US 10. UK 10 = EU 44 = US 11. UK 11 = EU 45.5 = US 12. UK 12 = EU 47 = US 13.
 
 To measure at home: stand on a sheet of paper with your heel against a wall, mark the tip of your longest toe, and measure the distance in centimetres. Do it in the evening, when your feet are at their largest, and measure both — most people have one foot slightly bigger and you should buy for that one.
 
-Where a shoe runs small or large we say so on its product page.', 'UK, EU and US shoe size conversions, and how to measure your foot at home.', true),
-  ('privacy', 'Privacy policy', 'We collect what an order needs and nothing else: your name, delivery address, phone number and email.
+Where a shoe runs small or large we say so on its product page.', null, 'UK, EU and US shoe size conversions, and how to measure your foot at home.', true),
+  ('privacy', 'Privacy policy', 'This page says what we collect when you buy from Foot Vault, why we hold it, who else sees it, and what you can ask us to do with it. It is written to be read rather than filed.
 
-We use it to pack and deliver your order, to contact you about that order, and to show you your order history when you sign in. We do not sell it, and we do not share it with anyone other than the courier carrying your parcel.
+**What we collect.**
 
-Your bag is stored against a token in your browser until you sign in, at which point it moves to your account.
+- Your name, delivery address, phone number and email address. A parcel cannot be delivered without them.
+- What you ordered, what you paid, and how you paid.
+- Your account, if you make one — the same details, plus your order history.
+- Your bag, held against a token in your browser until you sign in, at which point it moves to your account.
+- The ordinary technical record every website keeps: your IP address, your browser, and which pages you asked for.
 
-To have your account and its data deleted, contact us and we will remove it within 7 days. Orders already placed are kept as long as the law requires us to keep sales records.', 'What data Foot Vault collects, why, and how to have it removed.', true),
-  ('terms', 'Terms of sale', 'Prices are in Indian rupees and include all taxes. The price you see in your bag is the price you pay.
+We never see your card details. They pass from your browser to our payment processor and do not reach us.
 
-An order is confirmed when we accept it, not when it is placed. If an item sells out between your order and our packing it, we will tell you which item and refund that line in full.
+**Why we hold it.** To pack and deliver your order, to contact you about it, to take and return payment, to show you your order history when you sign in, to answer you when you get in touch, and to keep the sales records the law requires us to keep.
 
-Stock counts on this site are live. Where a product page says only two are left in your size, that is the real number on our shelf.
+**Who else sees it.** Running a shop that delivers means other companies handle parts of it. These are all of them, and what each one gets.
 
-Nothing here affects your statutory rights.', 'The terms that apply when you buy from Foot Vault.', true)
-on conflict (slug) do update set title = excluded.title, body = excluded.body, meta_description = excluded.meta_description, is_published = excluded.is_published;
+- **Razorpay** takes the payment. They receive the amount, the order reference, and whatever you type into their payment form.
+- **Shiprocket** arranges the delivery. They receive your name, full address, phone number and what is in the parcel, and they pass those to whichever courier collects it.
+- **Resend** sends our email. They receive your email address and the contents of each message we send you.
+- **Supabase** hosts our database and runs the sign-in. Your account, orders and addresses are stored there.
+- **Google** does two things. If you choose "Continue with Google", Google confirms who you are and gives us your name and email address — we never receive your Google password. Separately, the map on our contact page is served by Google, so opening that page tells Google your IP address and your browser whether or not you touch the map.
+- **Vercel** serves this website. Every request passes through them and is logged, which includes your IP address.
+
+We do not sell your data, and we do not pass it to anyone for advertising.
+
+**How long we keep it.** Order records are kept for as long as tax and company law requires us to keep sales records — we cannot delete an invoice on request, and neither can any shop. Everything else is kept while your account exists. Server logs are short-lived and are not used to build a profile of you.
+
+**Cookies.** This site sets what it needs and nothing more: one to keep you signed in, and one to remember your bag before you sign in. We run no advertising cookie, no analytics and no tracking script of our own. The one part of the site loaded from another company is the Google map on our contact page, and Google may set its own cookies when that page opens; those are governed by Google''s policy rather than ours. If anything else changes, this page changes with it and says so.
+
+**What you can ask for.** You can ask us for a copy of what we hold about you, ask us to correct anything that is wrong, ask us to delete your account, or withdraw a consent you have given. You can also tell us who may act for you if you are unable to.
+
+**Deleting your account.** Write to {{contact_email}} from the address on the account, and we will confirm once it is done. We will remove it within {{deletion_window}} of the request. Orders you have already placed stay in the sales records, without the account attached to them.
+
+**If you are unhappy with how we have handled this.** Write to {{contact_email}} and mark it for the grievance officer, or ring the shop on {{contact_phone}}. If we have not put it right, you may complain to the Data Protection Board of India.
+
+**Changes to this page.** When we change it we change the page rather than emailing everyone; the date it was last updated is at the bottom.', 'Privacy policy', 'What Foot Vault collects when you order, why we hold it, which companies see it, how long we keep it, and how to have it deleted.', true),
+  ('terms', 'Terms of sale', 'These terms apply when you buy from Foot Vault. The shipping and returns pages are part of the same agreement, so read those too — between them they cover most of what people actually write in to ask.
+
+**Who you are buying from.** {{registered_name}}, trading as Foot Vault. GSTIN {{gstin}}. Registered place of business: {{registered_address}}.
+
+**Prices.** Prices are in Indian rupees and include all taxes. The price shown in your bag is the price you pay. Delivery, where it is charged, is shown separately before you pay and is never added at the last step.
+
+**When an order becomes an order.** Placing an order is an offer to buy. It becomes a contract when we confirm it, not when you press the button and not when the payment is taken. Until then we may decline it — the usual reasons are stock, an address no courier will serve, or a payment we cannot verify — and anything you have paid comes straight back.
+
+**Stock.** The counts on this site are live. Where a product page says two are left in your size, that is the number on the shelf. If something still sells out between your order and our packing it, we will tell you which item and return that line in full.
+
+**Mistakes in a price or a description.** We check both, and occasionally one is still wrong. Where a price or a description is obviously mistaken we are not obliged to sell at it. If we notice after you have paid, we will tell you, and you can either accept the corrected price or have your money back in full.
+
+**Cancelling before dispatch.** Write or ring before we have handed the parcel to the courier and we will cancel the order and return what you paid in full, including any delivery you paid for. Once it is on the road it cannot be cancelled.
+
+**Delivery.** We dispatch from our shop and the courier carries it from there. The dates you are shown come from that courier and are their estimate, not a guarantee — a strike, a flood or a closed road is not something we can promise around. What we do promise is that we hand it over on time, and that we tell you when we have.
+
+**Replacement, not refund.** We do not offer refunds — not on change of mind, not on size, not on colour. If a pair arrives damaged we will replace it, provided you tell us within {{return_window}} of delivery. We cannot exchange for a different size. The returns page sets out the conditions in full, and they are conditions rather than formalities.
+
+**When the fault is ours.** The wrong shoe, the wrong size, an item we cannot supply, or damage that happened before it left us: you get everything back with nothing deducted. That is not a change of mind and we do not treat it as one, so the rule above does not apply to it.
+
+**Your statutory rights.** Nothing on this page or anywhere else on this site affects your rights under the Consumer Protection Act, 2019 or any other law of India.
+
+**Law.** These terms are governed by the laws of India.', 'Terms of sale', 'How an order is accepted, what happens if a price or a stock count is wrong, when you can cancel, and the law these terms are governed by.', true)
+on conflict (slug) do update set title = excluded.title, body = excluded.body, meta_title = excluded.meta_title, meta_description = excluded.meta_description, is_published = excluded.is_published;
 
 -- --- settings -------------------------------------------------------------
 insert into public.site_settings (key, value, description) values
@@ -440,7 +503,7 @@ insert into public.site_settings (key, value, description) values
   ('contact', '{"email":"hello@footvault.in","phone":"+91 80 4718 2200","whatsapp":"+91 98450 22001","address":"42 Commercial Street, Shivaji Nagar, Bengaluru 560001"}'::jsonb, 'Shown in the footer and on the contact page.'),
   ('business_hours', '{"weekday":"10:30 – 20:30","saturday":"10:30 – 21:00","sunday":"11:00 – 19:00"}'::jsonb, 'Opening hours, shown on the contact page.'),
   ('social', '{"instagram":"https://instagram.com/footvault","facebook":"https://facebook.com/footvault"}'::jsonb, 'Social links in the footer.'),
-  ('return_window_days', '1'::jsonb, 'Days from delivery in which shipment damage can be reported. One day — the policy is 24 hours, replacement only, no refunds.'),
+  ('return_window_days', '1'::jsonb, 'How long after delivery damage in transit may be reported. This row is that window — the returns page, the announcement strip and the terms all resolve it through {{return_window}}, so changing the number here changes every sentence at once. There is no returns window for a change of mind and no refunds; damage in transit is replaced. Stored in days because the column is days; a value of one is rendered to customers in hours.'),
   ('payment_methods', '{"cod":true,"online":false}'::jsonb, 'Both methods run through Razorpay: prepaid settles in full, Pay on Delivery takes the advance. Read by nothing today — the checkout gates on isAvailable() and the cod_enabled flag in `shipping`.')
 on conflict (key) do update set value = excluded.value, description = excluded.description;
 

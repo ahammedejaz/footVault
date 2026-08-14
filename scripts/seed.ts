@@ -375,14 +375,14 @@ function buildSql(): string {
 
   push(
     "-- --- CMS pages ------------------------------------------------------------",
-    "insert into public.pages (slug, title, body, meta_description, is_published) values",
+    "insert into public.pages (slug, title, body, meta_title, meta_description, is_published) values",
     pages
       .map(
         (p) =>
-          `  (${q(p.slug)}, ${q(p.title)}, ${q(p.body)}, ${q(p.metaDescription)}, true)`,
+          `  (${q(p.slug)}, ${q(p.title)}, ${q(p.body)}, ${p.metaTitle === undefined ? "null" : q(p.metaTitle)}, ${q(p.metaDescription)}, true)`,
       )
       .join(",\n") +
-      "\non conflict (slug) do update set title = excluded.title, body = excluded.body, meta_description = excluded.meta_description, is_published = excluded.is_published;",
+      "\non conflict (slug) do update set title = excluded.title, body = excluded.body, meta_title = excluded.meta_title, meta_description = excluded.meta_description, is_published = excluded.is_published;",
   );
 
   push(
@@ -646,6 +646,16 @@ async function seedViaSupabase() {
           slug: p.slug,
           title: p.title,
           body: p.body,
+          /*
+            `meta_title` is optional and mostly absent, on purpose: the root
+            template already appends the brand, so a page that sets it to
+            "About Foot Vault" renders "About Foot Vault — Foot Vault". It is
+            set only where the page title is the wrong length or shape for a
+            search result. `?? null` rather than omitted, so re-seeding a page
+            that had one clears it — an upsert that leaves a stale value behind
+            is the drift this whole batch is about.
+          */
+          meta_title: p.metaTitle ?? null,
           meta_description: p.metaDescription,
           is_published: true,
         })),

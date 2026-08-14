@@ -22,25 +22,58 @@
  *      `pages.body` and the announcement and nothing else. A gate that checks
  *      the two places you already fixed is a gate that proves you fixed them.
  *
- * So the rule now reads **every owner-editable text column in the database**,
- * including inside jsonb, and the list is derived rather than typed: adding a
- * content table without adding it here is the way this happens a fourth time.
+ * So the rule reads **every owner-editable text column in the database**,
+ * including inside jsonb.
  *
- * So this checks two surfaces, because the second is where it went the moment
- * the first was closed:
+ * ## The fourth time, and it was not a rupee
+ *
+ * That claim about the list being "derived rather than typed" was aspirational
+ * when it was written, and on 2026-08-14 the launch audit measured what it
+ * actually cost. The gate was green. Meanwhile:
+ *
+ *   - `/page/returns` served
+ *     `<meta name="description" content="Foot Vault's 7 day free return and
+ *     size exchange policy.">` while the body of the same page said replacement
+ *     only, no refunds, no size exchange, 24 hours. The single worst sentence on
+ *     the shop, invisible to this file, because the `pages` surface was declared
+ *     `columns: ["title", "body"]` and a meta description is neither.
+ *   - `categories`, `products`, `product_images` and `brands` — every one of
+ *     them owner-typed and customer-facing — were not surfaces at all.
+ *   - The shipping page promised dispatch "before 4pm" against a pickup at
+ *     11:00, and "3–5 working days" nationwide against a courier that quotes
+ *     Delhi 7. Both are policy figures going stale. Neither contains a `₹`.
+ *
+ * Two fixes, and they are the general form of those three failures rather than
+ * a patch for each:
+ *
+ *   1. **Columns are opt-out.** Every string and jsonb column of every surface
+ *      is scanned unless it is skipped by name with a written reason. A named
+ *      column list can only ever check the columns somebody remembered.
+ *   2. **Units are not just rupees.** A day count and a clock time are promises
+ *      with numbers in them, and go stale in exactly the way a threshold does.
+ *
+ * and a third that makes the first two hold: **every table in the schema must
+ * be classified**, as a scanned surface or as not-content-with-a-reason,
+ * checked against the generated types. A content table added next month cannot
+ * be silently absent.
+ *
+ * ## The three sections
  *
  *   **Code.** No rupee figure in a component or a page. The linter cannot see
  *   the difference between a price and a paragraph, so the rule is simply "no
  *   currency literal in JSX", and everything resolves from `site_settings`
  *   through `formatPaise`.
  *
- *   **Content.** No rupee figure in `pages.body` or in the announcement. The
- *   owner types these in the admin, where no lint rule will ever run, so the
- *   check has to read the database. `{{free_shipping_threshold}}` is what they
- *   write instead — see `src/lib/content-tokens.ts`.
+ *   **Paise.** The same figure spelled as configuration — `free_above_paise:
+ *   249900` — which carries no rupee sign and reads as a constant.
+ *
+ *   **Content.** No rupee figure and no policy time figure in anything the
+ *   owner types in the admin, where no lint rule will ever run, so the check has
+ *   to read the database. `{{free_shipping_threshold}}` and `{{return_window}}`
+ *   are what they write instead — see `src/lib/content-tokens.ts`.
  *
  * Run without a browser and without a build; it needs the database only for the
- * second half, and says so rather than passing silently if it cannot reach it.
+ * third section, and says so rather than passing silently if it cannot reach it.
  */
 
 import { readFileSync } from "node:fs";
@@ -315,61 +348,252 @@ console.log(
 /* ------------------------------------------------------------ 3 · content -- */
 
 console.log(
-  "\n\x1b[1m3 · no currency literal in owner-edited content\x1b[0m",
+  "\n\x1b[1m3 · no policy figure in owner-edited content\x1b[0m",
 );
+
+/**
+ * A span of time — "24 hours", "3–5 working days", "within 7 days".
+ *
+ * ## Why this rule exists at all
+ *
+ * The currency rule above was written after a threshold escaped into copy three
+ * times. A **day count** is the same defect wearing different units, and on
+ * 2026-08-14 the audit found it had already happened in four places at once
+ * while this gate ran green:
+ *
+ * | Surface | Said | The code said |
+ * |---|---|---|
+ * | `pages.meta_description` (`returns`) | "7 day free return" | replacement only, 24 hours, no refunds |
+ * | `pages.body` (`shipping`) | "before 4pm" | `PICKUP_CUTOFF_HOUR_IST = 11` |
+ * | `pages.body` (`shipping`) | "3–5 working days" | Delhi 7, Hyderabad and Bangalore 4, local 3 |
+ * | `pages.body` (`privacy`) | "within 7 days" | nothing at all — an unbacked promise |
+ *
+ * Every one of those is a promise with a number in it, which is precisely what
+ * the currency rule exists to stop; it simply could not see them, because it
+ * was looking for `₹`.
+ *
+ * ## The shape of the pattern
+ *
+ * A digit, optionally a range, then a unit of time. `[\s-]*` between them so
+ * "24-hour" is caught alongside "24 hours" — the hyphenated form is the one a
+ * copywriter reaches for and it would otherwise walk straight through.
+ *
+ * "one day" and "a fortnight" are deliberately **not** matched. The rule is
+ * about a *figure* going stale against a setting, and a word does not read as a
+ * value somebody will forget to update. `{{return_window}}` resolves to "24
+ * hours" today and "3 days" if the owner raises it, so the token is what a
+ * sentence should carry either way.
+ */
+const TIME_SPAN =
+  /\b\d{1,3}(?:\s*[–—-]\s*\d{1,3})?[\s-]*(?:working\s+days?|business\s+days?|hours?|hrs?|days?|weeks?|months?)\b/i;
+
+/**
+ * A time of day — "4pm", "11:00", "10:30 – 20:30".
+ *
+ * The shipping page promised dispatch "before 4pm" while pickup is at 11:00,
+ * which is not a rounding error: it is five hours of orders told they go out
+ * today when they go out tomorrow.
+ */
+const CLOCK_TIME = /\b\d{1,2}(?::\d{2})?\s*(?:am|pm)\b|\b\d{1,2}:\d{2}\b/i;
+
+/**
+ * **Every** distinct time literal in a string, in the order they appear.
+ *
+ * Every, rather than the first, and the shipping page is why. Its body carries
+ * both "3–5 working days" and "before 4pm"; a first-match rule reported the
+ * range, and the cutoff — the one that was wrong by five hours — would only
+ * have surfaced on the next run, after somebody had already fixed the range and
+ * believed the page was clean. A gate that reveals one defect per run teaches
+ * the reader that green means finished when it means *finished for now*.
+ *
+ * Deduplicated by the matched text, so a page saying "24 hours" three times is
+ * one line of output and not three.
+ */
+function timeLiterals(text: string): string[] {
+  const all = [
+    ...text.matchAll(new RegExp(TIME_SPAN.source, "gi")),
+    ...text.matchAll(new RegExp(CLOCK_TIME.source, "gi")),
+  ].map((m) => m[0]);
+  return [...new Set(all)];
+}
+
+/**
+ * Time figures that are the **definition of a thing** rather than a promise
+ * about one, keyed by the surface they live in.
+ *
+ * Keyed by surface rather than by matched text, in the manner of
+ * `ALLOWED_PAISE` above: moving the value does not silently drop its
+ * justification, and an exemption that says *which field* is exempt is far
+ * narrower than one that pardons a string wherever it appears.
+ *
+ * Each entry carries its reason. An allowlist without one is a list of things
+ * somebody once found annoying.
+ */
+const ALLOWED_TIME = new Map<string, string>([
+  [
+    "site_settings.value (business_hours)",
+    "the opening hours themselves — this row is the source every page resolves from, so the figure in it is the setting rather than a copy of one",
+  ],
+]);
+
+/**
+ * Every table the owner can type into, and which columns are prose.
+ *
+ * ## Columns are opt-**out**, and that inversion is the fix
+ *
+ * This surface list used to name its columns — `pages` was declared
+ * `["title", "body"]` — and on 2026-08-14 that omission was the reason the
+ * worst copy defect on the shop survived a sweep that was specifically looking
+ * for it: `/page/returns` served
+ * `<meta name="description" content="Foot Vault's 7 day free return and size
+ * exchange policy.">` while the body said replacement only, 24 hours, no
+ * refunds. The gate read `title` and `body`, found nothing, and printed a tick.
+ *
+ * A named column list can only ever check the columns somebody remembered. So
+ * **every string and jsonb column is scanned unless it is skipped by name with
+ * a written reason** — the same trick as `GATES`/`EXCLUDED` in `run-all.ts` and
+ * `SETTINGS_VISIBILITY`: make forgetting fail rather than pass. A meta
+ * description added next year is covered the day the column exists.
+ *
+ * Non-string, non-object values are skipped by type: a `price_paise` integer or
+ * an `is_published` boolean cannot carry a sentence.
+ */
+type Surface = {
+  table: string;
+  /** Columns deliberately not scanned, each with why. */
+  skip?: Record<string, string>;
+  label: (row: Record<string, unknown>) => string;
+};
+
+const SURFACES: Surface[] = [
+  { table: "pages", label: (r) => String(r.slug) },
+  { table: "site_settings", label: (r) => String(r.key) },
+  { table: "homepage_sections", label: (r) => String(r.section_type) },
+  { table: "banners", label: (r) => String(r.placement ?? r.id) },
+  { table: "collections", label: (r) => String(r.slug) },
+  /*
+    Both were absent entirely until 2026-08-14, and both are owner-typed from
+    the admin and rendered to customers. `products` is the larger hole of the
+    two: a description promising free delivery over a figure is the ₹2,499
+    incident with a different table name.
+  */
+  { table: "categories", label: (r) => String(r.slug) },
+  { table: "products", label: (r) => String(r.slug) },
+  { table: "product_images", label: (r) => String(r.alt_text ?? r.id) },
+  { table: "brands", label: (r) => String(r.slug) },
+];
+
+/**
+ * Column names that are never prose, wherever they appear.
+ *
+ * Kept deliberately short. The temptation is to list everything structural —
+ * ids, urls, slugs — but a uuid and a URL contain neither a rupee sign nor a
+ * clock, so scanning them costs nothing and skipping them would be a rule
+ * nobody could later tell was load-bearing. Only `_at` earns its place: a
+ * timestamp really does contain `12:39:24`, and that clock is a row's age
+ * rather than a promise to a customer.
+ */
+const NOT_PROSE: { test: RegExp; reason: string }[] = [
+  {
+    test: /_at$/,
+    reason:
+      "a timestamp — the clock inside `2026-08-07 12:39:24+00` is when the row changed, not a time the shop promised anybody",
+  },
+];
+
+/**
+ * Tables that hold no owner-typed copy, each with why.
+ *
+ * The list exists so that **adding a content table without adding it above is a
+ * failure rather than an omission** — the drift check below compares this plus
+ * `SURFACES` against every table in `src/lib/database.types.ts`. That file is
+ * generated from the schema, so a new table appears in it the moment it is
+ * migrated, and this gate goes red until somebody has decided which half it
+ * belongs in.
+ *
+ * This gate's own header warns that "adding a content table without adding it
+ * here is the way this happens a fourth time", and until 2026-08-14 nothing
+ * enforced it: `categories`, `products`, `product_images` and `brands` had all
+ * been missing since the list was written.
+ */
+const NOT_CONTENT: Record<string, string> = {
+  addresses: "a customer's own delivery address",
+  cart_items: "what is in somebody's bag",
+  carts: "a bag, and its guest token",
+  coin_accounts: "a loyalty balance",
+  coin_transactions: "ledger entries — a record of what happened",
+  collection_products: "a join table",
+  coupon_customers: "who a coupon is restricted to",
+  coupon_redemptions: "a record of a coupon being used",
+  coupons: "codes and audiences, not sentences — the discount is a figure the checkout computes, never copy",
+  inbound_emails: "mail the shop received",
+  integration_tokens: "credentials",
+  inventory_movements: "stock ledger entries",
+  order_items: "a snapshot of what was bought",
+  order_status_history: "an audit trail",
+  orders: "orders — customer-entered, and a record rather than copy",
+  payment_events: "webhook payloads",
+  payments: "provider references",
+  product_variants: "sizes, colours and skus",
+  profiles: "a customer's own name and phone",
+  rate_limits: "counters",
+  refunds: "provider references and a computed breakdown",
+  reviews:
+    "written by customers, not by the shop. A figure a reviewer types is their sentence and not a promise the shop is making",
+  shipment_errors: "courier failures, for the owner to read",
+  shipment_events: "courier webhooks",
+  shipments: "courier references and raw responses",
+  shipping_quotes: "cached courier rates — the live figures this gate exists to make the copy defer to",
+  wishlist_items: "a join table",
+};
 
 async function checkContent(): Promise<void> {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  
+
   if (!url || !key) {
     console.log(
       "  \x1b[33m!\x1b[0m skipped: NEXT_PUBLIC_SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY not set.\n" +
         "      The content half of this gate did not run. That is a gap, not a pass.",
     );
-  } else {
-    const supabase = createClient(url, key, {
-      auth: { persistSession: false },
-    });
-  
-    /**
-   * Every owner-editable surface, and what a figure in it would be promising.
-   *
-   * `collections.name` is deliberately **not** here. "Under ₹2,000" is a
-   * price-band rail — the number is the definition of the rail rather than a
-   * promise about delivery, and tokenising it would be nonsense. Every other
-   * text a shopkeeper can type is checked, because every other one can carry a
-   * threshold.
-   */
-  const surfaces: {
-    table: string;
-    columns: string[];
-    label: (row: Record<string, unknown>) => string;
-  }[] = [
-    { table: "pages", columns: ["title", "body"], label: (r) => String(r.slug) },
-    {
-      table: "site_settings",
-      columns: ["value"],
-      label: (r) => String(r.key),
-    },
-    {
-      table: "homepage_sections",
-      columns: ["title", "subtitle", "payload"],
-      label: (r) => String(r.section_type),
-    },
-    {
-      table: "banners",
-      columns: ["headline", "subtext", "cta_label"],
-      label: (r) => String(r.placement ?? r.id),
-    },
-    {
-      table: "collections",
-      columns: ["description"],
-      label: (r) => String(r.slug),
-    },
-  ];
+    return;
+  }
 
-  for (const surface of surfaces) {
+  /* ---- 3a · every table is classified ---- */
+
+  const declared = new Set([
+    ...SURFACES.map((s) => s.table),
+    ...Object.keys(NOT_CONTENT),
+  ]);
+  const schemaTables = tablesInGeneratedTypes();
+  for (const table of schemaTables) {
+    if (declared.has(table)) continue;
+    report(
+      `database.types.ts: ${table}`,
+      "is neither a scanned surface nor listed in NOT_CONTENT — decide which, " +
+        "with a reason. A content table nobody classified is how a policy " +
+        "figure hides.",
+    );
+  }
+  for (const table of declared) {
+    if (schemaTables.has(table)) continue;
+    report(
+      `literals.ts: ${table}`,
+      "is declared here but is not in the schema — regenerate types or remove it.",
+    );
+  }
+  if (schemaTables.size > 0) {
+    console.log(
+      `  \x1b[32m✓\x1b[0m ${schemaTables.size} tables, every one classified ` +
+        `(${SURFACES.length} scanned, ${Object.keys(NOT_CONTENT).length} not content)`,
+    );
+  }
+
+  /* ---- 3b · every prose column in every surface ---- */
+
+  const supabase = createClient(url, key, { auth: { persistSession: false } });
+
+  for (const surface of SURFACES) {
     const { data, error } = await supabase
       .from(surface.table)
       .select("*")
@@ -380,36 +604,92 @@ async function checkContent(): Promise<void> {
       continue;
     }
 
-    for (const row of data ?? []) {
-      for (const column of surface.columns) {
-        const value = row[column];
+    const rows = data ?? [];
+    const scannedColumns = new Set<string>();
+    const skippedColumns = new Set<string>();
+
+    for (const row of rows) {
+      for (const [column, value] of Object.entries(row)) {
+        // A number, a boolean or a null cannot carry a sentence.
         if (value === null || value === undefined) continue;
-        // jsonb arrives as an object; stringifying is exactly right, because a
-        // figure buried three levels down is still on the page.
-        const text =
-          typeof value === "string" ? value : JSON.stringify(value);
-        if (!CURRENCY.test(text) && !RUPEES_WORD.test(text)) continue;
-        if (ALLOWED.has(text.trim())) {
-          console.log(
-            `  \x1b[90m·\x1b[0m ${surface.table}.${column}: "${text.trim()}" — ` +
-              `allowed: ${ALLOWED.get(text.trim())}`,
-          );
+        if (typeof value !== "string" && typeof value !== "object") continue;
+
+        const shape = NOT_PROSE.find((rule) => rule.test.test(column));
+        if (shape ?? surface.skip?.[column]) {
+          skippedColumns.add(column);
           continue;
         }
-        const line =
-          text.split("\n").find((l) => CURRENCY.test(l) || RUPEES_WORD.test(l)) ??
-          text;
-        report(
-          `${surface.table}.${column} (${surface.label(row)})`,
-          line.trim().slice(0, 110),
-        );
+        scannedColumns.add(column);
+
+        // jsonb arrives as an object; stringifying is exactly right, because a
+        // figure buried three levels down is still on the page.
+        const text = typeof value === "string" ? value : JSON.stringify(value);
+        const where = `${surface.table}.${column} (${surface.label(row)})`;
+
+        if (CURRENCY.test(text) || RUPEES_WORD.test(text)) {
+          if (ALLOWED.has(text.trim())) {
+            console.log(
+              `  \x1b[90m·\x1b[0m ${surface.table}.${column}: "${text.trim()}" — ` +
+                `allowed: ${ALLOWED.get(text.trim())}`,
+            );
+          } else {
+            const line =
+              text
+                .split("\n")
+                .find((l) => CURRENCY.test(l) || RUPEES_WORD.test(l)) ?? text;
+            report(where, line.trim().slice(0, 110));
+          }
+        }
+
+        for (const found of timeLiterals(text)) {
+          if (ALLOWED_TIME.has(where)) {
+            console.log(
+              `  \x1b[90m·\x1b[0m ${where}: "${found}" — ` +
+                `allowed: ${ALLOWED_TIME.get(where)}`,
+            );
+            continue;
+          }
+          const line = text.split("\n").find((l) => l.includes(found)) ?? text;
+          report(
+            where,
+            `"${found}" in: ${line.trim().slice(0, 90)}  ← resolve it from ` +
+              `site_settings or the code through a {{token}}`,
+          );
+        }
       }
     }
+
     console.log(
-      `  \x1b[32m✓\x1b[0m ${surface.table}: ${(data ?? []).length} rows, ${surface.columns.join(", ")}`,
+      `  \x1b[32m✓\x1b[0m ${surface.table}: ${rows.length} rows, ` +
+        `${scannedColumns.size} prose columns scanned` +
+        (skippedColumns.size > 0
+          ? ` (${[...skippedColumns].sort().join(", ")} skipped)`
+          : ""),
     );
   }
+}
+
+/**
+ * The public tables, read out of the generated types.
+ *
+ * Parsed rather than imported because types do not exist at runtime, and read
+ * from the generated file rather than from `information_schema` because
+ * PostgREST does not expose it — and because a file in the tree fails the same
+ * way on every machine, which a live introspection query would not.
+ */
+function tablesInGeneratedTypes(): Set<string> {
+  const source = readFileSync("src/lib/database.types.ts", "utf8");
+  const block = /\n {4}Tables: \{\n([\s\S]*?)\n {4}Views: \{/.exec(source);
+  if (!block) {
+    report(
+      "src/lib/database.types.ts",
+      "no `Tables:` block found — the table drift check cannot run, which is a gap, not a pass.",
+    );
+    return new Set();
   }
+  return new Set(
+    [...block[1].matchAll(/^ {6}([a-z_][a-z0-9_]*): \{$/gm)].map((m) => m[1]),
+  );
 }
 
 /* --------------------------------------------------------------- report -- */

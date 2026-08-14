@@ -16,6 +16,21 @@ because they are about interpreting a live signal rather than about the policy.
 Enforcing since 2026-08-13 (`CSP_MODE = "enforce"`). Before that it ran
 Report-Only from 2026-08-13, through one real UPI payment on production.
 
+### A `[csp]` line naming `www.google.com` is the contact page's map
+
+`frame-src` carries one non-payment origin: the Google map embedded on
+`/page/contact`, so a customer can navigate to the shop. A violation naming it
+means the map is being blocked and the page is showing an empty box — not a
+Google outage, which is what it looks like. The cause is almost always that the
+origin was dropped from `csp.ts`; `npm run audit:headers` fails on exactly that,
+and the CSP header is baked into the build manifest, so restarting a server and
+re-reading the header will _not_ show the change. Rebuild.
+
+Google is a declared processor for this, not only for sign-in: loading that page
+sends every visitor's IP address to Google whether or not they touch the map, and
+the privacy page says so. `npm run audit:privacy` fails if the origin is in the
+CSP and the policy stops naming its owner.
+
 ### A `[csp]` line naming a razorpay.com origin is a payments incident
 
 Not a policy nit, not a tuning item, not something to file. **Treat a run of
@@ -29,7 +44,7 @@ The reasoning is about where Razorpay's code comes from and when:
   that file loads at any time, and it reaches customers with no deploy on our
   side and no review on anyone's.
 
-- Our allowlist was derived by reading *that file, on one particular day* — see
+- Our allowlist was derived by reading _that file, on one particular day_ — see
   the origin list in `csp.ts`. It is a snapshot of someone else's dependency
   graph. Nothing keeps it current.
 
@@ -55,7 +70,7 @@ specific:
 Which means a razorpay.com origin in our log is not their iframe being noisy.
 It is something that used to load inside their frame now loading **from our
 document**, or a new origin they have started using. Either way our allowlist is
-stale against the code customers are running *right now*.
+stale against the code customers are running _right now_.
 
 **What to do.** Add the origin to the right directive in `csp.ts` and deploy —
 this is one of the few changes worth shipping without waiting for a batch. If
@@ -90,10 +105,10 @@ afterwards for what real customers hit.
 
 The asymmetry is the whole point, and it only runs one way:
 
-| Observation | What it means |
-| --- | --- |
-| `[csp]` lines arrive | Real violations, **and** delivery works — the console can be retired as primary |
-| Nothing arrives | Nothing. Could be a clean run; could be that browsers never deliver here. Not distinguishable from this side. |
+| Observation          | What it means                                                                                                 |
+| -------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `[csp]` lines arrive | Real violations, **and** delivery works — the console can be retired as primary                               |
+| Nothing arrives      | Nothing. Could be a clean run; could be that browsers never deliver here. Not distinguishable from this side. |
 
 A "zero violations" claim is therefore only as good as the console it was read
 from. The first deploy report made exactly this mistake in a different form — it

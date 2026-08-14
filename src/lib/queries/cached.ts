@@ -85,8 +85,16 @@ export const CHROME_CACHE_TAG = "chrome";
  * question, and every binding misses on the next request. That is what this
  * mechanism was built for, and it is the reason it is a version rather than a
  * comment.
+ *
+ * v6 — the launch batch, and the same reason as v4 wearing different clothes.
+ * Six `pages` rows were rewritten and three new tokens were added, so an entry
+ * written before the deploy holds prose whose `{{registered_address}}` the code
+ * that wrote it could not resolve. Without this bump the corrected policy pages
+ * would have sat behind up-to-an-hour-old entries while the Terms page still
+ * named a court, which is the sort of wait that gets described as "it will fix
+ * itself" and then does not.
  */
-const SHAPE_VERSION = "v5";
+const SHAPE_VERSION = "v6";
 
 /**
  * Which database the entry was read from.

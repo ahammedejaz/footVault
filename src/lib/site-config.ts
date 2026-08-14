@@ -15,8 +15,18 @@ export const siteConfig = {
   url: process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000",
 } as const;
 
-/** Returns window in days. Moves to site_settings in Phase 7. */
-export const RETURN_WINDOW_DAYS = 7;
+/*
+  `RETURN_WINDOW_DAYS = 7` used to live here, commented "moves to site_settings
+  in Phase 7". It moved — `site_settings.return_window_days` is 1 and the policy
+  is 24 hours, replacement only — and the constant stayed behind for three
+  phases, imported by nothing, quietly stating a seven-day returns window that
+  the shop has never offered.
+
+  Deleted rather than corrected, the same way `shipping.flat_fee_paise` was: a
+  second copy of a policy figure can only agree with the first by coincidence,
+  and the one thing worse than a stale number is a stale number nobody reads
+  until they do.
+*/
 
 /**
  * Fallback navigation.

@@ -8,23 +8,23 @@ homepage, without touching code.
 
 ## Stack
 
-| Layer | Choice |
-|---|---|
-| Framework | Next.js 16 (App Router, TypeScript strict) |
-| Styling | Tailwind CSS v4 + CSS custom properties for design tokens |
-| Components | shadcn/ui primitives, restyled to the Foot Vault tokens |
-| Database, auth, storage | Supabase (managed through the Supabase MCP server) |
-| Forms | React Hook Form + Zod, one schema shared client and server |
-| Mutations | Server Actions, Zod-validated server-side |
-| Auth | Supabase Auth — **Google only**, PKCE, sessions in cookies |
-| Cart | Rows in `carts`, keyed by an httpOnly `guest_token` cookie. Never localStorage |
-| Orders | One Postgres transaction. Prices recomputed server-side; stock claimed at checkout |
-| Payments | Prepaid and **Pay on Delivery**, both through Razorpay, behind one `PaymentAdapter`. `fetch` + `node:crypto`, **no SDK** |
-| Delivery | Rates quoted live from the Shiprocket API. Nothing hardcoded; the thresholds are admin settings |
-| Email | Behind an `EmailAdapter`. Console adapter until a provider is configured |
-| Scheduled work | `pg_cron`, inside Supabase. One job: the abandoned-order sweep |
-| Client UI state | Zustand — the bag drawer, and nothing the server owns |
-| Deployment | Vercel |
+| Layer                   | Choice                                                                                                                   |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| Framework               | Next.js 16 (App Router, TypeScript strict)                                                                               |
+| Styling                 | Tailwind CSS v4 + CSS custom properties for design tokens                                                                |
+| Components              | shadcn/ui primitives, restyled to the Foot Vault tokens                                                                  |
+| Database, auth, storage | Supabase (managed through the Supabase MCP server)                                                                       |
+| Forms                   | React Hook Form + Zod, one schema shared client and server                                                               |
+| Mutations               | Server Actions, Zod-validated server-side                                                                                |
+| Auth                    | Supabase Auth — **Google only**, PKCE, sessions in cookies                                                               |
+| Cart                    | Rows in `carts`, keyed by an httpOnly `guest_token` cookie. Never localStorage                                           |
+| Orders                  | One Postgres transaction. Prices recomputed server-side; stock claimed at checkout                                       |
+| Payments                | Prepaid and **Pay on Delivery**, both through Razorpay, behind one `PaymentAdapter`. `fetch` + `node:crypto`, **no SDK** |
+| Delivery                | Rates quoted live from the Shiprocket API. Nothing hardcoded; the thresholds are admin settings                          |
+| Email                   | Behind an `EmailAdapter`. Console adapter until a provider is configured                                                 |
+| Scheduled work          | `pg_cron`, inside Supabase. One job: the abandoned-order sweep                                                           |
+| Client UI state         | Zustand — the bag drawer, and nothing the server owns                                                                    |
+| Deployment              | Vercel                                                                                                                   |
 
 ## Getting started
 
@@ -38,43 +38,52 @@ Open http://localhost:3000. The design system renders at `/style-guide`.
 
 ## Scripts
 
-| Command | Does |
-|---|---|
-| `npm run dev` | Development server |
-| `npm run build` | Production build |
-| `npm run typecheck` | `tsc --noEmit` |
-| `npm run lint` | ESLint |
-| `npm run shapes` | Fails if a cached return type changed without a `SHAPE_VERSION` bump. **Runs in CI** |
-| `npm run shapes:write` | Re-record the shape snapshot after a deliberate change |
-| `npm run seed` | Upsert the seed catalog into Supabase (needs `SUPABASE_SERVICE_ROLE_KEY`) |
-| `npm run seed:sql` | Write `supabase/seed.sql` instead, for the rebuild below |
-| `npm run rebuild:stage` | **The disaster-recovery drill**: staging from empty — clean, replay every migration, seed, verify. Refuses to aim anywhere but staging |
-| `npm run seed:images` | Regenerate the drawn product assets in `public/seed/` |
-| `npm run audit` | The browser and database gate — every `audit:*` below except `security`, `lighthouse`, `shots` and `teardown` |
-| `npm run audit:literals` | No policy number typed anywhere — in a component **or** in owner-edited CMS content |
-| `npm run audit:overflow` | Six widths × every route — overflow, 44px tap targets, 16px inputs |
-| `npm run audit:a11y` | axe-core, WCAG 2.2 A/AA, at 390px and 1440px, overlays included |
-| `npm run audit:keyboard` | home → category → filter → product → size, by keyboard only |
-| `npm run audit:keyboard-checkout` | The checkout path by keyboard, to the place-order button |
-| `npm run audit:focus` | The composite focus indicator actually paints on every interactive element |
-| `npm run audit:gallery` | The product gallery's runtime behaviour |
-| `npm run audit:hydration` | Headless-Chromium console: no hydration mismatch below `<body>` |
-| `npm run audit:interactions` | The behaviour a screenshot cannot show |
-| `npm run audit:links` | Crawls every internal link; checks titles and JSON-LD |
-| `npm run audit:auth` | Role escalation over real HTTP; `/admin` 404s for everyone but an admin — **document and flight response alike**, which is what F-2 was |
-| `npm run audit:cart` | Merge on sign-in against the live database, RLS in force |
-| `npm run audit:bag` | The whole purchase path in Chromium at 390px |
-| `npm run audit:signedin` | The signed-in storefront: saved list, account menu, account cart |
-| `npm run audit:checkout` | Checkout, orders and webhook idempotency against the live database |
-| `npm run audit:shipping` | Shiprocket end to end, mocked: token cache, serviceability, the fee split, and that the COD collectable is the balance |
-| `npm run audit:totals` | The advance arithmetic in isolation — 15 assertions, no database and no browser |
-| `npm run audit:refunds` | The refund promises against staging: the captured-amount ceiling, the double-click index, replay-equals-one-refund, the dashboard import |
-| `npm run audit:rto` | The RTO lifecycle against staging: detection idempotency, receive guards, restock-exactly-once with the ledger asserted, the repeat-phone flag |
-| `npm run audit:admin` | The admin surface: role gate, inventory ledger, reconciliation |
-| `npm run audit:security` | The adversarial regression suite, through the real webhook route over HTTP |
-| `npm run audit:lighthouse` | Performance on a local production build, `--throttling-method=devtools` |
-| `npm run audit:shots` | Full-page screenshots at all six widths |
-| `npm run audit:teardown` | Sweeps accounts and rows a crashed harness left behind |
+| Command                           | Does                                                                                                                                           |
+| --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm run dev`                     | Development server                                                                                                                             |
+| `npm run build`                   | Production build                                                                                                                               |
+| `npm run typecheck`               | `tsc --noEmit`                                                                                                                                 |
+| `npm run lint`                    | ESLint                                                                                                                                         |
+| `npm run shapes`                  | Fails if a cached return type changed without a `SHAPE_VERSION` bump. **Runs in CI**                                                           |
+| `npm run shapes:write`            | Re-record the shape snapshot after a deliberate change                                                                                         |
+| `npm run seed`                    | Upsert the seed catalog into Supabase (needs `SUPABASE_SERVICE_ROLE_KEY`)                                                                      |
+| `npm run seed:sql`                | Write `supabase/seed.sql` instead, for the rebuild below                                                                                       |
+| `npm run rebuild:stage`           | **The disaster-recovery drill**: staging from empty — clean, replay every migration, seed, verify. Refuses to aim anywhere but staging         |
+| `npm run seed:images`             | Regenerate the drawn product assets in `public/seed/`                                                                                          |
+| `npm run audit`                   | The browser and database gate — every `audit:*` below except `security`, `lighthouse`, `shots` and `teardown`                                  |
+| `npm run audit:literals`          | No policy number typed anywhere — in a component **or** in owner-edited CMS content                                                            |
+| `npm run audit:overflow`          | Six widths × every route — overflow, 44px tap targets, 16px inputs                                                                             |
+| `npm run audit:a11y`              | axe-core, WCAG 2.2 A/AA, at 390px and 1440px, overlays included                                                                                |
+| `npm run audit:keyboard`          | home → category → filter → product → size, by keyboard only                                                                                    |
+| `npm run audit:keyboard-checkout` | The checkout path by keyboard, to the place-order button                                                                                       |
+| `npm run audit:focus`             | The composite focus indicator actually paints on every interactive element                                                                     |
+| `npm run audit:gallery`           | The product gallery's runtime behaviour                                                                                                        |
+| `npm run audit:hydration`         | Headless-Chromium console: no hydration mismatch below `<body>`                                                                                |
+| `npm run audit:interactions`      | The behaviour a screenshot cannot show                                                                                                         |
+| `npm run audit:links`             | Crawls every internal link; checks titles and JSON-LD                                                                                          |
+| `npm run audit:auth`              | Role escalation over real HTTP; `/admin` 404s for everyone but an admin — **document and flight response alike**, which is what F-2 was        |
+| `npm run audit:cart`              | Merge on sign-in against the live database, RLS in force                                                                                       |
+| `npm run audit:bag`               | The whole purchase path in Chromium at 390px                                                                                                   |
+| `npm run audit:signedin`          | The signed-in storefront: saved list, account menu, account cart                                                                               |
+| `npm run audit:checkout`          | Checkout, orders and webhook idempotency against the live database                                                                             |
+| `npm run audit:shipping`          | Shiprocket end to end, mocked: token cache, serviceability, the fee split, and that the COD collectable is the balance                         |
+| `npm run audit:totals`            | The advance arithmetic in isolation — 15 assertions, no database and no browser                                                                |
+| `npm run audit:refunds`           | The refund promises against staging: the captured-amount ceiling, the double-click index, replay-equals-one-refund, the dashboard import       |
+| `npm run audit:rto`               | The RTO lifecycle against staging: detection idempotency, receive guards, restock-exactly-once with the ledger asserted, the repeat-phone flag |
+| `npm run audit:admin`             | The admin surface: role gate, inventory ledger, reconciliation                                                                                 |
+| `npm run audit:security`          | The adversarial regression suite, through the real webhook route over HTTP                                                                     |
+| `npm run audit:lighthouse`        | Performance on a local production build, `--throttling-method=devtools`                                                                        |
+| `npm run audit:shots`             | Full-page screenshots at all six widths                                                                                                        |
+| `npm run audit:teardown`          | Sweeps accounts and rows a crashed harness left behind                                                                                         |
+| `npm run audit:build-smoke`       | The deploy gate: a production build against production data, served and curled                                                                 |
+| `npm run audit:headers`           | Security headers and the CSP, including the origins whose loss is silent                                                                       |
+| `npm run audit:privacy`           | Every processor the shop uses is named on the privacy page, and no page still carries an owner placeholder                                     |
+| `npm run audit:contact`           | No published contact detail is still a seed fixture, and WhatsApp normalises to a reachable `wa.me` link                                       |
+| `npm run audit:reachability`      | Every customer-facing route is reachable by link, including the WhatsApp route the returns policy depends on                                   |
+
+> This table lists the principal gates, not all of them. `scripts/audit/run-all.ts`
+> is the authority — it carries a drift check that fails when a gate exists and is
+> neither run nor explicitly excluded, which is the guarantee this table cannot give.
 
 The audits drive a real browser against a running build, so they need
 `npm run build && npm start` first and a reachable database. They are not in CI
@@ -108,7 +117,7 @@ can be verified without live database access.
 
 The shape step is the one that is not obvious. `unstable_cache` keys on its key
 parts and never on the code that produced the value, so adding a field to a
-cached return type does *not* invalidate the entries already on disk — the new
+cached return type does _not_ invalidate the entries already on disk — the new
 code reads old objects silently missing it. Phase 4 shipped exactly that
 (`variantId` on `SizeAvailability`) and add-to-bag quietly believed no size had
 been chosen. `npm run shapes` expands all 13 cached return types structurally
@@ -123,10 +132,10 @@ customer pressed the button.
 Two project ESLint rules live in `eslint-rules/` and run as part of `npm run
 lint`:
 
-| Rule | Stops |
-|---|---|
+| Rule                                    | Stops                                                                                                                                                                                       |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `footvault/no-unchecked-supabase-error` | Reading a PostgREST result without looking at `error` — the shape that turns a failed query into an empty page. Also catches `.then()` on a builder and a raw builder inside `Promise.all`. |
-| `footvault/no-off-scale-type` | `text-[13px]` and friends. The type scale is seven steps; arbitrary values bypass the theme. |
+| `footvault/no-off-scale-type`           | `text-[13px]` and friends. The type scale is seven steps; arbitrary values bypass the theme.                                                                                                |
 
 Every database read goes through `src/lib/queries/run.ts`, which throws on a
 PostgREST error rather than returning nothing. The lint rule is what keeps it
@@ -146,18 +155,18 @@ touches a float; `src/lib/format.ts` converts at the UI boundary.
 
 See `.env.example` for the full list and the reasoning attached to each one.
 
-| Variable | Notes |
-|---|---|
-| `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Public by design |
-| `SUPABASE_SERVICE_ROLE_KEY` | **Server-only.** Bypasses RLS; never a `NEXT_PUBLIC_` prefix, never outside `src/lib/supabase/admin.ts`. Checkout needs it — the order transaction runs through the admin client |
-| `NEXT_PUBLIC_SITE_URL` | Absolute origin for `metadataBase`, OG images and the sitemap. Not the OAuth redirect |
-| `RAZORPAY_KEY_ID` | Publishable. Reaches the browser, but only inside a `PaymentInitiation` the server returns |
-| `RAZORPAY_KEY_SECRET` | Secret. Basic-auth password, and the HMAC key for the *browser callback* signature |
-| `RAZORPAY_WEBHOOK_SECRET` | A **different** secret. HMAC key for `x-razorpay-signature`, and only that |
-| `EMAIL_API_KEY`, `EMAIL_FROM` | Names only. Nothing reads them yet; the console adapter is what ships |
-| `SITE_INDEXABLE` | Only the exact string `true` lets search engines in. Anything else is noindex. Changing it needs a **fresh build**, not a redeploy — the header is baked into the build manifest |
-| `SHIPROCKET_EMAIL`, `SHIPROCKET_PASSWORD` | An **API user** created in the Shiprocket panel, not the panel login. `/v1/external/auth/login` trades them for a JWT valid 240 hours. **Not** a static API key — there is no `SHIPROCKET_API_KEY` and the one that used to sit in `.env.local` authenticated nothing |
-| `SHIPROCKET_PICKUP_LOCATION` | The pickup nickname exactly as spelled in the panel. Unset falls back to `"Primary"`, which this account is not called, so it fails when a real parcel is created rather than at boot |
+| Variable                                                    | Notes                                                                                                                                                                                                                                                                 |
+| ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Public by design                                                                                                                                                                                                                                                      |
+| `SUPABASE_SERVICE_ROLE_KEY`                                 | **Server-only.** Bypasses RLS; never a `NEXT_PUBLIC_` prefix, never outside `src/lib/supabase/admin.ts`. Checkout needs it — the order transaction runs through the admin client                                                                                      |
+| `NEXT_PUBLIC_SITE_URL`                                      | Absolute origin for `metadataBase`, OG images and the sitemap. Not the OAuth redirect                                                                                                                                                                                 |
+| `RAZORPAY_KEY_ID`                                           | Publishable. Reaches the browser, but only inside a `PaymentInitiation` the server returns                                                                                                                                                                            |
+| `RAZORPAY_KEY_SECRET`                                       | Secret. Basic-auth password, and the HMAC key for the _browser callback_ signature                                                                                                                                                                                    |
+| `RAZORPAY_WEBHOOK_SECRET`                                   | A **different** secret. HMAC key for `x-razorpay-signature`, and only that                                                                                                                                                                                            |
+| `EMAIL_API_KEY`, `EMAIL_FROM`                               | Names only. Nothing reads them yet; the console adapter is what ships                                                                                                                                                                                                 |
+| `SITE_INDEXABLE`                                            | Only the exact string `true` lets search engines in. Anything else is noindex. Changing it needs a **fresh build**, not a redeploy — the header is baked into the build manifest                                                                                      |
+| `SHIPROCKET_EMAIL`, `SHIPROCKET_PASSWORD`                   | An **API user** created in the Shiprocket panel, not the panel login. `/v1/external/auth/login` trades them for a JWT valid 240 hours. **Not** a static API key — there is no `SHIPROCKET_API_KEY` and the one that used to sit in `.env.local` authenticated nothing |
+| `SHIPROCKET_PICKUP_LOCATION`                                | The pickup nickname exactly as spelled in the panel. Unset falls back to `"Primary"`, which this account is not called, so it fails when a real parcel is created rather than at boot                                                                                 |
 
 Leaving the Shiprocket pair unset turns the integration off rather than
 breaking it: checkout still works, Pay on Delivery is still offered, and the
@@ -189,7 +198,7 @@ keys** — that is the Phase 6 change, and it is the whole of the new payment
 model:
 
 **Prepaid** settles the grand total online. **Pay on Delivery** charges an
-*advance* online at checkout and the courier collects the balance in cash. Both
+_advance_ online at checkout and the courier collects the balance in cash. Both
 go through the same adapter, so a shop with no keys configured offers neither —
 `codAdapter.isAvailable()` is `razorpayAdapter.isAvailable()`.
 
@@ -203,7 +212,7 @@ that path is what produced `FV-2026-00488`, a confirmed and unpaid order holding
 
 1. <https://dashboard.razorpay.com> → toggle to **Test Mode** (top of the
    sidebar; test keys start `rzp_test_`).
-2. *Account & Settings* → *API Keys* → **Generate Test Key**. You are shown the
+2. _Account & Settings_ → _API Keys_ → **Generate Test Key**. You are shown the
    secret once.
 3. Put both in `.env.local`. Neither takes a `NEXT_PUBLIC_` prefix.
 4. Restart. Both methods now appear — with no keys the list is empty, on
@@ -267,18 +276,18 @@ docs/
 
 ## Documentation
 
-| Document | Covers |
-|---|---|
-| [`docs/design-system.md`](docs/design-system.md) | Tokens, type scale, measured contrast, the signature element |
-| [`docs/rls-tests.md`](docs/rls-tests.md) | Row Level Security checklist, run against the live database, with results |
-| [`docs/architecture.md`](docs/architecture.md) | How the pieces fit: rendering, caching, the client/server boundary, the bag, the order state machine, the payment seam |
-| [`docs/database.md`](docs/database.md) | Every table, its policies, and the functions with their grants |
-| [`docs/admin-guide.md`](docs/admin-guide.md) | For the shop owner. How to make yourself an admin, what you can change, and what to do with an order |
-| [`docs/phase-3-report.md`](docs/phase-3-report.md) | What Phase 3 changed, what it measured, and what it did not finish |
-| [`claudeExecutionReport/phase-4-cart-wishlist.md`](claudeExecutionReport/phase-4-cart-wishlist.md) | Phase 4, in full: decisions, bugs, measurements, known imperfections |
-| [`claudeExecutionReport/phase-5-checkout-payments.md`](claudeExecutionReport/phase-5-checkout-payments.md) | Phase 5, in full — and what a six-agent build cost and returned |
-| [`claudeExecutionReport/phase-5-security-review.md`](claudeExecutionReport/phase-5-security-review.md) | The adversarial review of checkout, orders and payments: eight findings, five fixed |
-| `PROJECT_BRIEF.md` | Full requirements and build phases |
+| Document                                                                                                   | Covers                                                                                                                 |
+| ---------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| [`docs/design-system.md`](docs/design-system.md)                                                           | Tokens, type scale, measured contrast, the signature element                                                           |
+| [`docs/rls-tests.md`](docs/rls-tests.md)                                                                   | Row Level Security checklist, run against the live database, with results                                              |
+| [`docs/architecture.md`](docs/architecture.md)                                                             | How the pieces fit: rendering, caching, the client/server boundary, the bag, the order state machine, the payment seam |
+| [`docs/database.md`](docs/database.md)                                                                     | Every table, its policies, and the functions with their grants                                                         |
+| [`docs/admin-guide.md`](docs/admin-guide.md)                                                               | For the shop owner. How to make yourself an admin, what you can change, and what to do with an order                   |
+| [`docs/phase-3-report.md`](docs/phase-3-report.md)                                                         | What Phase 3 changed, what it measured, and what it did not finish                                                     |
+| [`claudeExecutionReport/phase-4-cart-wishlist.md`](claudeExecutionReport/phase-4-cart-wishlist.md)         | Phase 4, in full: decisions, bugs, measurements, known imperfections                                                   |
+| [`claudeExecutionReport/phase-5-checkout-payments.md`](claudeExecutionReport/phase-5-checkout-payments.md) | Phase 5, in full — and what a six-agent build cost and returned                                                        |
+| [`claudeExecutionReport/phase-5-security-review.md`](claudeExecutionReport/phase-5-security-review.md)     | The adversarial review of checkout, orders and payments: eight findings, five fixed                                    |
+| `PROJECT_BRIEF.md`                                                                                         | Full requirements and build phases                                                                                     |
 
 ## Signing in
 
@@ -341,15 +350,15 @@ while sign-in is Google-only, and free to turn on.
 
 ## Build status
 
-| Phase | Deliverable | State |
-|---|---|---|
-| 0 | Foundation: tokens, fonts, restyled primitives, base layout, CI | Done |
-| 1 | Supabase schema, RLS, seed data | Done |
-| 2 | Auth and role-based middleware | Done — folded into Phase 4 |
-| 3 | Storefront catalog | Done — see [`docs/phase-3-report.md`](docs/phase-3-report.md) |
-| 4 | Cart and wishlist | Done — see [`claudeExecutionReport/phase-4-cart-wishlist.md`](claudeExecutionReport/phase-4-cart-wishlist.md) |
-| 5 | Checkout, orders and payments | Done — see [`claudeExecutionReport/phase-5-checkout-payments.md`](claudeExecutionReport/phase-5-checkout-payments.md) |
-| 6 | Admin CRUD | |
-| 7 | Admin appearance and CMS | |
-| 8 | Reviews, coupons, dashboard, polish | Refunds were listed here and are not planned: the shop does not offer them. Cancelling a paid order still needs an answer — see `docs/admin-guide.md` |
-| 9 | Production deploy and owner documentation | |
+| Phase | Deliverable                                                     | State                                                                                                                                                 |
+| ----- | --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0     | Foundation: tokens, fonts, restyled primitives, base layout, CI | Done                                                                                                                                                  |
+| 1     | Supabase schema, RLS, seed data                                 | Done                                                                                                                                                  |
+| 2     | Auth and role-based middleware                                  | Done — folded into Phase 4                                                                                                                            |
+| 3     | Storefront catalog                                              | Done — see [`docs/phase-3-report.md`](docs/phase-3-report.md)                                                                                         |
+| 4     | Cart and wishlist                                               | Done — see [`claudeExecutionReport/phase-4-cart-wishlist.md`](claudeExecutionReport/phase-4-cart-wishlist.md)                                         |
+| 5     | Checkout, orders and payments                                   | Done — see [`claudeExecutionReport/phase-5-checkout-payments.md`](claudeExecutionReport/phase-5-checkout-payments.md)                                 |
+| 6     | Admin CRUD                                                      |                                                                                                                                                       |
+| 7     | Admin appearance and CMS                                        |                                                                                                                                                       |
+| 8     | Reviews, coupons, dashboard, polish                             | Refunds were listed here and are not planned: the shop does not offer them. Cancelling a paid order still needs an answer — see `docs/admin-guide.md` |
+| 9     | Production deploy and owner documentation                       |                                                                                                                                                       |
