@@ -490,6 +490,48 @@ async function main() {
   /* ═══ 5 · the ledger's integrity ═════════════════════════════════════════ */
   section("5 · The stock ledger cannot be rewritten");
   {
+    /*
+      The state of the ledger *before* this section attacks it.
+
+      `reconcile_inventory()` answers two different questions at once — its
+      HAVING clause is `sum(delta) <> stock_quantity OR unspecified_rows > 0`,
+      and the function's own comment names them apart: "a write bypassed the
+      trigger … **or** a caller failed to declare its reason". Only the first is
+      a security finding. The second is attribution hygiene, and on staging it
+      is manufactured by this suite rather than by the shop.
+
+      It has to be, structurally. Attribution reaches the trigger through four
+      transaction-local GUCs — `app.inventory_reason` and friends, set with
+      `set_config(..., true)` — and a PostgREST `.update({ stock_quantity })`
+      has no way to set one, because every REST write is its own transaction. So
+      every harness that moves stock directly to build a fixture leaves an
+      `unspecified` row behind by construction: zero-stock.ts, coupons.ts,
+      transitions.ts, checkout-orders.ts, security-checkout.ts and teardown.ts
+      all do it, and the rows accumulate across runs. Counting them had this
+      gate report 2 drifting variants one night and 4 the next, neither caused
+      by anything it did — and three of those four had `drift: 0`, so the
+      "drifting variants" it named were not drifting at all.
+
+      So the assertion at the end of this block compares against this snapshot
+      instead of against zero. That is what its label has always claimed:
+      "after every attempt above" is a statement about a delta, not an absolute.
+      It is strictly sharper than counting rows — an `unspecified` row created
+      *by this gate* now fails it, where before it was lost in the pile.
+    */
+    const { data: ledgerBefore, error: beforeError } =
+      await admin.rpc("reconcile_inventory");
+    check(
+      "the ledger's starting state is readable",
+      !beforeError,
+      beforeError ? beforeError.message : "snapshot taken",
+    );
+    const baseline = new Map(
+      (ledgerBefore ?? []).map((row) => [
+        row.variant_id,
+        { drift: row.drift ?? 0, unspecified: row.unspecified_rows ?? 0 },
+      ]),
+    );
+
     const { error: insertError } = await customer
       .from("inventory_movements")
       .insert({
@@ -508,13 +550,36 @@ async function main() {
       refusedBy(insertError, "table-grant"),
     );
 
-    // The reconciliation is the real assertion: after everything above, the
-    // ledger and the stock still agree.
-    const { data: drift, error } = await admin.rpc("reconcile_inventory");
+    /*
+      The reconciliation is the real assertion: nothing above moved the ledger.
+
+      A variant fails if it *gained* drift or *gained* an unattributed row while
+      these attempts were running — including one that was clean before and
+      appears now. Anything already there when the section opened belongs to
+      whichever harness ran earlier, and saying so is not this gate's job.
+    */
+    const { data: ledgerAfter, error } = await admin.rpc("reconcile_inventory");
+    const worsened = (ledgerAfter ?? []).filter((row) => {
+      const was = baseline.get(row.variant_id) ?? { drift: 0, unspecified: 0 };
+      return (
+        Math.abs(row.drift ?? 0) > Math.abs(was.drift) ||
+        (row.unspecified_rows ?? 0) > was.unspecified
+      );
+    });
     check(
       "and after every attempt above, the ledger still reconciles",
-      !error && (drift?.length ?? 0) === 0,
-      `${drift?.length ?? "?"} drifting variants`,
+      !error && worsened.length === 0,
+      worsened.length === 0
+        ? `nothing moved (${baseline.size} pre-existing finding(s) from earlier harnesses, untouched)`
+        : worsened
+            .map((row) => {
+              const was = baseline.get(row.variant_id) ?? {
+                drift: 0,
+                unspecified: 0,
+              };
+              return `${row.sku}: drift ${was.drift}→${row.drift}, unattributed ${was.unspecified}→${row.unspecified_rows}`;
+            })
+            .join("; "),
     );
   }
 

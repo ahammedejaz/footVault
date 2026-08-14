@@ -262,7 +262,24 @@ export function CropStage({
         }}
         className={[
           "bg-fog relative aspect-square w-full overflow-hidden rounded-lg",
-          "focus-visible:outline-hidden",
+          /*
+            No `outline-hidden` here, and it must stay that way.
+
+            This div is `tabIndex={0}` and is operated entirely from the
+            keyboard — arrows nudge the crop, shift-arrows nudge it four times
+            as far, +/- zoom. It carried `focus-visible:outline-hidden` and
+            nothing in its place: no ring, no focus state, no background
+            change. So a keyboard user could focus it, press an arrow, and see
+            the photograph move with no indication of what they were driving.
+
+            The exemptions in `focus-ring.ts` are for controls that indicate
+            focus some other way — a menu item's `bg-accent` is a real
+            indicator, just not an outline. This one had none, which is why it
+            is fixed rather than allowlisted. `overflow-hidden` above clips the
+            image, not the indicator: an outline is painted outside the border
+            box and follows `rounded-lg`.
+          */
+
           // `touch-none` is not decoration: without it the browser claims the
           // drag for page scrolling and the photograph twitches once and stops.
           "touch-none select-none",
