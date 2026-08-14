@@ -48,6 +48,7 @@ import {
   placeCodOrder,
   sessionCookies,
 } from "./fixtures";
+import { assertServerNotProduction } from "./clients";
 import { BASE_URL } from "./routes";
 
 let passed = 0;
@@ -70,6 +71,13 @@ function check(label: string, condition: boolean, detail = "") {
 }
 
 async function main() {
+  /*
+    The browser writes wherever BASE_URL points, which the credential guard
+    cannot see. See clients.ts — this is the half that let production pick up
+    two guest carts on 2026-08-14.
+  */
+  await assertServerNotProduction(BASE_URL, "run audit:admin-pages");
+
   const admin = adminClient();
 
   /** An admin session, made by promoting a throwaway account with the service role. */

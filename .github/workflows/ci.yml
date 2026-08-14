@@ -60,37 +60,18 @@ jobs:
 
       # A "use server" module may only export async functions. Exporting a plain
       # object from one type-checks, builds clean, and then throws the first
-      # time the action is invoked — which is in production, on a button press.
-      # Phase 4 shipped exactly that (a SIGN_IN_IDLE constant) and only found it
-      # by clicking. `export type` is erased at build time and is fine.
+      # time the action is invoked — in production, on a button press. Phase 4
+      # shipped exactly that (a SIGN_IN_IDLE constant) and it was found by
+      # clicking. `export type` is erased at build time and is fine.
       #
-      # The file list matches a *directive*, not a mention. It used to be
-      # `grep -rl '"use server"' src`, which matches the string anywhere —
-      # including inside prose. Phase 6 added src/lib/orders/replacement.ts,
-      # whose doc comment explains that a "use server" file may only export
-      # async functions, and thereby tripped the check that enforces it. CI has
-      # been red on main since that merge. A directive is a string-literal
-      # statement, so it is anchored to the start and end of its own line, and
-      # both quote styles are matched because Prettier's choice is not a rule.
+      # This was an inline shell loop until 2026-08-14. It works under bash,
+      # which is what CI runs, and is vacuous under zsh — where `for f in
+      # $directives` does not word-split, so the loop ran once with all 28 paths
+      # as one filename and reported a pass having checked nothing. Green here
+      # and silent on the machine the code is written on, the same split the
+      # client-component guard had. See scripts/ci/use-server-exports.mjs.
       - name: Assert "use server" files export only async functions
-        run: |
-          offenders=""
-          directives=$(
-            { grep -rlE '^[[:space:]]*"use server";?[[:space:]]*$' src || true
-              grep -rlE "^[[:space:]]*'use server';?[[:space:]]*\$" src || true
-            } | sort -u
-          )
-          for f in $directives; do
-            hits=$(grep -nE '^export (const|let|var|class|enum|function[^ ]*[^c] )' "$f"               | grep -vE '^\s*[0-9]+:export (async function|type|interface)' || true)
-            if [ -n "$hits" ]; then
-              offenders="$offenders$f\n$hits\n"
-            fi
-          done
-          if [ -n "$offenders" ]; then
-            echo 'A "use server" file may only export async functions:'
-            printf "$offenders"
-            exit 1
-          fi
+        run: npm run guard:use-server
 
   # The service_role key must never reach the browser bundle. This fails the PR
   # if it is referenced anywhere outside the server-only Supabase admin client.
@@ -99,6 +80,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+
+      # This job installs nothing — the three checks below read the tree and
+      # need no dependencies. Node is pinned anyway because the last of them is
+      # now a script rather than a grep, and inheriting whatever the runner
+      # image happens to ship is how a guard starts behaving differently from
+      # the machine it was written on.
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
 
       - name: Assert SUPABASE_SERVICE_ROLE_KEY is server-only
         run: |
@@ -125,33 +115,15 @@ jobs:
           fi
 
       # A Client Component that imports a server-only module is a build error in
-      # Next, but only if the import is a *value* import. A type-only import
-      # (`import type { … } from`) is erased at compile time and reaches no
-      # server code, so it is allowed: query modules are where the shared view
-      # models are inferred from, and forcing every client file to re-declare
-      # them by hand is a worse boundary than letting the types flow. What this
-      # guard exists to stop is a *value* reaching the browser bundle.
+      # Next, but only if the import is a *value* import. A type-only import is
+      # erased at compile time and reaches no server code, so it is allowed.
       #
-      # The old line-based grep could not tell the two apart — a multi-line
-      # `import type {\n …\n} from "@/lib/queries/…"` puts `from` on a line
-      # with no `import` on it, and the guard sat red on main for two days over
-      # exactly that (appearance-editor.tsx, Phase 10 C2). So the check reads
-      # the whole file as one record (-z) and matches an import/export
-      # statement that is NOT `import type` / `export type` up to its `from`
-      # clause. `[^;]*?` cannot cross a statement boundary because Prettier
-      # ends every statement with a semicolon. An inline-mixed
-      # `import { type A, b } from` is still a value import and still flagged.
+      # This was an inline shell loop around `grep -Pzq` until 2026-08-14. `-P`
+      # is a GNU extension: on BSD grep every invocation errored, the offender
+      # list stayed empty, and the step passed without testing anything — green
+      # here and vacuous on every macOS checkout, which is where the mistake
+      # gets made. It is a script now, in a regex engine that exists wherever
+      # Node does, and it fails if it scans zero files. See
+      # scripts/ci/client-server-imports.mjs.
       - name: Assert client components do not reach server-only modules
-        run: |
-          offenders=""
-          for f in $(grep -rln '"use client"' src || true); do
-            if grep -Pzq '\b(import|export)\s+(?!type\b)[^;]*?from\s+"@/lib/(supabase/(server|admin|static)"|queries/)' "$f"; then
-              offenders="$offenders$f\n"
-            fi
-          done
-          if [ -n "$offenders" ]; then
-            echo "Client components importing a server-only module (value import):"
-            printf "$offenders"
-            exit 1
-          fi
-
+        run: npm run guard:client-imports

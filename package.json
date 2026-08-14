@@ -88,7 +88,9 @@
     "audit:loyalty": "NODE_OPTIONS=--conditions=react-server tsx scripts/audit/loyalty.ts",
     "audit:headers": "tsx scripts/audit/security-headers.ts",
     "audit:privacy": "tsx scripts/audit/privacy-processors.ts",
-    "audit:contact": "tsx scripts/audit/contact-details.ts"
+    "audit:contact": "tsx scripts/audit/contact-details.ts",
+    "guard:client-imports": "node scripts/ci/client-server-imports.mjs",
+    "guard:use-server": "node scripts/ci/use-server-exports.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.7.1",

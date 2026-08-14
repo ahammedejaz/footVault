@@ -47,6 +47,7 @@ for (const line of readFileSync(".env.local", "utf8").split("\n")) {
 
 import type { Json } from "../../src/lib/database.types";
 import { adminClient } from "./fixtures";
+import { assertServerNotProduction } from "./clients";
 import { BASE_URL } from "./routes";
 
 let passed = 0;
@@ -174,6 +175,13 @@ const FIXTURES: Fixture[] = [
 ];
 
 async function main() {
+  /*
+    The browser writes wherever BASE_URL points, which the credential guard
+    cannot see. See clients.ts — this is the half that let production pick up
+    two guest carts on 2026-08-14.
+  */
+  await assertServerNotProduction(BASE_URL, "run audit:homepage-tokens");
+
   const admin = adminClient();
 
   section("0 · every section type is either covered or explicitly excused");

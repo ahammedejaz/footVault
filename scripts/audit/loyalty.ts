@@ -29,6 +29,7 @@ import { adminClient, assertNotProduction, createAccount, sessionCookies } from 
 
 import { chromium } from "playwright";
 
+import { assertServerNotProduction } from "./clients";
 import { BASE_URL } from "./routes";
 
 let failures = 0;
@@ -47,6 +48,13 @@ function section(title: string) {
 }
 
 async function main(): Promise<void> {
+  /*
+    The browser writes wherever BASE_URL points, which the credential guard
+    cannot see. See clients.ts — this is the half that let production pick up
+    two guest carts on 2026-08-14.
+  */
+  await assertServerNotProduction(BASE_URL, "run audit:loyalty");
+
   assertNotProduction("build loyalty fixtures");
   const db = adminClient();
   const owner = await createAccount("loyalty-owner");

@@ -22,6 +22,7 @@ import {
   FIXTURE_SLUGS,
   type QaFixture,
 } from "./fixtures";
+import { assertServerNotProduction } from "./clients";
 import { AUDIT_ROUTES, BASE_URL } from "./routes";
 import { auditStates, jarFor, type AuditState } from "./states";
 
@@ -345,6 +346,13 @@ async function scanToastContrast(browser: Browser): Promise<number> {
 }
 
 async function main() {
+  /*
+    The browser writes wherever BASE_URL points, which the credential guard
+    cannot see. See clients.ts — this is the half that let production pick up
+    two guest carts on 2026-08-14.
+  */
+  await assertServerNotProduction(BASE_URL, "run audit:a11y");
+
   const browser = await chromium.launch();
   let violations = 0;
 

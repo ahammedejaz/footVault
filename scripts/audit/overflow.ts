@@ -12,6 +12,7 @@
 import { chromium, type Browser, type Page } from "playwright";
 
 import { buildFixture, type QaFixture } from "./fixtures";
+import { assertServerNotProduction } from "./clients";
 import { AUDIT_ROUTES, AUDIT_WIDTHS, BASE_URL } from "./routes";
 import { auditStates, jarFor, type AuditState } from "./states";
 
@@ -309,6 +310,13 @@ async function walkStates(
 }
 
 async function main() {
+  /*
+    The browser writes wherever BASE_URL points, which the credential guard
+    cannot see. See clients.ts — this is the half that let production pick up
+    two guest carts on 2026-08-14.
+  */
+  await assertServerNotProduction(BASE_URL, "run audit:overflow");
+
   const browser = await chromium.launch();
   const problems: string[] = [];
 

@@ -31,6 +31,7 @@ import {
   QA_ADDRESS,
   sessionCookies,
 } from "./fixtures";
+import { assertServerNotProduction } from "./clients";
 import { BASE_URL } from "./routes";
 
 let failures = 0;
@@ -257,6 +258,13 @@ async function typeInto(page: Page, id: string, value: string, label: string) {
 }
 
 async function main() {
+  /*
+    The browser writes wherever BASE_URL points, which the credential guard
+    cannot see. See clients.ts — this is the half that let production pick up
+    two guest carts on 2026-08-14.
+  */
+  await assertServerNotProduction(BASE_URL, "run audit:keyboard-checkout");
+
   console.log(
     "\nBrowse → bag → checkout → COD order → order history, by keyboard only\n",
   );

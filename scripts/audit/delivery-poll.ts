@@ -34,7 +34,7 @@
  * Run as: NODE_OPTIONS=--conditions=react-server tsx scripts/audit/delivery-poll.ts
  */
 // clients first: repoints this process at staging, refuses production.
-import { adminClient, assertNotProduction } from "./clients";
+import { adminClient, assertNotProduction, assertServerNotProduction } from "./clients";
 
 import { promoteDeliveredOrder } from "../../src/lib/orders/delivery";
 import { withinReplacementWindow } from "../../src/lib/orders/replacement-window";
@@ -85,6 +85,13 @@ const RTO_PAYLOAD: TrackingSnapshot = {
 };
 
 async function main(): Promise<void> {
+  /*
+    The browser writes wherever BASE_URL points, which the credential guard
+    cannot see. See clients.ts — this is the half that let production pick up
+    two guest carts on 2026-08-14.
+  */
+  await assertServerNotProduction(BASE_URL, "run audit:delivery-poll");
+
   assertNotProduction("build delivery-poll fixtures");
   const db = adminClient();
   const run = Date.now().toString(36);

@@ -36,7 +36,7 @@
 
 // clients first: this writes into staging and must never reach the live shop.
 import "./clients";
-import { assertNotProduction } from "./clients";
+import { assertNotProduction, assertServerNotProduction } from "./clients";
 
 assertNotProduction("run image-editor");
 
@@ -207,6 +207,13 @@ async function nudgeSlider(slider: Locator, presses: number, key = "ArrowRight")
 /* ---------------------------------------------------------------- main ---- */
 
 async function main() {
+  /*
+    The browser writes wherever BASE_URL points, which the credential guard
+    cannot see. See clients.ts — this is the half that let production pick up
+    two guest carts on 2026-08-14.
+  */
+  await assertServerNotProduction(BASE_URL, "run audit:image-editor");
+
   const admin = adminClient();
 
   const boot = await chromium.launch();

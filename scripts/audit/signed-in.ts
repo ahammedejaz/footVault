@@ -24,7 +24,7 @@
 // therefore built its accounts and admin promotions on the LIVE shop while
 // the app under test pointed at staging — found in Batch 3, the exact
 // near-miss clients.ts exists to stop. See the batch 3 report.
-import { assertNotProduction } from "./clients";
+import { assertNotProduction, assertServerNotProduction } from "./clients";
 import { createAccountWithEmail } from "./accounts";
 
 import { readFileSync } from "node:fs";
@@ -82,6 +82,13 @@ async function cookieJar(session: Session) {
 }
 
 async function main() {
+  /*
+    The browser writes wherever BASE_URL points, which the credential guard
+    cannot see. See clients.ts — this is the half that let production pick up
+    two guest carts on 2026-08-14.
+  */
+  await assertServerNotProduction(BASE_URL, "run audit:signedin");
+
   let bad = 0;
   const ok = (n: string, p: boolean, d = "") => {
     if (!p) bad++;

@@ -34,13 +34,7 @@ import type { Session, SupabaseClient } from "@supabase/supabase-js";
 import type { Browser, Cookie, Page } from "playwright";
 
 import type { Database } from "../../src/lib/database.types";
-import {
-  adminClient,
-  anonKey,
-  assertNotProduction,
-  QA_EMAIL_PREFIX,
-  supabaseUrl,
-} from "./clients";
+import { QA_EMAIL_PREFIX, adminClient, anonKey, assertNotProduction, assertServerNotProduction, supabaseUrl } from "./clients";
 import { BASE_URL } from "./routes";
 
 /**
@@ -141,6 +135,13 @@ export async function addToBag(
   page: Page,
   slug: string,
 ): Promise<string | null> {
+  /*
+    This module has no `main()` — it is the library every browser harness builds
+    its fixtures with, so the guard goes where it actually drives a browser. The
+    call is memoised per base URL in clients.ts, so building three fixtures costs
+    one check rather than six.
+  */
+  await assertServerNotProduction(BASE_URL, "build QA fixtures");
   await page.goto(`${BASE_URL}/product/${slug}`, { waitUntil: "load" });
   const chip = page
     .locator('button[aria-label^="UK "]:not([aria-label*="sold out"])')
@@ -262,6 +263,7 @@ export async function placeCodOrder(
     }
   }
 
+  await assertServerNotProduction(BASE_URL, "build QA fixtures");
   await page.goto(`${BASE_URL}/order/${number}`, { waitUntil: "load" });
   return number;
 }

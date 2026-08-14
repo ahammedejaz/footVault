@@ -228,10 +228,29 @@ export function isProductionUrl(url: string): boolean {
  * What it does catch is the accident that actually happened, and the split-brain
  * variant of it, both loudly.
  */
-export async function assertServerNotProduction(
+const serverChecks = new Map<string, Promise<void>>();
+
+/**
+ * Memoised per base URL.
+ *
+ * Every harness calls this from `main()`, and `fixtures.ts` calls it again from
+ * the two places it drives a browser — so a run that builds three fixtures would
+ * otherwise fetch the same two pages seven times to re-learn the same fact. The
+ * promise is cached rather than the result, so concurrent callers share one
+ * check and a refusal is thrown to all of them.
+ */
+export function assertServerNotProduction(
   baseUrl: string,
   action: string,
 ): Promise<void> {
+  const cached = serverChecks.get(baseUrl);
+  if (cached) return cached;
+  const check = checkServer(baseUrl, action);
+  serverChecks.set(baseUrl, check);
+  return check;
+}
+
+async function checkServer(baseUrl: string, action: string): Promise<void> {
   const expected = projectRefOf(SUPABASE_URL);
   let served: string | null = null;
 
@@ -253,9 +272,10 @@ export async function assertServerNotProduction(
     throw new Error(
       `Refusing to ${action}: ${baseUrl} is serving the production database.\n\n` +
         `  The server there is backed by ${PRODUCTION_PROJECT_REF}, the live shop.\n` +
-        `  This harness types QA values into real forms, so the browser writes them\n` +
-        `  wherever that server points — no matter what credentials this process\n` +
-        `  holds, and this process's credentials are ${expected || "(unset)"}.\n\n` +
+        `  A browser driven at this URL writes to whatever database that server\n` +
+        `  is backed by — a cart, an account, an order, a settings row — no matter\n` +
+        `  what credentials this process holds, and this process holds\n` +
+        `  ${expected || "(unset)"}.\n\n` +
         `  Run \`npm run dev:stage\` and point AUDIT_BASE_URL at it.`,
     );
   }

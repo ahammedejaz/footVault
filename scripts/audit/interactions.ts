@@ -16,7 +16,14 @@
  */
 import { chromium, type Page } from "playwright";
 
+import { assertNotProduction, assertServerNotProduction } from "./clients";
 import { BASE_URL } from "./routes";
+
+/*
+  This harness clicks "Add to bag", so it writes — a cart, in whatever database
+  the server it is driving is backed by. It had neither guard. Both now.
+*/
+assertNotProduction("run audit:interactions");
 
 const problems: string[] = [];
 const check = (ok: boolean, message: string) => {
@@ -242,6 +249,13 @@ async function stickyBar(page: Page) {
 }
 
 async function main() {
+  /*
+    The browser writes wherever BASE_URL points, which the credential guard
+    cannot see. See clients.ts — this is the half that let production pick up
+    two guest carts on 2026-08-14.
+  */
+  await assertServerNotProduction(BASE_URL, "run audit:interactions");
+
   const browser = await chromium.launch();
   const page = await browser.newPage({
     viewport: { width: 1440, height: 900 },

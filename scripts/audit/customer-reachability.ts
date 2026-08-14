@@ -38,6 +38,7 @@ import { chromium, type Browser, type Page } from "playwright";
 
 import { adminClient, buildFixture } from "./fixtures";
 import { whatsappHref } from "../../src/lib/contact";
+import { assertServerNotProduction } from "./clients";
 import { BASE_URL } from "./routes";
 
 let failures = 0;
@@ -229,6 +230,13 @@ async function storedWhatsApp(): Promise<string> {
 /* --------------------------------------------------------------- main ---- */
 
 async function main() {
+  /*
+    The browser writes wherever BASE_URL points, which the credential guard
+    cannot see. See clients.ts — this is the half that let production pick up
+    two guest carts on 2026-08-14.
+  */
+  await assertServerNotProduction(BASE_URL, "run audit:reachability");
+
   console.log("\nCustomer-facing reachability\n");
 
   const routes = pagesFromFilesystem();

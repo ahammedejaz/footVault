@@ -21,6 +21,7 @@
 import { chromium, type Page } from "playwright";
 
 import { buildFixture } from "./fixtures";
+import { assertServerNotProduction } from "./clients";
 import { AUDIT_ROUTES, BASE_URL } from "./routes";
 import { auditStates, jarFor } from "./states";
 
@@ -70,6 +71,13 @@ async function settle(page: Page, path: string) {
 }
 
 async function main() {
+  /*
+    The browser writes wherever BASE_URL points, which the credential guard
+    cannot see. See clients.ts — this is the half that let production pick up
+    two guest carts on 2026-08-14.
+  */
+  await assertServerNotProduction(BASE_URL, "run audit:hydration");
+
   console.log("\nConsole cleanliness, in a browser with no extensions\n");
 
   const browser = await chromium.launch();

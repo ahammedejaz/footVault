@@ -37,7 +37,7 @@
  * learned the observable way.
  */
 import "./clients";
-import { assertNotProduction } from "./clients";
+import { assertNotProduction, assertServerNotProduction } from "./clients";
 
 assertNotProduction("run the appearance audit");
 
@@ -107,6 +107,13 @@ type SectionRow = {
 const FIXTURE_CLIP_PATH = "qa-appearance-fixture.mp4";
 
 async function main() {
+  /*
+    The browser writes wherever BASE_URL points, which the credential guard
+    cannot see. See clients.ts — this is the half that let production pick up
+    two guest carts on 2026-08-14.
+  */
+  await assertServerNotProduction(BASE_URL, "run audit:appearance");
+
   const admin = adminClient();
   let fixtureClipInstalled = false;
 
