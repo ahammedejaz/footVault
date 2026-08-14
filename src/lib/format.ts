@@ -46,3 +46,32 @@ export function discountPercent(
   if (!salePaise || salePaise >= basePaise || basePaise <= 0) return null;
   return Math.floor(((basePaise - salePaise) / basePaise) * 100);
 }
+
+const RELATIVE = new Intl.RelativeTimeFormat("en-IN", { numeric: "always" });
+
+/**
+ * "4 minutes ago", for a timestamp somebody is reading to decide whether
+ * something is wrong right now. An absolute time makes them do the subtraction.
+ *
+ * It lived in `src/lib/payments/health.ts` until 2026-08-15, with a comment
+ * explaining that it belonged there rather than here because it was only ever
+ * applied to health timestamps. That stopped being true the moment a Client
+ * Component needed it — and `health.ts` is `server-only`, so the import was a
+ * build error, caught by the build and by nothing before it. `guard:client-imports`
+ * did not see it: that guard names three server-only paths by hand and this was
+ * a fourth. (It now derives the list from the tree; see the script.)
+ *
+ * Pure and `now` is injectable, so every branch is testable without a clock.
+ */
+export function relativeAge(iso: string, now = new Date()): string {
+  const ms = Date.parse(iso);
+  if (Number.isNaN(ms)) return "at a time we cannot read";
+
+  const seconds = Math.round((ms - now.getTime()) / 1_000);
+  if (Math.abs(seconds) < 60) return RELATIVE.format(seconds, "second");
+  const minutes = Math.round(seconds / 60);
+  if (Math.abs(minutes) < 60) return RELATIVE.format(minutes, "minute");
+  const hours = Math.round(minutes / 60);
+  if (Math.abs(hours) < 24) return RELATIVE.format(hours, "hour");
+  return RELATIVE.format(Math.round(hours / 24), "day");
+}

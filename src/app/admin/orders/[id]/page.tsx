@@ -15,6 +15,8 @@ import { AdminPage, Chip, ORDER_STATUS_TONE, Panel, PageHeader } from "@/compone
 import { formatPaise } from "@/lib/format";
 import { refundPanelState } from "@/lib/orders/refunds";
 import { rtoPanelState } from "@/lib/orders/rto";
+import { courierEventsForOrder } from "@/lib/queries/admin/courier";
+import { createClient } from "@/lib/supabase/server";
 import {
   getOrderDetail,
   getOrderShipment,
@@ -46,7 +48,8 @@ export default async function AdminOrderDetailPage({
   const order = await getOrderDetail(id);
   if (!order) notFound();
 
-  const [shipmentRow, shipmentError, refundState, rtoState] = await Promise.all([
+  const [shipmentRow, shipmentError, refundState, rtoState, courierEvents] =
+    await Promise.all([
     getOrderShipment(order.id),
     /**
      * Read even when there is no shipment row, which is the case that matters.
@@ -66,6 +69,12 @@ export default async function AdminOrderDetailPage({
     // Null when the order has no RTO dimension, which is the common case and
     // draws nothing. Same post-authorisation position as the refund state.
     rtoPanelState(id),
+    /**
+     * Anything a courier has said about this parcel that the shop declined to
+     * act on. Empty on every healthy order, which is why it draws nothing at
+     * all rather than an empty panel saying so.
+     */
+    courierEventsForOrder(await createClient(), id),
   ]);
 
   /**
@@ -251,6 +260,39 @@ export default async function AdminOrderDetailPage({
                     failedAt: shipmentError.failed_at,
                   }}
                 />
+              </div>
+            ) : null}
+
+            {/*
+              Above the buttons for the same reason as the error above it, and
+              more sharply: this is where the panel would otherwise offer to
+              book a pickup for a parcel the courier has already cancelled.
+              FV-2026-00668 has been offering exactly that since 14 August.
+            */}
+            {courierEvents.length > 0 ? (
+              <div
+                role="status"
+                className="border-destructive/50 bg-destructive/5 mb-4 rounded-md border p-3 text-sm text-pretty"
+              >
+                <p className="font-medium">
+                  The courier has said something about this parcel that the shop
+                  did not act on.
+                </p>
+                <ul className="mt-2 space-y-2">
+                  {courierEvents.map((event) => (
+                    <li key={event.id}>
+                      {event.statusText ? (
+                        <span className="font-medium">
+                          &ldquo;{event.statusText}&rdquo;{" "}
+                        </span>
+                      ) : null}
+                      {event.reason}
+                    </li>
+                  ))}
+                </ul>
+                <p className="text-muted-foreground mt-2 text-xs">
+                  Clear it from the dashboard once you have dealt with it.
+                </p>
               </div>
             ) : null}
 

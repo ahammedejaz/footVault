@@ -585,6 +585,80 @@ export type Database = {
         }
         Relationships: []
       }
+      courier_events: {
+        Row: {
+          attention_reason: string | null
+          awb: string | null
+          channel_order_id: string | null
+          courier_order_id: string | null
+          event_key: string
+          id: string
+          interpretation: string
+          matched_by: string | null
+          needs_attention: boolean
+          order_id: string | null
+          outcome: string
+          payload: Json | null
+          received_at: string
+          resolved_at: string | null
+          resolved_by: string | null
+          source: string
+          status_at: string | null
+          status_id: number | null
+          status_text: string | null
+        }
+        Insert: {
+          attention_reason?: string | null
+          awb?: string | null
+          channel_order_id?: string | null
+          courier_order_id?: string | null
+          event_key: string
+          id?: string
+          interpretation: string
+          matched_by?: string | null
+          needs_attention?: boolean
+          order_id?: string | null
+          outcome: string
+          payload?: Json | null
+          received_at?: string
+          resolved_at?: string | null
+          resolved_by?: string | null
+          source: string
+          status_at?: string | null
+          status_id?: number | null
+          status_text?: string | null
+        }
+        Update: {
+          attention_reason?: string | null
+          awb?: string | null
+          channel_order_id?: string | null
+          courier_order_id?: string | null
+          event_key?: string
+          id?: string
+          interpretation?: string
+          matched_by?: string | null
+          needs_attention?: boolean
+          order_id?: string | null
+          outcome?: string
+          payload?: Json | null
+          received_at?: string
+          resolved_at?: string | null
+          resolved_by?: string | null
+          source?: string
+          status_at?: string | null
+          status_id?: number | null
+          status_text?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "courier_events_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       homepage_sections: {
         Row: {
           created_at: string

@@ -9,11 +9,16 @@ import { getOrderDetail } from "@/lib/queries/admin/orders";
 import {
   assignAwb,
   createShipment,
-  fetchTracking,
+  readTracking,
   generateDocuments,
   schedulePickup,
   type TrackingSnapshot,
 } from "@/lib/shipping/fulfilment";
+import {
+  applyCourierSignal,
+  signalFromTracking,
+} from "@/lib/shipping/inbound";
+import { maybeRow } from "@/lib/queries/run";
 
 /**
  * The five buttons on an order's shipping panel.
@@ -271,14 +276,116 @@ export async function trackOrder(
           message: "That is not an order.",
         };
 
-      const outcome = await fetchTracking(supabase, parsed.data.orderId);
+      const outcome = await readTracking(supabase, parsed.data.orderId);
       if (!outcome.ok) {
         revalidatePath(`/admin/orders/${parsed.data.orderId}`);
         return { ok: false, reason: "error", message: outcome.message };
       }
 
+      /**
+       * The button reads, and the shared seam decides.
+       *
+       * Until 2026-08-15 this call cached whatever Shiprocket said onto the
+       * shipment row and acted on two patterns; anything else became a caption
+       * the owner might notice. So a portal cancellation was, at best, a word
+       * on this page — which is what FV-2026-00668 was, and nobody saw it.
+       * Going through `applyCourierSignal` means pressing Refresh on a
+       * cancelled parcel now raises it on the dashboard, exactly as the webhook
+       * would, and dedupes against the webhook if both see the same transition.
+       */
+      const order = await maybeRow<{ order_number: string }>(
+        "shipping.trackOrder.number",
+        supabase
+          .from("orders")
+          .select("order_number")
+          .eq("id", parsed.data.orderId)
+          .maybeSingle(),
+      );
+      const signal = signalFromTracking(
+        "admin",
+        { awb: outcome.awb, orderNumber: order?.order_number ?? null },
+        outcome.tracking,
+        outcome.raw,
+      );
+      await applyCourierSignal(
+        supabase,
+        signal,
+        JSON.stringify(outcome.raw ?? {}),
+      );
+
       revalidatePath(`/admin/orders/${parsed.data.orderId}`);
+      revalidatePath("/admin");
       return { ok: true, tracking: outcome.tracking };
+    },
+  );
+}
+
+const courierEventSchema = z.object({
+  id: z.uuid("That is not a courier event."),
+});
+
+/**
+ * "I have dealt with this."
+ *
+ * The only thing an operator can do to a raised courier event, and the only
+ * thing this deploy lets them do to one. It clears the row from the dashboard
+ * and records who cleared it and when; it does **not** refund anything, cancel
+ * anything, or move an order.
+ *
+ * That separation is deliberate and it is the answer to the obvious objection —
+ * that a queue you can only dismiss is a queue that gets dismissed. The
+ * alternative is a button on the dashboard that returns a customer's money on
+ * the strength of a courier status string this shop has, by its own admission,
+ * never successfully interpreted. Whether a parcel is actually dead is a fact
+ * that lives in the Shiprocket portal. So the mechanism computes the amount,
+ * names the order, and puts a person in front of the decision; the refund is
+ * made where refunds are made, and *this* row's job is to stop the shop
+ * forgetting the decision exists.
+ *
+ * Resolving is not destructive: the event stays, with a resolver and a
+ * timestamp, and the payload stays with it. It is the audit trail of a
+ * cancellation that somebody looked at.
+ */
+export async function resolveCourierEvent(
+  input: unknown,
+): Promise<AdminResult<object>> {
+  return adminAction<object>(
+    "resolveCourierEvent",
+    "adminMutation",
+    async ({ supabase, actor }) => {
+      const parsed = courierEventSchema.safeParse(input);
+      if (!parsed.success)
+        return {
+          ok: false,
+          reason: "invalid",
+          message: "That is not a courier event.",
+        };
+
+      const { data, error } = await supabase
+        .from("courier_events")
+        .update({
+          resolved_at: new Date().toISOString(),
+          resolved_by: actor.id,
+        })
+        .eq("id", parsed.data.id)
+        .is("resolved_at", null)
+        .select("order_id")
+        .maybeSingle();
+
+      if (error)
+        return {
+          ok: false,
+          reason: "error",
+          message: "That could not be marked as dealt with. Nothing changed.",
+        };
+      if (!data)
+        // Already resolved, by the other tab or the other person. Not an error:
+        // the thing they wanted is true.
+        return { ok: true };
+
+      revalidatePath("/admin");
+      if (data.order_id) revalidatePath(`/admin/orders/${data.order_id}`);
+      return { ok: true };
     },
   );
 }

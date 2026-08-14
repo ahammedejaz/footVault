@@ -8,6 +8,7 @@ import {
   isRtoTrackingStatus,
 } from "@/lib/orders/rto";
 import { shiprocketFetch, type ShiprocketResult } from "@/lib/shipping/client";
+import { courierInstant } from "@/lib/shipping/courier-time";
 import { shiprocketPickupLocation } from "@/lib/shipping/config";
 import { chooseCourier } from "@/lib/shipping/courier-choice";
 import {
@@ -909,23 +910,26 @@ export type TrackingSnapshot = {
 };
 
 /**
- * Where the parcel is.
+ * Where the parcel is — the **read**, and nothing else.
  *
- * Two callers since Phase 11: the admin's "Refresh tracking" button
- * (`trackOrder`), and the delivery poller
- * (`/api/cron/poll-deliveries`) — the Phase 10 header said "polled on view,
- * never in the background", and Phase 11 reversed that deliberately, because
- * a `delivered_at` that only exists when somebody presses a button turned out
- * to be a `delivered_at` that never exists (zero non-null values across the
- * shop's history, audit 11B). Both callers run this same function: two
- * implementations of "has this parcel arrived" is how they drift, and RTO
- * detection is wired in here too.
+ * Until 2026-08-15 this function was `fetchTracking` and it did two jobs: ask
+ * the courier, then decide what the answer meant. Deciding has moved to
+ * `applyCourierSignal` in `inbound.ts`, because a third caller arrived — the
+ * push webhook — and three interpretations of one courier's vocabulary is how
+ * they drift. Its two existing callers, the admin's "Refresh tracking" button
+ * and the reconciliation sweep, now read here and interpret there, which is
+ * also how they both inherited the property neither had: a status this shop
+ * does not understand is recorded and raised instead of cached and forgotten.
+ *
+ * The write path it used to call, `applyTracking`, is unchanged and is still
+ * the only thing that stamps `delivered_at`. See `applyTrackingSnapshot`.
  */
-export async function fetchTracking(
+export async function readTracking(
   supabase: Db,
   orderId: string,
 ): Promise<
-  { ok: true; tracking: TrackingSnapshot } | { ok: false; message: string }
+  | { ok: true; tracking: TrackingSnapshot; raw: unknown; awb: string }
+  | { ok: false; message: string }
 > {
   const shipment = await getShipment(supabase, orderId);
   if (!shipment?.awb_code)
@@ -945,10 +949,13 @@ export async function fetchTracking(
     return { ok: false, message: result.message };
   }
 
-  const tracking = readTracking(result);
-  await applyTracking(supabase, orderId, shipment, tracking, result.data);
   await clearShipmentError(supabase, orderId);
-  return { ok: true, tracking };
+  return {
+    ok: true,
+    tracking: parseTracking(result),
+    raw: result.data,
+    awb: shipment.awb_code,
+  };
 }
 
 /**
@@ -1067,38 +1074,6 @@ async function applyTracking(
   }
 }
 
-/**
- * The parcels the delivery poller should ask about, oldest first.
- *
- * Every filter is a reason not to spend a Shiprocket call: no AWB means
- * nothing to track; a stamped `delivered_at` or `rto_at` means the question
- * is answered; a status other than `shipped` means no transition could
- * follow; and the 45-day age cap means a parcel lost in 2026 is not still
- * being polled in 2027 — Shiprocket's quota is finite and it also moves the
- * shop's real parcels. The cap bounds a tick after an outage for the same
- * reason the reconciler's does: an unbounded backlog is a self-inflicted
- * rate-limit incident.
- */
-export async function inFlightDeliveryCandidates(
-  supabase: Db,
-  limit: number,
-): Promise<{ id: string; order_number: string }[]> {
-  const cutoff = new Date(Date.now() - 45 * 24 * 60 * 60_000).toISOString();
-  return rows<{ id: string; order_number: string }>(
-    "fulfilment.inFlightDeliveryCandidates",
-    supabase
-      .from("orders")
-      .select("id, order_number, shipments!inner(awb_code)")
-      .eq("status", "shipped")
-      .is("delivered_at", null)
-      .is("rto_at", null)
-      .gt("placed_at", cutoff)
-      .not("shipments.awb_code", "is", null)
-      .order("placed_at", { ascending: true })
-      .limit(limit),
-  );
-}
-
 /** Shiprocket's own words for "it arrived". Matched loosely; it varies by courier. */
 function isDelivered(status: string | null): boolean {
   return status !== null && /delivered/i.test(status) && !/undelivered/i.test(status);
@@ -1114,7 +1089,10 @@ function isDelivered(status: string | null): boolean {
  * Shiprocket returns dates as `YYYY-MM-DD HH:MM:SS` in IST with no offset, and
  * `new Date()` on that string would read it as the server's local time — which
  * on Vercel is UTC, putting delivery five and a half hours early and shortening
- * every customer's window by that much. The offset is therefore explicit.
+ * every customer's window by that much. That rule now lives in
+ * `courier-time.ts`, shared with the inbound webhook, because a timezone
+ * assumption held in two places is one somebody eventually relaxes in one of
+ * them.
  */
 function deliveredTimestamp(tracking: TrackingSnapshot): string | null {
   if (!isDelivered(tracking.status)) return null;
@@ -1122,14 +1100,8 @@ function deliveredTimestamp(tracking: TrackingSnapshot): string | null {
   const line = tracking.activities.find(
     (activity) => isDelivered(activity.activity) || isDelivered(activity.date),
   );
-  const raw = line?.date;
-  if (raw) {
-    const withZone = /[zZ]|[+-]\d{2}:?\d{2}$/.test(raw)
-      ? raw
-      : `${raw.replace(" ", "T")}+05:30`;
-    const parsed = new Date(withZone);
-    if (!Number.isNaN(parsed.getTime())) return parsed.toISOString();
-  }
+  const parsed = courierInstant(line?.date);
+  if (parsed) return parsed;
   // Delivered, but the courier gave us no usable time. Better a window that
   // starts late than no window at all.
   return new Date().toISOString();
@@ -1146,7 +1118,7 @@ type TrackingResponse = {
   };
 };
 
-function readTracking(
+function parseTracking(
   result: ShiprocketResult<TrackingResponse> & { ok: true },
 ): TrackingSnapshot {
   const data = result.data?.tracking_data;

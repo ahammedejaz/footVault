@@ -22,7 +22,8 @@ homepage, without touching code.
 | Payments                | Prepaid and **Pay on Delivery**, both through Razorpay, behind one `PaymentAdapter`. `fetch` + `node:crypto`, **no SDK** |
 | Delivery                | Rates quoted live from the Shiprocket API. Nothing hardcoded; the thresholds are admin settings                          |
 | Email                   | Behind an `EmailAdapter`. Console adapter until a provider is configured                                                 |
-| Scheduled work          | `pg_cron`, inside Supabase. One job: the abandoned-order sweep                                                           |
+| Scheduled work          | `pg_cron`, inside Supabase: the abandoned-order sweep, and the courier reconciliation sweep every 30 min                  |
+| Courier state           | Shiprocket pushes to `/api/parcel/inbound`; the sweep pulls the same seam. Delivered and RTO act, everything else is raised |
 | Client UI state         | Zustand — the bag drawer, and nothing the server owns                                                                    |
 | Deployment              | Vercel                                                                                                                   |
 
@@ -58,6 +59,7 @@ Open http://localhost:3000. The design system renders at `/style-guide`.
 | `npm run audit:keyboard-checkout` | The checkout path by keyboard, to the place-order button                                                                                       |
 | `npm run audit:focus`             | The composite focus indicator actually paints on every interactive element                                                                     |
 | `npm run audit:gallery`           | The product gallery's runtime behaviour                                                                                                        |
+| `npm run audit:image-colour`      | An upload against a colourway appears in **that colourway's** gallery on a cached product page, and on no other                                 |
 | `npm run audit:hydration`         | Headless-Chromium console: no hydration mismatch below `<body>`                                                                                |
 | `npm run audit:interactions`      | The behaviour a screenshot cannot show                                                                                                         |
 | `npm run audit:links`             | Crawls every internal link; checks titles and JSON-LD                                                                                          |
@@ -70,6 +72,7 @@ Open http://localhost:3000. The design system renders at `/style-guide`.
 | `npm run audit:totals`            | The advance arithmetic in isolation — 15 assertions, no database and no browser                                                                |
 | `npm run audit:refunds`           | The refund promises against staging: the captured-amount ceiling, the double-click index, replay-equals-one-refund, the dashboard import       |
 | `npm run audit:rto`               | The RTO lifecycle against staging: detection idempotency, receive guards, restock-exactly-once with the ledger asserted, the repeat-phone flag |
+| `npm run audit:courier-inbound`   | The courier webhook: the IST offset, the numeric AWB, matching precedence, unknown statuses raised, replay, out-of-order, and the refusals      |
 | `npm run audit:admin`             | The admin surface: role gate, inventory ledger, reconciliation                                                                                 |
 | `npm run audit:security`          | The adversarial regression suite, through the real webhook route over HTTP                                                                     |
 | `npm run audit:lighthouse`        | Performance on a local production build, `--throttling-method=devtools`                                                                        |

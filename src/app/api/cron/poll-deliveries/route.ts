@@ -1,39 +1,67 @@
 import { NextResponse } from "next/server";
 
 import { authorisedCronRequest } from "@/lib/cron/auth";
-import { promoteDeliveredOrder } from "@/lib/orders/delivery";
-import { fetchTracking, inFlightDeliveryCandidates } from "@/lib/shipping/fulfilment";
+import { readTracking } from "@/lib/shipping/fulfilment";
+import {
+  applyCourierSignal,
+  reconciliationCandidates,
+  recordStalledShipment,
+  signalFromTracking,
+  stalledShipments,
+  STALLED_HOURS,
+} from "@/lib/shipping/inbound";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 /**
- * The poller that makes "delivered" real.
+ * The reconciliation sweep. Formerly the delivery poller, and the change of
+ * name is the change of job.
  *
- * Until Phase 11, `orders.delivered_at` was written only when an admin opened
- * an order and pressed "Refresh tracking" — which, measured against the
- * shop's entire history, was never (audit 11B: zero non-null values). The
- * 24-hour damage window had no clock behind it, and the two features this
- * phase adds — review eligibility and coin credit — would have hung off an
- * event that does not fire.
+ * ## What it was, and why it never once ran
  *
- * Every tick: take the in-flight shipments (AWB assigned, still `shipped`,
- * no delivery or RTO stamp, under 45 days old, capped per tick), ask
- * Shiprocket about each through `fetchTracking` — the same single
- * implementation the admin button uses, RTO detection included — and where
- * that leaves courier-stamped `delivered_at` evidence on the order, promote
- * its status through `transitionOrder`, which writes the history row and
- * sends the delivered email exactly as the button would.
+ * From 11 August it took orders that were `shipped`, with an AWB, and asked
+ * Shiprocket whether they had arrived. **No order in this shop's history has
+ * ever reached `shipped`**, so in the six days it ran — forty-eight ticks a day
+ * — it examined nothing, every time. Its own gate said as much in its header:
+ * "the first real delivery is the real test". FV-2026-00668 was `packed` with a
+ * courier assigned and a cancellation sitting in the Shiprocket portal, and the
+ * `shipped` filter excluded it by construction.
  *
- * **Never act on an unknown** — inherited verbatim from the reconciler
- * route's rule, and it matters more here because from Batch B this event
- * mints money. A timeout, a 500, an unparseable payload leaves the shipment
- * exactly as it was for the next tick; only the courier's own parsed
- * timestamp (`deliveredTimestamp`) ever counts as evidence, never a status
- * string the parser does not recognise.
+ * The filter was wrong for a reason worth keeping in mind: it took *our*
+ * workflow status as a precondition for asking *the courier* a question. An
+ * AWB is the real precondition. Our status is what the answer might change.
+ *
+ * ## Keep it, narrow it, or delete it — and why it stays
+ *
+ * The webhook this deploy adds is push, and push is the fast path. The brief
+ * that asked for it was right that two inbound paths which disagree are worse
+ * than one — so they are not two interpretations any more. Both parse into
+ * `CourierSignal`, both call `applyCourierSignal`, and both dedupe against each
+ * other on the same `event_key`: a sweep that rediscovers half an hour later
+ * what the webhook already told us writes nothing and raises nothing.
+ *
+ * Given that, the sweep earns its place as the **backstop**, because everything
+ * about the push path can fail silently and none of it is ours: the
+ * subscription lives in Shiprocket's portal where it can be deleted or disabled
+ * by their retry policy, there is no HMAC and therefore no delivery receipt,
+ * and a token rotated in one place and not the other turns every event into a
+ * 401 that nobody is watching for. A pull that runs every thirty minutes
+ * notices all of that within thirty minutes.
+ *
+ * It also reaches what the webhook structurally cannot: a shipment with **no
+ * AWB**, which produces no courier events at all because no courier has been
+ * involved. That is FV-2026-00571 — created 8 August, ₹349 taken, never
+ * assigned — and it is why `stalledShipments` exists beside the tracking sweep.
+ *
+ * ## What it may and may not do
+ *
+ * Never act on an unknown, inherited verbatim from the reconciler route. A
+ * timeout, a 500, an unreadable payload leaves the parcel exactly as it was for
+ * the next tick. And **this route moves no money and cancels nothing**: a
+ * cancelled or lost parcel becomes a row on the dashboard with the amount
+ * computed and a human's name on the decision. See `applyCourierSignal`.
  *
  * Scheduled by pg_cron → pg_net every 30 minutes
- * (supabase/migrations/20260811090100_schedule_delivery_poll.sql). The
- * reconciler runs at 10 because a charged customer is being cancelled; a
- * delivery discovered 30 minutes late costs nothing.
+ * (supabase/migrations/20260811090100_schedule_delivery_poll.sql).
  */
 
 /** `node:crypto` for the constant-time compare in the shared auth. */
@@ -48,9 +76,12 @@ export const dynamic = "force-dynamic";
  */
 const MAX_SHIPMENTS_PER_TICK = 40;
 
+/** The stalled sweep costs no courier calls, so its cap only bounds our own writes. */
+const MAX_STALLED_PER_TICK = 50;
+
 export async function POST(request: Request): Promise<NextResponse> {
   if (!authorisedCronRequest(request, "cron/poll-deliveries")) {
-    console.warn("[cron/poll-deliveries] rejected: bad or missing token");
+    console.warn("[cron/reconcile] rejected: bad or missing token");
     return NextResponse.json({ ok: false }, { status: 401 });
   }
 
@@ -58,9 +89,9 @@ export async function POST(request: Request): Promise<NextResponse> {
 
   let candidates;
   try {
-    candidates = await inFlightDeliveryCandidates(admin, MAX_SHIPMENTS_PER_TICK);
+    candidates = await reconciliationCandidates(admin, MAX_SHIPMENTS_PER_TICK);
   } catch (error) {
-    console.error("[cron/poll-deliveries] could not read candidates", {
+    console.error("[cron/reconcile] could not read candidates", {
       message: error instanceof Error ? error.message : "unknown",
     });
     // 500 so a monitored failure is visible as one. Nothing has been changed.
@@ -69,19 +100,22 @@ export async function POST(request: Request): Promise<NextResponse> {
 
   const tally = {
     examined: 0,
-    delivered: 0,
-    stillInFlight: 0,
+    applied: 0,
+    raised: 0,
+    duplicate: 0,
+    noChange: 0,
     unreachable: 0,
+    stalled: 0,
   };
 
   for (const order of candidates) {
     tally.examined++;
 
-    const tracked = await fetchTracking(admin, order.id);
+    const tracked = await readTracking(admin, order.id);
     if (!tracked.ok) {
-      // The unknown: courier unreachable, or payload unreadable. The shipment
-      // is exactly as it was, and next tick asks again.
-      console.warn("[cron/poll-deliveries] tracking unavailable", {
+      // The unknown: courier unreachable, or payload unreadable. The parcel is
+      // exactly as it was, and next tick asks again.
+      console.warn("[cron/reconcile] tracking unavailable", {
         orderNumber: order.order_number,
         message: tracked.message,
       });
@@ -89,26 +123,75 @@ export async function POST(request: Request): Promise<NextResponse> {
       continue;
     }
 
-    const outcome = await promoteDeliveredOrder(admin, order.id);
-    if ("result" in outcome && outcome.promoted) {
-      console.info("[cron/poll-deliveries] order delivered", {
+    const signal = signalFromTracking(
+      "sweep",
+      { awb: tracked.awb, orderNumber: order.order_number },
+      tracked.tracking,
+      tracked.raw,
+    );
+    const result = await applyCourierSignal(
+      admin,
+      signal,
+      JSON.stringify(tracked.raw ?? {}),
+    );
+
+    if (result.status === "duplicate") {
+      // The webhook got here first. This is the steady state once the portal is
+      // configured, and it is the evidence that the two paths agree.
+      tally.duplicate++;
+      continue;
+    }
+    if (result.status === "failed") {
+      console.error("[cron/reconcile] could not record", {
         orderNumber: order.order_number,
+        detail: result.message,
       });
-      tally.delivered++;
-    } else if ("result" in outcome && !outcome.promoted) {
-      // Evidence exists but the transition lost — a concurrent writer, or a
-      // state the transition table refuses. Worth seeing; next tick retries.
-      console.warn("[cron/poll-deliveries] promotion did not apply", {
+      tally.unreachable++;
+      continue;
+    }
+    if (result.outcome === "applied") {
+      console.info("[cron/reconcile] applied", {
         orderNumber: order.order_number,
-        result: outcome.result,
+        interpretation: result.interpretation,
       });
-      tally.stillInFlight++;
+      tally.applied++;
+    } else if (result.needsAttention) {
+      console.error("[cron/reconcile] NEEDS ATTENTION", {
+        orderNumber: order.order_number,
+        status: signal.statusText,
+        interpretation: result.interpretation,
+      });
+      tally.raised++;
     } else {
-      // No delivery evidence yet (or RTO detection just rerouted the order).
-      tally.stillInFlight++;
+      tally.noChange++;
     }
   }
 
-  console.info("[cron/poll-deliveries] tick complete", tally);
+  /**
+   * The half no webhook can reach. A shipment with no AWB has no courier and
+   * therefore no courier events, however well the push path is configured.
+   */
+  try {
+    for (const stalled of await stalledShipments(admin, MAX_STALLED_PER_TICK)) {
+      const result = await recordStalledShipment(admin, stalled);
+      if (result.status === "recorded") {
+        console.error("[cron/reconcile] NEEDS ATTENTION — stalled shipment", {
+          orderNumber: stalled.orderNumber,
+          hours: STALLED_HOURS,
+          moneyTakenPaise: stalled.moneyTakenPaise,
+        });
+        tally.stalled++;
+      }
+    }
+  } catch (error) {
+    // Reported and survived: the tracking sweep above has already done its
+    // work, and failing the whole tick because a second query hiccuped would
+    // throw away results that are already durable.
+    console.error("[cron/reconcile] stalled sweep failed", {
+      message: error instanceof Error ? error.message : "unknown",
+    });
+  }
+
+  console.info("[cron/reconcile] tick complete", tally);
   return NextResponse.json({ ok: true, ...tally });
 }

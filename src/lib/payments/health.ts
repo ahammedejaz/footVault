@@ -238,26 +238,12 @@ export function judgeWebhookLiveness(input: {
 
 /* ---------------------------------------------------------- presentation -- */
 
-const RELATIVE = new Intl.RelativeTimeFormat("en-IN", { numeric: "always" });
-
 /**
- * "4 minutes ago", for a timestamp the owner is reading to decide whether
- * something is wrong right now. An absolute time makes them do the subtraction.
- *
- * Here rather than in `src/lib/format.ts` because it is only ever applied to
- * these health timestamps, and safe to render on the server because the
- * dashboard is `force-dynamic` and never cached — there is no stale HTML for
- * this string to be stale in.
+ * Re-exported so the many callers that already say
+ * `import { relativeAge } from "@/lib/payments/health"` keep working. The
+ * implementation moved to `@/lib/format` when a Client Component needed it —
+ * this module is `server-only`, and a value import of it from the browser is a
+ * build error.
  */
-export function relativeAge(iso: string, now = new Date()): string {
-  const at = stamp(iso);
-  if (at === null) return "at a time we cannot read";
+export { relativeAge } from "@/lib/format";
 
-  const seconds = Math.round((at.ms - now.getTime()) / 1_000);
-  if (Math.abs(seconds) < 60) return RELATIVE.format(seconds, "second");
-  const minutes = Math.round(seconds / 60);
-  if (Math.abs(minutes) < 60) return RELATIVE.format(minutes, "minute");
-  const hours = Math.round(minutes / 60);
-  if (Math.abs(hours) < 24) return RELATIVE.format(hours, "hour");
-  return RELATIVE.format(Math.round(hours / 24), "day");
-}

@@ -10,6 +10,7 @@ import {
   Panel,
   StatTile,
 } from "@/components/admin/ui";
+import { CourierAlert } from "@/components/admin/shipping/courier-alert";
 import { ShiprocketWalletStatus } from "@/components/admin/shipping/wallet-status";
 import { Table, TableWrap, Td, Th } from "@/components/admin/table";
 import { Button } from "@/components/ui/button";
@@ -25,6 +26,8 @@ import {
   LOW_STOCK_THRESHOLD,
   type RefundQueue,
 } from "@/lib/queries/admin/dashboard";
+import { courierAttentionQueue } from "@/lib/queries/admin/courier";
+import { createClient } from "@/lib/supabase/server";
 import { shiprocketWalletStatus } from "@/lib/shipping/wallet";
 
 export const metadata: Metadata = { title: "Dashboard" };
@@ -52,10 +55,17 @@ export default async function AdminDashboard() {
    * rather than as a throw, so `Promise.all` cannot take the page down with it.
    * See `src/lib/shipping/wallet.ts`.
    */
-  const [snapshot, wallet, liability] = await Promise.all([
+  const supabase = await createClient();
+  const [snapshot, wallet, liability, courier] = await Promise.all([
     getDashboard(),
     shiprocketWalletStatus(),
     coinLiability(),
+    /**
+     * Fetched beside the rest rather than after it, and written to degrade to
+     * "could not check" rather than to throw — the same contract the wallet and
+     * the refund queue hold, so `Promise.all` cannot take the page down.
+     */
+    courierAttentionQueue(supabase),
   ]);
 
   return (
@@ -77,6 +87,14 @@ export default async function AdminDashboard() {
           does.
         */}
         <RefundsOwedAlert queue={snapshot.refundsOwed} />
+        {/*
+          Above the key-mode warning and below the refund queue. The ordering on
+          this page is "how much money is this costing right now", and a parcel
+          that is dead at the courier with the customer's money captured sits
+          exactly there: it is not yet a refund we owe (nobody has cancelled the
+          order), and it is more urgent than a misconfigured key.
+        */}
+        <CourierAlert queue={courier} />
         <KeyModeWarning check={snapshot.keyMode} />
         <ShiprocketWalletStatus status={wallet} />
         <WebhookStatus health={snapshot.webhook} />

@@ -525,6 +525,8 @@ const NOT_CONTENT: Record<string, string> = {
   collection_products: "a join table",
   coupon_customers: "who a coupon is restricted to",
   coupon_redemptions: "a record of a coupon being used",
+  courier_events:
+    "what a courier told us and what we made of it — raw payloads and a sentence for the owner, never customer-facing copy",
   coupons: "codes and audiences, not sentences — the discount is a figure the checkout computes, never copy",
   inbound_emails: "mail the shop received",
   integration_tokens: "credentials",
