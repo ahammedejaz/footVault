@@ -98,12 +98,14 @@ export default async function AdminProductPage({
           </p>
         ) : null}
 
-        {product.variants.length === 0 ? (
-          <p className="border-border bg-muted/50 text-pretty rounded-md border px-4 py-3 text-sm">
-            This product has no sizes yet, so nobody can buy it even if it is on
-            the shop. Add the sizes you have below.
-          </p>
-        ) : null}
+        <SellableChecklist
+          hasPrice={product.basePrice > 0}
+          sizes={product.variants.length}
+          stock={totalStock}
+          photographs={product.images.length}
+          isActive={product.isActive}
+          isDeleted={product.deletedAt !== null}
+        />
 
         <ProductForm
           product={product}
@@ -154,5 +156,105 @@ export default async function AdminProductPage({
         />
       </AdminPage>
     </>
+  );
+}
+
+/**
+ * What is still standing between this product and a customer being able to buy
+ * it.
+ *
+ * **This exists because "adding a product is complicated" was mostly not about
+ * the form.** Creating a product drops the owner onto this page, where three
+ * separate panels each hold part of the answer and none of them states the
+ * whole: a shoe can have a name, a price, photographs, be switched on, and
+ * still be unbuyable because it has no sizes — or have sizes that are all at
+ * zero. Working that out meant knowing the rules. Now the page says them.
+ *
+ * Two deliberate choices about what it does *not* do:
+ *
+ * It never renders when everything is done. A permanent green "all good" panel
+ * is furniture the owner learns to scroll past, and once they are scrolling
+ * past it they scroll past the version that had something to say.
+ *
+ * The last step is worded as an instruction rather than drawn as a button. The
+ * publish tick lives in the form below, and a second control that did the same
+ * write from a different place is a second thing to keep in step — and would
+ * let the owner publish from up here without passing the list of what is
+ * missing, which is the one thing this panel is for.
+ */
+function SellableChecklist({
+  hasPrice,
+  sizes,
+  stock,
+  photographs,
+  isActive,
+  isDeleted,
+}: {
+  hasPrice: boolean;
+  sizes: number;
+  stock: number;
+  photographs: number;
+  isActive: boolean;
+  isDeleted: boolean;
+}) {
+  // A removed product has its own notice directly above, which says something
+  // more urgent than this would.
+  if (isDeleted) return null;
+
+  const steps = [
+    {
+      done: hasPrice,
+      label: "Give it a price",
+      todo: "Set the usual price below. Nothing can be sold without one.",
+    },
+    {
+      done: sizes > 0,
+      label: "Add the sizes you have",
+      todo: "No sizes yet, so there is nothing for a customer to choose — a shoe with no sizes cannot be bought even when it is on the shop.",
+    },
+    {
+      done: sizes > 0 && stock > 0,
+      label: "Put stock against a size",
+      todo: "Every size is at zero, so the product page will show it as sold out.",
+    },
+    {
+      done: photographs > 0,
+      label: "Add a photograph",
+      todo: "The shop will show a blank card until there is at least one.",
+    },
+    {
+      done: isActive,
+      label: "Turn it on",
+      todo: "It is finished but still hidden. Tick “Customers can see and buy this” in the form below, then save.",
+    },
+  ];
+
+  const remaining = steps.filter((step) => !step.done);
+  if (remaining.length === 0) return null;
+
+  const next = remaining[0];
+
+  return (
+    <section
+      aria-labelledby="sellable-heading"
+      className="border-border bg-muted/40 rounded-md border px-4 py-3"
+    >
+      <h2 id="sellable-heading" className="text-sm font-semibold">
+        {remaining.length === 1
+          ? "One thing left before this can sell"
+          : `${remaining.length} things left before this can sell`}
+      </h2>
+      <p className="text-muted-foreground mt-1 max-w-prose text-sm text-pretty">
+        <strong className="text-foreground font-medium">{next.label}.</strong>{" "}
+        {next.todo}
+      </p>
+      {remaining.length > 1 ? (
+        <ol className="text-muted-foreground mt-2 space-y-0.5 text-sm">
+          {remaining.slice(1).map((step) => (
+            <li key={step.label}>· {step.label}</li>
+          ))}
+        </ol>
+      ) : null}
+    </section>
   );
 }

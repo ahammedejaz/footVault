@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ExternalLink } from "lucide-react";
 
-import { Panel } from "@/components/admin/ui";
+import { Disclosure, Panel } from "@/components/admin/ui";
 import { describedBy, Field } from "@/components/admin/products/field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -39,6 +39,29 @@ import {
  * the Zod issue path, so "that SKU is taken" lands under the SKU box and takes
  * focus, rather than appearing as a toast the owner has to map back onto a form
  * with twenty inputs.
+ *
+ * ## Two shapes, and why creating shows less than editing
+ *
+ * `/admin/products/new` has always described itself as asking "only for what a
+ * product cannot exist without", and it was not true: it rendered this
+ * component, and this component rendered all five panels. So adding a shoe
+ * opened with twenty-odd fields — parcel dimensions, a search title, a search
+ * description, extra search words, two publish checkboxes — of which three
+ * matter and the rest have working defaults. The owner's report was that adding
+ * a product is complicated. It was.
+ *
+ * Creating now renders **the basics and the price**, and nothing else. The
+ * fields left out are exactly the ones with a defensible default: parcel size
+ * falls back to the shop's usual box, every search field falls back to the
+ * product's own name and description, and `is_active` starts false on purpose
+ * (see `draftFrom`) because a product with no sizes and no photographs must not
+ * be buyable. None of them is a decision the owner is in a position to make
+ * before the shoe exists.
+ *
+ * Editing renders everything, with those same two groups behind a `Disclosure`
+ * so the page opens on what is usually being changed. The disclosures are
+ * closed rather than absent because "where did the parcel size go" is a support
+ * call and a summary line is not.
  */
 
 type Draft = {
@@ -443,154 +466,182 @@ export function ProductForm({
         </div>
       </Panel>
 
-      <Panel
-        title="Parcel size"
-        description="What the courier is told this pair weighs and measures."
-      >
-        <p className="text-muted-foreground mb-3 max-w-prose text-sm text-pretty">
-          Delivery is priced live by Shiprocket against these numbers. Leave any
-          of them blank and the shop default is used instead —{" "}
-          <strong className="text-foreground font-medium tabular-nums">
-            {parcel.weightGrams}g, {parcel.lengthCm} × {parcel.breadthCm} ×{" "}
-            {parcel.heightCm} cm
-          </strong>{" "}
-          — which is right for most shoe boxes. Fill them in for anything
-          noticeably heavier or bulkier, like boots, so the quote matches what
-          the courier actually charges.
+      {/*
+        Everything from here to the submit bar is edit-only. See the note at the
+        top of this file: none of it is a decision the owner can make before the
+        shoe exists, and all of it has a default that works.
+      */}
+      {product === null ? null : (
+        <Disclosure
+          title="Parcel size"
+          hint={`What the courier is told this pair weighs and measures. Left alone, the shop's usual box is used — ${parcel.weightGrams}g, ${parcel.lengthCm} × ${parcel.breadthCm} × ${parcel.heightCm} cm.`}
+        >
+          <p className="text-muted-foreground mb-3 max-w-prose text-sm text-pretty">
+            Delivery is priced live by Shiprocket against these numbers. Leave
+            any of them blank and the shop default is used instead —{" "}
+            <strong className="text-foreground font-medium tabular-nums">
+              {parcel.weightGrams}g, {parcel.lengthCm} × {parcel.breadthCm} ×{" "}
+              {parcel.heightCm} cm
+            </strong>{" "}
+            — which is right for most shoe boxes. Fill them in for anything
+            noticeably heavier or bulkier, like boots, so the quote matches what
+            the courier actually charges.
+          </p>
+          <div className="grid gap-4 sm:grid-cols-4">
+            <Field
+              htmlFor={id("weightGrams")}
+              label="Weight"
+              hint="Grams, boxed"
+              error={errors.weightGrams}
+            >
+              <Input
+                id={id("weightGrams")}
+                value={draft.weightGrams}
+                onChange={(event) => set("weightGrams", event.target.value)}
+                inputMode="numeric"
+                placeholder={String(parcel.weightGrams)}
+                autoComplete="off"
+                className="font-mono tabular-nums"
+                aria-invalid={errors.weightGrams ? true : undefined}
+                aria-describedby={describedBy(id("weightGrams"), {
+                  error: errors.weightGrams,
+                  hint: true,
+                })}
+              />
+            </Field>
+            <DimensionField
+              name="lengthCm"
+              label="Length"
+              value={draft.lengthCm}
+              fallback={parcel.lengthCm}
+              error={errors.lengthCm}
+              onChange={(value) => set("lengthCm", value)}
+            />
+            <DimensionField
+              name="breadthCm"
+              label="Breadth"
+              value={draft.breadthCm}
+              fallback={parcel.breadthCm}
+              error={errors.breadthCm}
+              onChange={(value) => set("breadthCm", value)}
+            />
+            <DimensionField
+              name="heightCm"
+              label="Height"
+              value={draft.heightCm}
+              fallback={parcel.heightCm}
+              error={errors.heightCm}
+              onChange={(value) => set("heightCm", value)}
+            />
+          </div>
+        </Disclosure>
+      )}
+
+      {product === null ? null : (
+        <Disclosure
+          title="How it is found"
+          hint="What Google shows, and the words a customer might search that your description does not use. Left alone, the product's own name and description are used."
+        >
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field
+              htmlFor={id("metaTitle")}
+              label="Search title"
+              error={errors.metaTitle}
+              hint={`${draft.metaTitle.length}/70 characters. Blank uses the product name.`}
+            >
+              <Input
+                id={id("metaTitle")}
+                value={draft.metaTitle}
+                onChange={(event) => set("metaTitle", event.target.value)}
+                maxLength={70}
+                autoComplete="off"
+                aria-invalid={errors.metaTitle ? true : undefined}
+                aria-describedby={describedBy(id("metaTitle"), {
+                  error: errors.metaTitle,
+                  hint: true,
+                })}
+              />
+            </Field>
+
+            <Field
+              htmlFor={id("searchKeywords")}
+              label="Extra search words"
+              hint="Separated by commas. Add what a customer would type — chappal, running, gym."
+            >
+              <Input
+                id={id("searchKeywords")}
+                value={draft.searchKeywords}
+                onChange={(event) => set("searchKeywords", event.target.value)}
+                placeholder="running, gym, trainer"
+                autoComplete="off"
+                aria-describedby={describedBy(id("searchKeywords"), {
+                  hint: true,
+                })}
+              />
+            </Field>
+
+            <Field
+              htmlFor={id("metaDescription")}
+              label="Search description"
+              className="sm:col-span-2"
+              error={errors.metaDescription}
+              hint={`${draft.metaDescription.length}/200 characters. Blank uses the first sentence of the description.`}
+            >
+              <textarea
+                id={id("metaDescription")}
+                value={draft.metaDescription}
+                onChange={(event) => set("metaDescription", event.target.value)}
+                maxLength={200}
+                rows={3}
+                className="border-input focus-visible:ring-ring w-full rounded-lg border bg-transparent px-3 py-2 text-base"
+                aria-invalid={errors.metaDescription ? true : undefined}
+                aria-describedby={describedBy(id("metaDescription"), {
+                  error: errors.metaDescription,
+                  hint: true,
+                })}
+              />
+            </Field>
+          </div>
+        </Disclosure>
+      )}
+
+      {product === null ? null : (
+        <Panel title="On the shop">
+          <div className="space-y-2">
+            <CheckRow
+              id={id("isActive")}
+              checked={draft.isActive}
+              onChange={(value) => set("isActive", value)}
+              label="Customers can see and buy this"
+              hint="Turn it off to take it down without deleting anything."
+            />
+            <CheckRow
+              id={id("isFeatured")}
+              checked={draft.isFeatured}
+              onChange={(value) => set("isFeatured", value)}
+              label="Feature it"
+              hint="Eligible for the featured rail on the homepage."
+            />
+          </div>
+        </Panel>
+      )}
+
+      {/*
+        What happens next, said before the button rather than after it.
+
+        Creating a product lands the owner on its edit page with three empty
+        panels and no statement of what is still required — which is the point
+        at which "adding a product is complicated" gets said. Two sentences here
+        cost nothing and set the expectation that this form is step one of
+        three.
+      */}
+      {product === null ? (
+        <p className="border-border bg-muted/40 max-w-prose rounded-md border px-4 py-3 text-sm text-pretty">
+          Next come the sizes you have and at least one photograph, on this
+          product&rsquo;s own page. It stays off the shop until you turn it on
+          there, so nothing is visible to customers in the meantime.
         </p>
-        <div className="grid gap-4 sm:grid-cols-4">
-          <Field
-            htmlFor={id("weightGrams")}
-            label="Weight"
-            hint="Grams, boxed"
-            error={errors.weightGrams}
-          >
-            <Input
-              id={id("weightGrams")}
-              value={draft.weightGrams}
-              onChange={(event) => set("weightGrams", event.target.value)}
-              inputMode="numeric"
-              placeholder={String(parcel.weightGrams)}
-              autoComplete="off"
-              className="font-mono tabular-nums"
-              aria-invalid={errors.weightGrams ? true : undefined}
-              aria-describedby={describedBy(id("weightGrams"), {
-                error: errors.weightGrams,
-                hint: true,
-              })}
-            />
-          </Field>
-          <DimensionField
-            name="lengthCm"
-            label="Length"
-            value={draft.lengthCm}
-            fallback={parcel.lengthCm}
-            error={errors.lengthCm}
-            onChange={(value) => set("lengthCm", value)}
-          />
-          <DimensionField
-            name="breadthCm"
-            label="Breadth"
-            value={draft.breadthCm}
-            fallback={parcel.breadthCm}
-            error={errors.breadthCm}
-            onChange={(value) => set("breadthCm", value)}
-          />
-          <DimensionField
-            name="heightCm"
-            label="Height"
-            value={draft.heightCm}
-            fallback={parcel.heightCm}
-            error={errors.heightCm}
-            onChange={(value) => set("heightCm", value)}
-          />
-        </div>
-      </Panel>
-
-      <Panel
-        title="How it is found"
-        description="What Google shows, and the words a customer might search that your description does not use."
-      >
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Field
-            htmlFor={id("metaTitle")}
-            label="Search title"
-            error={errors.metaTitle}
-            hint={`${draft.metaTitle.length}/70 characters. Blank uses the product name.`}
-          >
-            <Input
-              id={id("metaTitle")}
-              value={draft.metaTitle}
-              onChange={(event) => set("metaTitle", event.target.value)}
-              maxLength={70}
-              autoComplete="off"
-              aria-invalid={errors.metaTitle ? true : undefined}
-              aria-describedby={describedBy(id("metaTitle"), {
-                error: errors.metaTitle,
-                hint: true,
-              })}
-            />
-          </Field>
-
-          <Field
-            htmlFor={id("searchKeywords")}
-            label="Extra search words"
-            hint="Separated by commas. Add what a customer would type — chappal, running, gym."
-          >
-            <Input
-              id={id("searchKeywords")}
-              value={draft.searchKeywords}
-              onChange={(event) => set("searchKeywords", event.target.value)}
-              placeholder="running, gym, trainer"
-              autoComplete="off"
-              aria-describedby={describedBy(id("searchKeywords"), {
-                hint: true,
-              })}
-            />
-          </Field>
-
-          <Field
-            htmlFor={id("metaDescription")}
-            label="Search description"
-            className="sm:col-span-2"
-            error={errors.metaDescription}
-            hint={`${draft.metaDescription.length}/200 characters. Blank uses the first sentence of the description.`}
-          >
-            <textarea
-              id={id("metaDescription")}
-              value={draft.metaDescription}
-              onChange={(event) => set("metaDescription", event.target.value)}
-              maxLength={200}
-              rows={3}
-              className="border-input focus-visible:ring-ring w-full rounded-lg border bg-transparent px-3 py-2 text-base"
-              aria-invalid={errors.metaDescription ? true : undefined}
-              aria-describedby={describedBy(id("metaDescription"), {
-                error: errors.metaDescription,
-                hint: true,
-              })}
-            />
-          </Field>
-        </div>
-      </Panel>
-
-      <Panel title="On the shop">
-        <div className="space-y-2">
-          <CheckRow
-            id={id("isActive")}
-            checked={draft.isActive}
-            onChange={(value) => set("isActive", value)}
-            label="Customers can see and buy this"
-            hint="Turn it off to take it down without deleting anything."
-          />
-          <CheckRow
-            id={id("isFeatured")}
-            checked={draft.isFeatured}
-            onChange={(value) => set("isFeatured", value)}
-            label="Feature it"
-            hint="Eligible for the featured rail on the homepage."
-          />
-        </div>
-      </Panel>
+      ) : null}
 
       {/* Sticky, because this form is longer than a tablet screen and hunting
           for the save button after every edit is the panel's most-repeated

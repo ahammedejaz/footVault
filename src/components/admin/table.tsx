@@ -19,6 +19,15 @@ import { cn } from "@/lib/utils";
  * the same gesture the rest of the tablet uses. The wrapper is focusable so a
  * keyboard user can scroll it too — a scroll container that only a mouse can
  * reach is an accessibility failure that looks like a working table.
+ *
+ * **The actions column pins to the right edge (`stickyEnd`), and that is a
+ * correctness fix rather than a flourish.** Sideways scrolling is fine for
+ * *reading* columns; it is not fine for the column that holds Edit and Delete.
+ * On a phone a 46rem table shows about a third of itself, so those controls sat
+ * roughly two screen-widths off to the right — present in the DOM, reachable by
+ * swiping, and invisible to anyone who did not already know they were there.
+ * The owner's report was that the panel offered no way to add or remove a
+ * brand. The buttons had been there the whole time.
  */
 
 export function TableWrap({
@@ -59,16 +68,35 @@ export function Table({
   );
 }
 
+/**
+ * The pinned-to-the-right-edge column, shared by `Th` and `Td`.
+ *
+ * **The shadow is doing the job a border cannot.** The table is
+ * `border-collapse: collapse`, and a collapsed border belongs to the table's
+ * border grid rather than to the cell — so it stays where the grid put it while
+ * the sticky cell travels, and the divider ends up stranded mid-row. A
+ * `box-shadow` is painted by the cell itself and moves with it, which is why
+ * this is an inset shadow rather than `border-l`.
+ *
+ * The opaque background is not optional either: without it the columns being
+ * scrolled underneath read straight through the buttons.
+ */
+const STICKY_END =
+  "bg-background sticky right-0 shadow-[inset_1px_0_0_var(--border)]";
+
 export function Th({
   children,
   className,
   numeric,
   scope = "col",
+  stickyEnd,
 }: {
   children?: React.ReactNode;
   className?: string;
   numeric?: boolean;
   scope?: "col" | "row";
+  /** Pins the column to the right edge while the table scrolls under it. */
+  stickyEnd?: boolean;
 }) {
   return (
     <th
@@ -76,6 +104,9 @@ export function Th({
       className={cn(
         "bg-muted/60 text-muted-foreground border-border border-b px-3 py-2 text-left font-mono text-xs font-normal tracking-[0.06em] whitespace-nowrap uppercase",
         numeric && "text-right",
+        // `z-20` against the body cells' `z-10`: both are sticky, and without
+        // the order stated the rows slide over the header.
+        stickyEnd && `${STICKY_END} bg-muted z-20`,
         className,
       )}
     >
@@ -88,16 +119,24 @@ export function Td({
   children,
   className,
   numeric,
+  stickyEnd,
 }: {
   children?: React.ReactNode;
   className?: string;
   numeric?: boolean;
+  /** Pins the cell to the right edge while the table scrolls under it. */
+  stickyEnd?: boolean;
 }) {
   return (
     <td
       className={cn(
         "border-border border-b px-3 py-2 align-middle",
         numeric && "text-right tabular-nums",
+        // `group-hover/row` rather than inheriting the row's own
+        // `hover:bg-muted/40`: the opaque background this cell needs would
+        // otherwise make it the one cell in the row that does not light up,
+        // which reads as a rendering fault rather than as a pinned column.
+        stickyEnd && `${STICKY_END} z-10 group-hover/row:bg-muted/40`,
         className,
       )}
     >

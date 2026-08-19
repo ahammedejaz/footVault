@@ -65,7 +65,7 @@ export function ContactSheet({
             >
               <div
                 className={[
-                  "bg-fog relative aspect-4/5 overflow-hidden rounded-md",
+                  "bg-photo relative aspect-4/5 overflow-hidden rounded-md",
                   image.productId === currentProductId
                     ? "ring-primary ring-2 ring-offset-1"
                     : "",

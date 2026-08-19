@@ -76,7 +76,7 @@ export function ProductCard({
         card and a 296px one; 8px of CSS padding would be 5% of one and 13% of
         the other, which is the inconsistency this frame exists to remove.
       */}
-      <div className="card-media bg-fog relative aspect-4/5 overflow-hidden rounded-lg">
+      <div className="card-media bg-photo relative aspect-4/5 overflow-hidden rounded-lg">
         {product.heroImage ? (
           <ProductImage
             src={product.heroImage.url}

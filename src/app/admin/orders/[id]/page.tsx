@@ -354,7 +354,9 @@ export default async function AdminOrderDetailPage({
           <Panel title="Do something">
             <OrderActions
               orderId={order.id}
+              orderNumber={order.orderNumber}
               status={order.status}
+              paymentStatus={order.paymentStatus}
               balanceDueOnDelivery={order.balanceDueOnDelivery}
               cashCollectedAt={order.cashCollectedAt}
               deliveredAt={order.deliveredAt}

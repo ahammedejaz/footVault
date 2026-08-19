@@ -83,7 +83,7 @@ export function WishlistRow({ product }: { product: ProductSummary }) {
     <li className="border-border flex gap-4 border-b py-6 last:border-b-0">
       <Link
         href={`/product/${product.slug}`}
-        className="bg-fog relative aspect-4/5 w-24 shrink-0 overflow-hidden rounded-lg sm:w-28"
+        className="bg-photo relative aspect-4/5 w-24 shrink-0 overflow-hidden rounded-lg sm:w-28"
         tabIndex={-1}
         aria-hidden
       >

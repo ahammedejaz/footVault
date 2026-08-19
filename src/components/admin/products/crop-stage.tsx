@@ -261,7 +261,7 @@ export function CropStage({
           event.preventDefault();
         }}
         className={[
-          "bg-fog relative aspect-square w-full overflow-hidden rounded-lg",
+          "bg-photo relative aspect-square w-full overflow-hidden rounded-lg",
           /*
             No `outline-hidden` here, and it must stay that way.
 

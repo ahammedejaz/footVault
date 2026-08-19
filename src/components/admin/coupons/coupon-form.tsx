@@ -262,7 +262,7 @@ export function CouponForm({
         </Button>
       </DialogTrigger>
 
-      <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-xl">
+      <DialogContent className="sm:max-w-xl">
         <DialogHeader>
           <DialogTitle className="text-pretty">
             {editing ? `Edit ${coupon.code}` : "Add a coupon"}

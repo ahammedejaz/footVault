@@ -106,7 +106,7 @@ export function ProductGallery({
             const next = Math.round(el.scrollLeft / el.clientWidth);
             setActive((prev) => (prev === next ? prev : next));
           }}
-          className="rail bg-fog -mx-4 flex snap-x snap-mandatory overflow-x-auto sm:mx-0 sm:rounded-lg lg:cursor-zoom-in"
+          className="rail bg-photo -mx-4 flex snap-x snap-mandatory overflow-x-auto sm:mx-0 sm:rounded-lg lg:cursor-zoom-in"
         >
           {images.map((image, i) => (
             <li
@@ -178,7 +178,7 @@ export function ProductGallery({
                   aria-current={i === index ? "true" : undefined}
                   aria-label={`Show ${image.alt}`}
                   className={cn(
-                    "bg-fog relative block size-20 overflow-hidden rounded-lg border-2 transition-colors",
+                    "bg-photo relative block size-20 overflow-hidden rounded-lg border-2 transition-colors",
                     i === index
                       ? "border-orange"
                       : "border-border hover:border-foreground",

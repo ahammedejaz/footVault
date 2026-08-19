@@ -21,7 +21,7 @@ export function OrderLines({ lines }: { lines: OrderLine[] }) {
     <ul className="divide-border divide-y">
       {lines.map((line) => (
         <li key={line.id} className="flex gap-4 py-4">
-          <div className="bg-fog relative aspect-4/5 w-16 shrink-0 overflow-hidden rounded-lg sm:w-20">
+          <div className="bg-photo relative aspect-4/5 w-16 shrink-0 overflow-hidden rounded-lg sm:w-20">
             {line.imageUrl ? (
               <Image
                 src={line.imageUrl}

@@ -47,6 +47,15 @@ export function ConfirmAction({
   successMessage,
   /** Set when the action cannot be undone at all — adds a typed confirmation. */
   requireTyping,
+  /**
+   * Where to go afterwards, when the thing that was confirmed *was this page*.
+   *
+   * The default `router.refresh()` is right for a row in a list — the list
+   * re-renders without it. It is exactly wrong for a detail page that has just
+   * deleted its own subject: refreshing re-requests a route whose record no
+   * longer exists, and the owner's reward for a successful delete is a 404.
+   */
+  redirectTo,
 }: {
   subject: string;
   consequence: string;
@@ -58,6 +67,7 @@ export function ConfirmAction({
   action: () => Promise<{ ok: boolean; message?: string }>;
   successMessage: string;
   requireTyping?: string;
+  redirectTo?: string;
 }) {
   const router = useRouter();
   const [open, setOpen] = React.useState(false);
@@ -80,7 +90,8 @@ export function ConfirmAction({
         // disappear until the server says so. Refreshing rather than filtering
         // it out locally means the panel never shows a state the database is
         // not actually in.
-        router.refresh();
+        if (redirectTo) router.push(redirectTo);
+        else router.refresh();
       } else {
         toast.failed(result.message ?? "That did not work.");
       }

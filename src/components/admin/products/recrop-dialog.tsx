@@ -164,7 +164,7 @@ export function RecropDialog({
             onChange={setCrop}
           />
         ) : (
-          <div className="bg-fog grid aspect-square w-full place-items-center rounded-lg">
+          <div className="bg-photo grid aspect-square w-full place-items-center rounded-lg">
             <Loader2 className="text-muted-foreground size-5 animate-spin" aria-hidden />
           </div>
         )}

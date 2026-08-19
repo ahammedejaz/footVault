@@ -4,10 +4,12 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 
+import { ConfirmAction } from "@/components/admin/confirm-action";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   addOrderNote,
+  deleteOrder,
   markCashCollected,
   recordReplacement,
   setOrderStatus,
@@ -18,7 +20,11 @@ import {
   REPLACEMENT_REASON_LABEL,
   type ReplacementReason,
 } from "@/lib/orders/replacement";
-import { ORDER_TRANSITIONS, type OrderStatus } from "@/lib/orders/types";
+import {
+  ORDER_TRANSITIONS,
+  type OrderStatus,
+  type PaymentStatus,
+} from "@/lib/orders/types";
 import { toast } from "@/lib/toast";
 
 /**
@@ -35,13 +41,17 @@ import { toast } from "@/lib/toast";
  */
 export function OrderActions({
   orderId,
+  orderNumber,
   status,
+  paymentStatus,
   balanceDueOnDelivery,
   cashCollectedAt,
   deliveredAt,
 }: {
   orderId: string;
+  orderNumber: string;
   status: OrderStatus;
+  paymentStatus: PaymentStatus;
   balanceDueOnDelivery: number;
   cashCollectedAt: string | null;
   deliveredAt: string | null;
@@ -167,6 +177,101 @@ export function OrderActions({
 
       {/* ----------------------------------------------------------- note -- */}
       <NoteForm orderId={orderId} busy={busy} run={run} />
+
+      {/* --------------------------------------------------------- delete -- */}
+      <DeleteOrder
+        orderId={orderId}
+        orderNumber={orderNumber}
+        status={status}
+        paymentStatus={paymentStatus}
+      />
+    </div>
+  );
+}
+
+/**
+ * Removing an order from the database for good.
+ *
+ * **The condition below is advice, not authorisation.** `admin_delete_order`
+ * decides, and it checks four things this component cannot see — whether a
+ * payment row exists at a status short of `failed`, whether a refund has been
+ * raised, and whether the stock actually went back. Duplicating that here would
+ * be a second copy of a rule that has to stay in step with the first, which is
+ * the shape this codebase keeps refusing. What it is for is deciding **which of
+ * two things to draw**, and both of them are honest:
+ *
+ *   - plausibly deletable → the button, and the server may still say no, in
+ *     which case the refusal arrives as a sentence naming the next move;
+ *   - clearly not → the reason, in place of the button.
+ *
+ * The second half is the part worth having. A paid order with no delete control
+ * and no explanation is indistinguishable from a panel that has not implemented
+ * deleting, which is precisely the misreading that produced this whole batch of
+ * work — the owner concluded the brands screen had no remove option when it had
+ * one for every brand nothing pointed at.
+ */
+function DeleteOrder({
+  orderId,
+  orderNumber,
+  status,
+  paymentStatus,
+}: {
+  orderId: string;
+  orderNumber: string;
+  status: OrderStatus;
+  paymentStatus: PaymentStatus;
+}) {
+  const dispatched =
+    status === "shipped" ||
+    status === "delivered" ||
+    status === "returning" ||
+    status === "returned";
+  const paid = paymentStatus !== "unpaid";
+
+  return (
+    <div className="border-destructive/30 rounded-md border p-3">
+      <h3 className="text-sm font-medium">Remove this order</h3>
+
+      {paid || dispatched ? (
+        <p className="text-muted-foreground mt-1 text-sm text-pretty">
+          {paid
+            ? "This order has been paid, so it is the shop's record of a sale and cannot be removed. Cancel it if it is not going ahead — that puts the stock back and leaves the record intact."
+            : "This order is with the courier or has already arrived, so it stays. Deleting it would leave the courier's updates arriving for an order that no longer exists."}
+        </p>
+      ) : (
+        <>
+          <p className="text-muted-foreground mt-1 text-sm text-pretty">
+            Nothing has been paid on this order, so it can be taken out of the
+            database altogether — useful for a test order or a checkout nobody
+            finished.{" "}
+            {status === "cancelled"
+              ? "Its stock has already gone back on the shelf."
+              : "Any pairs it is holding go back on the shelf first."}
+          </p>
+          <div className="mt-3">
+            <ConfirmAction
+              subject={`Delete order ${orderNumber} from the database?`}
+              consequence={
+                `Everything about it goes — the items, the timeline, the address and any payment attempt. ` +
+                (status === "cancelled"
+                  ? "Its stock is already back on the shelf. "
+                  : "The pairs it is holding go back on the shelf first. ") +
+                `Any Vault Coins already earned or spent on it stay on the customer's balance. ` +
+                `Nothing can bring this order back.`
+              }
+              confirmLabel="Delete it for good"
+              triggerLabel="Delete this order"
+              triggerVariant="destructive"
+              requireTyping="delete"
+              action={() => deleteOrder({ orderId })}
+              successMessage={`Order ${orderNumber} has been deleted`}
+              // This page *is* the order. Refreshing it after a successful
+              // delete would re-request a route that now 404s.
+              redirectTo="/admin/orders"
+            />
+          </div>
+        </>
+      )}
     </div>
   );
 }
