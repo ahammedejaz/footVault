@@ -69,6 +69,20 @@ export function AdminShell({
 
   return (
     <div className="flex min-h-dvh flex-col md:flex-row">
+      {/*
+        Same skip link as the storefront, same reason, same Safari caveat: the
+        target carries tabIndex={-1} because following `href="#main"` moves
+        real focus only when the target can hold it — see the note in
+        storefront/chrome.tsx. The admin went without either landmark until
+        2026-08-20; fifteen rail links is a shorter walk than the storefront's
+        127 stops, but a keyboard user still pays it on every page.
+      */}
+      <a
+        href="#main"
+        className="bg-orange text-ink sr-only rounded-lg font-medium focus:not-sr-only focus:absolute focus:top-3 focus:left-3 focus:z-100 focus:inline-flex focus:min-h-11 focus:items-center focus:px-4"
+      >
+        Skip to content
+      </a>
       {/* The rail. `sticky` rather than `fixed` so it participates in the flow
           and the content column does not need a matching margin to avoid it. */}
       <aside
@@ -179,7 +193,9 @@ export function AdminShell({
         </span>
       </header>
 
-      <div className="min-w-0 flex-1">{children}</div>
+      <main id="main" tabIndex={-1} className="min-w-0 flex-1">
+        {children}
+      </main>
     </div>
   );
 }
