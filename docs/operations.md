@@ -143,12 +143,17 @@ the page is reporting truthfully about the wrong code.
 that is not a Vercel build — `next dev`, `start:stage`, CI) or when the tip of
 the branch could not be read.
 
-**To get the full verdict rather than `unverified`, set `GITHUB_REPO_TOKEN`** in
-the Vercel project's environment variables — a fine-grained token with read-only
-Contents access to this repository is enough. It is optional: without it the
-page still shows which commit is running, it simply will not claim that commit
-is current. `VERCEL_GIT_REPO_OWNER` and `VERCEL_GIT_REPO_SLUG` come from Vercel
-automatically.
+**The repository is public, so no token is needed for a full verdict** — the
+card asks GitHub's API unauthenticated. (The check shipped on 2026-08-20
+believing the repo private and demanding `GITHUB_REPO_TOKEN`; that premise was
+false, and would have left the card saying `unverified` until somebody minted a
+token for a fact anyone can read.) The one limit of the tokenless call is
+GitHub's unauthenticated rate cap — 60 requests/hour per IP, shared across
+whoever else exits Vercel through the same address. If the card starts showing
+"GitHub answered 403", set `GITHUB_REPO_TOKEN` in the Vercel project's
+environment variables — a fine-grained token with read-only Contents access to
+this repository raises the cap to 5,000/hour. `VERCEL_GIT_REPO_OWNER` and
+`VERCEL_GIT_REPO_SLUG` come from Vercel automatically.
 
 ### `npm run audit:deploy-drift`
 

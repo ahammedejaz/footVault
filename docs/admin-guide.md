@@ -112,17 +112,26 @@ Change one and the whole site follows it at once — the bag, the checkout page,
 the emails, the announcement strip, the policy pages. Every control on that
 screen says what it does *and* what happens if you set it too high or too low.
 
-| What it decides | Today |
-|---|---|
-| The order value at which delivery becomes **free**, for customers paying online | **₹6,499** |
-| Whether Pay on Delivery is offered at all | **on** |
-| The **smallest order** that may pay on delivery | **₹999** |
-| The **most** that may ever be taken upfront | **₹500** |
-| Whether the 18% GST on delivery is recovered in the upfront amount | **absorbed** |
-| The discount for paying online | **none** |
-| How the delivery charge is decided | **the courier's live rate** |
-| What a customer who paid online gets back when a parcel comes back | **everything except what the journey cost** |
-| The stand-in delivery charge used only when Shiprocket cannot be reached | **₹199** online, **₹349** Pay on Delivery |
+The controls, in the order the screen shows them:
+
+- The order value at which delivery becomes **free**, for customers paying
+  online.
+- Whether Pay on Delivery is offered at all.
+- The **smallest order** that may pay on delivery.
+- The **most** that may ever be taken upfront.
+- Whether the 18% GST on delivery is recovered in the upfront amount.
+- The discount for paying online.
+- What a customer who paid online gets back when a parcel comes back.
+- The stand-in delivery charge used only when Shiprocket cannot be reached —
+  this is an estimate shown to prepaid customers during a courier outage, not
+  a rate.
+
+**The current values are on the screen itself, and only there.** This guide
+used to print them in a "Today" column, and "today" in a document is a lie
+with a delay on it: the column still said ₹6,499 after the live threshold had
+been ₹1,599 for some time — the same number the announcement strip was
+correctly printing from the settings row all along. A value this guide does
+not state is a value this guide cannot get wrong.
 
 **Free delivery is for people paying online only.** A Pay-on-Delivery order is
 charged for delivery whatever it is worth.

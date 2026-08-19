@@ -320,12 +320,22 @@ edits before committing anything:
    and confirm the gate is green again.
 
 Measured 2026-08-13: 122 holes with the guard removed, 0 with it restored.
-3. `npm run audit:build-smoke` — the outage drill, a real production build
+3. `npm run audit:security` — the page-and-webhook layer, against the same
+   `build:stage` + `start:stage` pair as `audit:actions` (its later sections
+   read `.next/static`, so a dev server fails its positive control the same
+   way). Until 2026-08-20 `run-all.ts` excluded this gate as "superseded by
+   audit:security-advance", which was false the same way audit:actions' old
+   reason was false: security-advance attacks the data layer with a customer
+   JWT; this one drives signature forgery, replay, order-page enumeration and
+   the currency guard over HTTP. Different layers, both required here.
+4. `npm run audit:build-smoke` — the outage drill, a real production build
    against live data, the manifest assertion, the served smoke. Green.
-4. Merge to main. Vercel deploys.
-5. Verify the deploy is *serving*, not merely READY — fetch an identifier that
+5. Merge to main. Vercel deploys.
+6. Verify the deploy is *serving*, not merely READY — fetch an identifier that
    exists only in the new tree, against `www`, not the apex
-   (docs/admin-guide.md has the procedure).
+   (docs/admin-guide.md has the procedure). Then `npm run audit:deploy-drift`,
+   which compares `GET /api/version` on production against `origin/main` and
+   exits non-zero when either side cannot be read.
 
 On a failed smoke check after a deploy: **revert immediately, never
 forward-fix.** Two failed deploys in a row means stop deploying and leave it
