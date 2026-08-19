@@ -84,11 +84,16 @@ export type DriftHealth =
  * could see it. A person noticed the colour behind a photograph.
  *
  * `unknown` is deliberately not a fourth flavour of `clean`. Determining the
- * *expected* side means asking GitHub for the tip of `main`, which needs a
- * token because the repository is private; without one this reports that it
- * could not tell, in a tone that is not green. The page's standing rule is that
- * a wrong "fine" teaches the owner to stop opening the page, and there is no
- * version of this check worth having that can be satisfied by not looking.
+ * *expected* side means asking GitHub for the tip of `main`. The repository is
+ * **public** — this check shipped on 2026-08-20 believing it private and
+ * demanding `GITHUB_REPO_TOKEN`, which would have left the card saying
+ * "unverified" until somebody minted a token for a fact anyone can already
+ * read. So the call is made either way; a token, when present, only buys
+ * rate-limit headroom (5,000/hr against 60/hr per egress IP). When GitHub
+ * cannot be read the card says so, in a tone that is not green: the page's
+ * standing rule is that a wrong "fine" teaches the owner to stop opening the
+ * page, and there is no version of this check worth having that can be
+ * satisfied by not looking.
  */
 export type DeploymentHealth =
   | {
@@ -181,8 +186,9 @@ export async function getHealth(): Promise<HealthSnapshot> {
  * The deployed side is free — Vercel bakes it into the bundle at build time, so
  * a stale build reports its own staleness rather than something newer.
  *
- * The expected side costs a network call to GitHub, and the repository is
- * private, so it needs `GITHUB_REPO_TOKEN`. When that is absent this returns
+ * The expected side costs a network call to GitHub. The repository is public,
+ * so the call needs no credential; `GITHUB_REPO_TOKEN`, when set, is attached
+ * for rate-limit headroom only. When GitHub cannot be read this returns
  * `expected_unknown` and the page says so; it does **not** fall back to
  * reporting the deployed commit as correct, because a check that passes when it
  * cannot see is worse than no check — it is a check that lies.
@@ -208,13 +214,12 @@ async function readDeployment(): Promise<DeploymentHealth> {
     environment: commit.environment,
   };
 
-  if (!token || !owner || !repo) {
+  if (!owner || !repo) {
     return {
       state: "expected_unknown",
       ...base,
-      reason: !token
-        ? "GITHUB_REPO_TOKEN is not set, so the tip of the branch cannot be read — the repository is private."
-        : "VERCEL_GIT_REPO_OWNER / VERCEL_GIT_REPO_SLUG are not set on this build.",
+      reason:
+        "VERCEL_GIT_REPO_OWNER / VERCEL_GIT_REPO_SLUG are not set on this build.",
     };
   }
 
@@ -223,7 +228,8 @@ async function readDeployment(): Promise<DeploymentHealth> {
       `https://api.github.com/repos/${owner}/${repo}/commits/${encodeURIComponent(branch)}`,
       {
         headers: {
-          Authorization: `Bearer ${token}`,
+          // The repo is public; the token is optional headroom, not access.
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
           Accept: "application/vnd.github+json",
           "User-Agent": "footvault-health",
         },
@@ -237,7 +243,11 @@ async function readDeployment(): Promise<DeploymentHealth> {
       return {
         state: "expected_unknown",
         ...base,
-        reason: `GitHub answered ${response.status} for ${owner}/${repo}@${branch}.`,
+        reason:
+          `GitHub answered ${response.status} for ${owner}/${repo}@${branch}.` +
+          (response.status === 403 && !token
+            ? " Likely the unauthenticated rate limit (60/hr per IP, shared on Vercel) — a GITHUB_REPO_TOKEN raises it to 5,000/hr."
+            : ""),
       };
     }
     const body: unknown = await response.json();

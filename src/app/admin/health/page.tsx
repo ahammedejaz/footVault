@@ -40,6 +40,20 @@ export default async function AdminHealthPage() {
       />
 
       <AdminPage className="space-y-6">
+        {/*
+          First section on the page, above everything else, because it is the
+          only one that can invalidate the rest: if the build answering this
+          request is not the build that was merged, then every other card is
+          reporting truthfully about the wrong code.
+
+          It was written with this comment and rendered third — below the key
+          cards and the stuck orders — from 2026-08-20 01:33 until later the
+          same night, which is how the owner came to report the card as "not
+          on the page". A claim about position belongs next to code that
+          actually holds the position.
+        */}
+        <DeploymentSection deployment={health.deployment} />
+
         <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Panel
             label="Razorpay keys"
@@ -59,6 +73,15 @@ export default async function AdminHealthPage() {
                 ? "good"
                 : "bad"
             }
+            chip={
+              health.webhook.state === "never"
+                ? "silent"
+                : health.webhook.state === "behind"
+                  ? "behind"
+                  : health.webhook.state === "unknown"
+                    ? "unread"
+                    : "ok"
+            }
             headline={webhookHeadline(health.webhook)}
             body={webhookBody(health.webhook)}
           />
@@ -70,6 +93,13 @@ export default async function AdminHealthPage() {
               health.shiprocketAuth.state === "unreadable"
                 ? "bad"
                 : "good"
+            }
+            chip={
+              health.shiprocketAuth.state === "locked_out"
+                ? "locked out"
+                : health.shiprocketAuth.state === "unreadable"
+                  ? "unread"
+                  : "ok"
             }
             headline={authHeadline(health.shiprocketAuth)}
             body={authBody(health.shiprocketAuth)}
@@ -94,6 +124,15 @@ export default async function AdminHealthPage() {
                   ? "warn"
                   : "bad"
             }
+            chip={
+              pickup.state === "ok"
+                ? "ok"
+                : pickup.state === "unknown"
+                  ? "unread"
+                  : pickup.state === "missing"
+                    ? "missing"
+                    : "wrong"
+            }
             headline={pickupHeadline(pickup)}
             body={pickupBody(pickup)}
           />
@@ -106,6 +145,13 @@ export default async function AdminHealthPage() {
                 : health.wallet.low
                   ? "bad"
                   : "good"
+            }
+            chip={
+              health.wallet.reading.state !== "read"
+                ? "unread"
+                : health.wallet.low
+                  ? "low"
+                  : "ok"
             }
             headline={
               health.wallet.reading.state === "read"
@@ -126,6 +172,7 @@ export default async function AdminHealthPage() {
           <Panel
             label="Parcels in flight"
             tone={health.parcelsInFlight === null ? "warn" : "good"}
+            chip={health.parcelsInFlight === null ? "unread" : "ok"}
             headline={
               health.parcelsInFlight === null
                 ? "Could not read"
@@ -170,14 +217,6 @@ export default async function AdminHealthPage() {
             />
           )}
         </section>
-
-        {/*
-          First section on the page, above everything else, because it is the
-          only one that can invalidate the rest: if the build answering this
-          request is not the build that was merged, then every other card is
-          reporting truthfully about the wrong code.
-        */}
-        <DeploymentSection deployment={health.deployment} />
 
         <section className="space-y-2">
           <h2 className="font-mono text-xs tracking-[0.06em] uppercase">
@@ -375,14 +414,26 @@ function DeploymentSection({
   );
 }
 
+/**
+ * The chip's word is the condition, not the severity.
+ *
+ * It used to be derived from the tone — every bad card said "wrong" — and the
+ * owner read "WRONG" on a wallet that was merely low. A word that overstates
+ * teaches the same lesson as a tick that understates: stop trusting the page.
+ * So each card passes the word for the state it is actually in, and the tone
+ * only colours it. The default keeps tone-derived words for a caller that has
+ * nothing more precise to say.
+ */
 function Panel({
   label,
   tone,
+  chip,
   headline,
   body,
 }: {
   label: string;
   tone: "good" | "warn" | "bad";
+  chip?: string;
   headline: string;
   body: string;
 }) {
@@ -391,7 +442,7 @@ function Panel({
       <p className="text-muted-foreground font-mono text-xs tracking-[0.06em] uppercase">
         {label}{" "}
         <Chip tone={tone === "bad" ? "warn" : tone === "warn" ? "neutral" : "good"}>
-          {tone === "good" ? "ok" : tone === "warn" ? "check" : "wrong"}
+          {chip ?? (tone === "good" ? "ok" : tone === "warn" ? "check" : "wrong")}
         </Chip>
       </p>
       <p className="mt-1 text-sm font-medium">{headline}</p>
@@ -518,7 +569,16 @@ function pickupHeadline(verdict: PickupVerdict): string {
 function pickupBody(verdict: PickupVerdict): string {
   switch (verdict.state) {
     case "ok":
-      return `${verdict.city ?? "Pickup"} — and the pin code here matches the one every delivery charge is quoted from.`;
+      /*
+        Deliberately not Shiprocket's city. Their pincode table maps 516360 to
+        "Cuddapah" — the district's old name, not the town — and printing their
+        string here put the wrong town back on an owned surface after every
+        content table had been fixed (the 2026-08-15 town sweep could never
+        have seen it: this string never lived in this repository or its
+        database). The nickname and the PIN are the facts this card exists to
+        assert; the city is Shiprocket's decoration, and wrong.
+      */
+      return `The nickname is on the Shiprocket account, and the pin code here matches the one every delivery charge is quoted from.`;
     case "missing":
       return verdict.available.length
         ? `Shiprocket has ${verdict.available.map((name) => `"${name}"`).join(", ")}. Shipping will fail until the name matches one of them.`
