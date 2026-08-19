@@ -110,7 +110,7 @@ export function ImageManager({
                 alt=""
                 width={80}
                 height={80}
-                className="bg-muted size-20 shrink-0 rounded-sm object-cover"
+                className="bg-photo size-20 shrink-0 rounded-sm object-cover"
               />
 
               <div className="min-w-0 flex-1 space-y-1.5">

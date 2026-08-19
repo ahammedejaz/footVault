@@ -11,7 +11,11 @@ import { Chip } from "@/components/admin/ui";
 import { Button } from "@/components/ui/button";
 import type { ListParams } from "@/lib/admin/list-params";
 import { RestoreButton } from "@/components/admin/products/restore-button";
-import { deleteProduct, setProductsActive } from "@/lib/actions/admin/products";
+import {
+  deleteProduct,
+  purgeProduct,
+  setProductsActive,
+} from "@/lib/actions/admin/products";
 import { formatPaise } from "@/lib/format";
 import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
@@ -202,12 +206,17 @@ export function ProductTable({
               >
                 Changed
               </SortableTh>
-              <Th />
+              {/* Named for a screen reader, blank for everyone else — a pinned
+                  column with a visible heading of "Actions" would spend the one
+                  bit of width this column has on a word nobody needs. */}
+              <Th stickyEnd>
+                <span className="sr-only">Actions</span>
+              </Th>
             </tr>
           </thead>
           <tbody>
             {rows.map((row) => (
-              <tr key={row.id} className="hover:bg-muted/40">
+              <tr key={row.id} className="group/row hover:bg-muted/40">
                 <Td>
                   <SelectBox
                     checked={selected.has(row.id)}
@@ -283,10 +292,40 @@ export function ProductTable({
                   {formatDate(row.updatedAt)}
                 </Td>
 
-                <Td>
+                <Td stickyEnd>
                   <div className="flex items-center justify-end gap-1.5">
                     {row.deletedAt ? (
-                      <RestoreButton id={row.id} name={row.name} />
+                      <>
+                        <RestoreButton id={row.id} name={row.name} />
+                        {/*
+                          The bottom of the drawer, and the only place it is
+                          offered.
+
+                          A soft-deleted product is kept because past orders
+                          point at it, which is right — but it made "Removed" a
+                          list that could only ever grow, and the owner asked to
+                          be able to empty it. Reachable only from this filter
+                          on purpose: emptying a bin is a different act from
+                          throwing something into it, and putting both on a live
+                          row would put the irreversible one a mis-tap away from
+                          the reversible one.
+                        */}
+                        <ConfirmAction
+                          subject={`Delete ${row.name} from the database?`}
+                          consequence={
+                            row.hasOrders
+                              ? "The orders it appears on keep every line exactly as it reads today — name, size, price, picture — but they stop being linked to this product, so it will no longer be counted in what you have sold. Its sizes and photographs go with it. Nothing can bring this back."
+                              : "It, its sizes and its photographs go for good. No order refers to it, so nothing else changes. Nothing can bring this back."
+                          }
+                          confirmLabel="Delete it for good"
+                          triggerLabel="Delete for good"
+                          triggerVariant="ghost"
+                          triggerClassName="text-muted-foreground hover:text-destructive"
+                          requireTyping="delete"
+                          action={() => purgeProduct({ id: row.id })}
+                          successMessage={`${row.name} is gone from the database`}
+                        />
+                      </>
                     ) : (
                       <>
                         <Button variant="outline" size="sm" asChild>

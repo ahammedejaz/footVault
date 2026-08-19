@@ -14,18 +14,48 @@
  */
 
 /**
- * The card's surface, and it must equal `--fv-fog` in `globals.css`.
+ * The colour a photograph is padded out to, and it must equal `--fv-photo` in
+ * `globals.css`.
  *
  * Baked into every stored asset at upload time, because the padding is burnt
  * into the pixels. A CSS variable that changed later would repaint the frame
  * and leave every previously processed image padded in the old colour — a
  * visible square inside every card. `audit:images` asserts the two agree.
  *
- * Safe to bake in for a second reason: `--fv-fog` is a brand constant defined
- * once on `:root` and deliberately not redefined for dark mode, so there is no
- * second value it could need to be.
+ * Safe to bake in for a second reason: `--fv-photo` is defined once on `:root`
+ * and deliberately not redefined for dark mode, so there is no second value it
+ * could need to be.
+ *
+ * ## Why this is white, and why it is no longer `--fv-fog`
+ *
+ * It was `#eef1f5` — the same value as `--fv-fog` — from the day the pipeline
+ * was written until 2026-08-20. The reasoning was that the pad should match the
+ * card it sits in, and it did.
+ *
+ * What that missed is what the owner actually photographs against. A shoe on a
+ * white sheet of paper, contained into a square frame and padded in `#eef1f5`,
+ * does not read as a photograph on a card — it reads as a white rectangle
+ * floating inside a grey one, with a hard seam where the photograph's own
+ * background meets the pad. The pad was matching the *card* and disagreeing
+ * with the *photograph*, and the photograph is the part the customer is looking
+ * at. White makes the two meet invisibly, which is the whole reason the shop
+ * asks for "a plain light background" in `UPLOAD_RECOMMENDATION`.
+ *
+ * ## What this does to photographs already in the catalogue
+ *
+ * Nothing, and that is deliberate rather than lucky. `derivativeKey()` hashes
+ * this constant into the storage path, so changing it re-derives every path:
+ * uploads from here on write to new objects at white, and rows already in the
+ * database keep pointing at the objects they were given. There is no rewrite,
+ * no window where a product has no image, and nothing to roll back but this
+ * line.
+ *
+ * The cost of that is a mixed catalogue — old photographs still padded in fog,
+ * sitting in wells that are now white. The owner chose this over reprocessing
+ * on 2026-08-20, having been told. `npm run images:reprocess` re-derives the
+ * whole catalogue from `originals/` whenever they want the older ones to match.
  */
-export const CARD_SURFACE = "#eef1f5";
+export const CARD_SURFACE = "#ffffff";
 
 /**
  * The widths emitted, largest last.

@@ -172,7 +172,7 @@ function CartLineRow({
     <li className={cn("flex gap-4 py-4", pending && "opacity-70")}>
       <Link
         href={`/product/${line.productSlug}`}
-        className="bg-fog relative aspect-4/5 w-20 shrink-0 overflow-hidden rounded-lg"
+        className="bg-photo relative aspect-4/5 w-20 shrink-0 overflow-hidden rounded-lg"
         tabIndex={-1}
         aria-hidden
       >

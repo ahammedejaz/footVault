@@ -81,7 +81,7 @@ function OrderRow({ order }: { order: OrderSummary }) {
         {order.thumbnails.map((thumbnail, index) => (
           <div
             key={`${thumbnail.url ?? "blank"}-${index}`}
-            className="bg-fog border-background relative aspect-4/5 w-10 overflow-hidden rounded-md border-2"
+            className="bg-photo border-background relative aspect-4/5 w-10 overflow-hidden rounded-md border-2"
           >
             {thumbnail.url ? (
               <Image

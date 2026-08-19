@@ -206,7 +206,7 @@ export function SearchPanel({
                         onClick={() => setOpen(false)}
                         className="hover:bg-muted -mx-2 flex items-center gap-3 rounded-lg px-2 py-2"
                       >
-                        <span className="bg-fog relative size-14 shrink-0 overflow-hidden rounded-lg">
+                        <span className="bg-photo relative size-14 shrink-0 overflow-hidden rounded-lg">
                           {result.image ? (
                             <Image
                               src={result.image}

@@ -411,6 +411,112 @@ export async function deleteProduct(
 }
 
 /**
+ * Destroy a product, whatever its history.
+ *
+ * The deliberate second door next to `deleteProduct`, and the reason it is a
+ * separate export rather than a `{ force: true }` on that one: this is not a
+ * variation on deleting, it is a different decision with a different cost, and
+ * it should be impossible to reach by passing an argument wrong.
+ *
+ * `admin_purge_product` explains what survives — every order line keeps its own
+ * name, size, price and picture, and only the *link* back to the product is
+ * destroyed. What comes back here is the count of lines that were unlinked, so
+ * the panel can report the damage in the past tense using the number that was
+ * actually true at the moment of the delete rather than the one it read a
+ * minute earlier on the page.
+ *
+ * **Storage is cleaned after the row, best-effort, exactly as
+ * `deleteProductImage` does it.** The database cannot cascade into a bucket, so
+ * the function hands back the URLs and this removes them. A failure there is
+ * logged and swallowed: an orphaned object costs a few kilobytes, whereas
+ * unwinding a completed delete because a bucket call timed out would leave the
+ * shop in a state nobody asked for.
+ */
+export async function purgeProduct(
+  input: unknown,
+): Promise<AdminResult<{ orderLines: number }>> {
+  return adminAction<{ orderLines: number }>(
+    "purgeProduct",
+    "adminMutation",
+    async ({ supabase }) => {
+      const parsed = idSchema.safeParse(input);
+      if (!parsed.success) return invalid(parsed.error);
+
+      // Read the slug first: after the delete there is nothing left to derive
+      // the storefront path from, and the product page has to be revalidated
+      // or it keeps serving a shoe that no longer exists.
+      const { data: existing, error: readError } = await supabase
+        .from("products")
+        .select("slug")
+        .eq("id", parsed.data.id)
+        .maybeSingle();
+      if (readError) {
+        console.error("[admin] purgeProduct read failed:", readError.message);
+        return {
+          ok: false,
+          reason: "error",
+          message: "Could not read that product. Nothing has been changed.",
+        };
+      }
+
+      const { data, error } = await supabase.rpc("admin_purge_product", {
+        p_product_id: parsed.data.id,
+      });
+
+      if (error) {
+        if (error.code === "FVADM") {
+          return {
+            ok: false,
+            reason: "forbidden",
+            message: "That is not available.",
+          };
+        }
+        console.error(
+          "[admin] admin_purge_product failed:",
+          error.message,
+          error.code,
+        );
+        return {
+          ok: false,
+          reason: "error",
+          message: "The product is still there. Nothing has been changed.",
+        };
+      }
+
+      // `returns table` arrives as an array of one row.
+      const result = Array.isArray(data) ? data[0] : data;
+      if (!result || result.outcome === "not_found") {
+        return {
+          ok: false,
+          reason: "invalid",
+          message: "That product has already gone.",
+        };
+      }
+
+      const paths = (result.image_urls ?? [])
+        .map((url) => storagePath(url))
+        .filter((path): path is string => path !== null);
+      if (paths.length > 0) {
+        const { error: storageError } = await supabase.storage
+          .from(IMAGE_BUCKET)
+          .remove(paths);
+        if (storageError) {
+          console.warn(
+            "[admin] product purged but its files remain:",
+            paths.join(", "),
+            storageError.message,
+          );
+        }
+      }
+
+      revalidateCatalog(existing ? [existing.slug] : []);
+      revalidateAdmin(parsed.data.id);
+      return { ok: true, orderLines: result.order_lines ?? 0 };
+    },
+  );
+}
+
+/**
  * Put a hidden product back on the shelf — as a draft.
  *
  * `is_active` is deliberately left alone. A product was hidden because it had

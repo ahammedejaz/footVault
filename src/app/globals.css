@@ -16,6 +16,27 @@
   --fv-steel: #596475; /* secondary text. 5.83:1 paper, 5.29:1 fog */
   --fv-line: #c8d0db; /* hairlines, input borders */
   --fv-fog: #eef1f5; /* cards, section bands */
+  /*
+   * The well a photograph sits in, and the colour burnt into the padding of
+   * every processed image.
+   *
+   * **It is white, and it is a separate token from --fv-fog for one reason:
+   * they answer to different masters.** --fv-fog is a brand colour that also
+   * drives --muted, --secondary and --accent, so it belongs to the design
+   * system and moves when the design system moves. This one belongs to whatever
+   * the owner photographs shoes against, and the answer is a white sheet of
+   * paper. They were the same value and the same constant until 2026-08-20; a
+   * white-background photograph padded out to a square in #eef1f5 showed the
+   * seam as a visible lighter rectangle floating inside a grey frame, which is
+   * exactly what the owner reported.
+   *
+   * Anything that reads as "a surface" — a summary card, a section band, an
+   * input — still uses --fv-fog. Only the wells that contain a photograph use
+   * this, and `bg-photo` is the utility for them. `npm run audit:images`
+   * asserts this equals CARD_SURFACE in src/lib/images/constants.ts, because
+   * that value is baked into stored pixels and cannot be restyled afterwards.
+   */
+  --fv-photo: #ffffff;
   --fv-paper: #fbfcfd; /* page base */
   --fv-orange: #fe9301; /* logo orange, exact. CTA fills, active states */
   --fv-orange-ink: #a85400; /* orange for TEXT on light. 5.20:1 */
@@ -114,6 +135,7 @@
   --color-steel: var(--fv-steel);
   --color-line: var(--fv-line);
   --color-fog: var(--fv-fog);
+  --color-photo: var(--fv-photo);
   --color-paper: var(--fv-paper);
   --color-orange: var(--fv-orange);
   --color-orange-ink: var(--fv-orange-ink);

@@ -417,3 +417,112 @@ export async function markCashCollected(
     },
   );
 }
+
+/* --------------------------------------------------------------- deleting -- */
+
+const deleteOrderSchema = z.object({
+  orderId: z.uuid("That is not an order."),
+});
+
+/**
+ * Every way `admin_delete_order` can say no, in words the owner can act on.
+ *
+ * The function returns a code rather than raising, so the refusal survives the
+ * trip through PostgREST intact and this is a lookup rather than a scrape of an
+ * error string. Each sentence names **the next move**, because "cannot delete a
+ * paid order" leaves the owner staring at a row with nothing to do about it,
+ * and every one of these has something.
+ */
+const REFUSALS: Record<string, string> = {
+  paid:
+    "This order has been paid, so it is the shop's record of a sale and a tax record too. " +
+    "It cannot be deleted. Cancel it if it is not going ahead, and refund it if money needs to go back.",
+  payment_attempted:
+    "A payment was started against this order and has not conclusively failed, so the shop cannot " +
+    "tell from its own records whether the customer was charged. It will settle by itself once the " +
+    "payment check runs — if it comes back unpaid, this will delete then.",
+  refunded:
+    "A refund has been raised against this order, so it has to stay — the refund record points at it.",
+  dispatched:
+    "This order is with the courier or has already been delivered. Deleting it would leave the " +
+    "courier's updates arriving for an order that does not exist. It cannot be deleted.",
+  stock_stuck:
+    "The pairs on this order could not be put back on the shelf, so the order has been left alone — " +
+    "it is the only record of where that stock went. Nothing has been changed.",
+  not_found: "That order has already gone.",
+};
+
+/**
+ * Remove an order from the database for good.
+ *
+ * **This is the only destructive action in the panel that cannot be undone by
+ * anything, including the database.** Everything else here either soft-deletes,
+ * or destroys something re-creatable. So the decision about what may go is not
+ * made in this file: `admin_delete_order` owns it, checks four separate things,
+ * and restocks through `cancel_order_with_restock` before it removes anything.
+ * See that migration for the reasoning, particularly on why a payment row at
+ * `created` counts against deleting.
+ *
+ * What lives here is the translation. The refusal codes are the useful half of
+ * the design — an owner who is told "cannot delete" learns nothing, and an
+ * owner who is told "a payment was started and has not failed; it will settle
+ * when the payment check runs" knows both why and what happens next.
+ */
+export async function deleteOrder(
+  input: unknown,
+): Promise<AdminResult<object>> {
+  return adminAction<object>(
+    "deleteOrder",
+    "adminMutation",
+    async ({ supabase }) => {
+      const parsed = deleteOrderSchema.safeParse(input);
+      if (!parsed.success) {
+        return {
+          ok: false,
+          reason: "invalid",
+          message: parsed.error.issues[0]?.message ?? "That is not an order.",
+        };
+      }
+
+      const { data, error } = await supabase.rpc("admin_delete_order", {
+        p_order_id: parsed.data.orderId,
+      });
+
+      if (error) {
+        if (error.code === "FVADM") {
+          return {
+            ok: false,
+            reason: "forbidden",
+            message: "That is not available.",
+          };
+        }
+        console.error(
+          "[admin] admin_delete_order failed:",
+          error.message,
+          error.code,
+        );
+        return {
+          ok: false,
+          reason: "error",
+          message: "The order is still there. Nothing has been changed.",
+        };
+      }
+
+      if (data !== "deleted") {
+        return {
+          ok: false,
+          // `conflict` rather than `error`: the function did exactly what it is
+          // supposed to do, and the owner asked for something it will not do.
+          reason: data === "not_found" ? "invalid" : "conflict",
+          message:
+            REFUSALS[data ?? ""] ??
+            "That order cannot be deleted. Nothing has been changed.",
+        };
+      }
+
+      revalidatePath("/admin/orders");
+      revalidatePath("/admin");
+      return { ok: true };
+    },
+  );
+}

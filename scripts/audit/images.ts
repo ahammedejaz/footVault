@@ -164,18 +164,38 @@ async function main() {
    * The one thing in this pipeline that can rot silently.
    *
    * `CARD_SURFACE` is burnt into every stored asset at upload time. If someone
-   * restyles `--fv-fog` and nothing checks, the frame repaints and every
+   * restyles the well and nothing checks, the frame repaints and every
    * previously processed photograph keeps its old padding — a visible square
    * inside every card, on a catalogue that is expensive to reprocess. The two
    * values have to be asserted equal somewhere, and this is cheaper than
    * discovering it on the shop.
+   *
+   * **The token is `--fv-photo`, not `--fv-fog`, and the split is the point.**
+   * They held the same value until 2026-08-20, when the pad went white so that
+   * a photograph shot on white paper meets it without a seam. `--fv-fog` stayed
+   * where it was because it also drives `--muted`, `--secondary` and `--accent`
+   * — moving it to white to fix a photograph would have flattened every card,
+   * band and input in the shop. Asserting against the wrong one of these two
+   * would pass today and re-couple them the next time either moves.
    */
   const css = readFileSync("src/app/globals.css", "utf8");
+  const photo = /--fv-photo:\s*(#[0-9a-fA-F]{6})/.exec(css)?.[1]?.toLowerCase();
+  check(
+    "CARD_SURFACE equals --fv-photo in globals.css",
+    photo === CARD_SURFACE.toLowerCase(),
+    `pipeline ${CARD_SURFACE}, css ${photo ?? "not found"}`,
+  );
+
+  /*
+    And that the two have not been quietly merged back into one. A --fv-photo
+    that is simply `var(--fv-fog)` would satisfy nothing above but would restore
+    exactly the coupling this split exists to break.
+  */
   const fog = /--fv-fog:\s*(#[0-9a-fA-F]{6})/.exec(css)?.[1]?.toLowerCase();
   check(
-    "CARD_SURFACE equals --fv-fog in globals.css",
-    fog === CARD_SURFACE.toLowerCase(),
-    `pipeline ${CARD_SURFACE}, css ${fog ?? "not found"}`,
+    "--fv-photo is its own colour, not an alias of --fv-fog",
+    photo !== undefined && photo !== fog,
+    `photo ${photo ?? "not found"}, fog ${fog ?? "not found"}`,
   );
 
   const cardTsx = readFileSync(
@@ -183,10 +203,37 @@ async function main() {
     "utf8",
   );
   check(
-    "the card frame still pads with bg-fog and contains rather than crops",
-    cardTsx.includes("bg-fog") && cardTsx.includes("object-contain"),
+    "the card frame still pads with bg-photo and contains rather than crops",
+    cardTsx.includes("bg-photo") && cardTsx.includes("object-contain"),
     "a switch to object-cover would crop the padded square",
   );
+
+  /*
+    Every well a photograph lands in, not just the card.
+
+    The seam the owner reported is visible anywhere a padded image sits on a
+    surface of a different colour, and the card is only the most-looked-at of
+    eight. Repainting one and forgetting the rest is the likely half-fix, so the
+    gate names them.
+  */
+  const WELLS = [
+    "src/components/storefront/product-gallery.tsx",
+    "src/components/storefront/cart-lines.tsx",
+    "src/components/storefront/wishlist-row.tsx",
+    "src/components/storefront/search-panel.tsx",
+    "src/components/checkout/order-lines.tsx",
+    "src/app/(storefront)/account/orders/page.tsx",
+    "src/components/admin/products/contact-sheet.tsx",
+    "src/components/admin/products/image-manager.tsx",
+  ];
+  for (const file of WELLS) {
+    const source = readFileSync(file, "utf8");
+    check(
+      `${file.replace(/^src\//, "")} pads its photograph well with bg-photo`,
+      source.includes("bg-photo"),
+      "a photograph well left on bg-fog shows the pad as a grey square",
+    );
+  }
 
   /* ------------------------------------------------ 2 · awkward sources --- */
 

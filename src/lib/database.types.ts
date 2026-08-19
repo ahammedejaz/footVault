@@ -1957,7 +1957,16 @@ export type Database = {
         }
         Returns: number
       }
+      admin_delete_order: { Args: { p_order_id: string }; Returns: string }
       admin_delete_product: { Args: { p_product_id: string }; Returns: string }
+      admin_purge_product: {
+        Args: { p_product_id: string }
+        Returns: {
+          image_urls: string[]
+          order_lines: number
+          outcome: string
+        }[]
+      }
       adopt_guest_orders: { Args: never; Returns: number }
       assert_cart_stock: { Args: { p_cart_id: string }; Returns: undefined }
       can_access_cart: { Args: { cart: string }; Returns: boolean }

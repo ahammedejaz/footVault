@@ -102,12 +102,16 @@ export function AdminShell({
               <Menu />
             </Button>
           </SheetTrigger>
+          {/*
+            `gap-0` and the three `shrink-0`/`flex-1` children below are what
+            make this drawer scroll. See the note on the `<nav>`.
+          */}
           <SheetContent
             side="left"
             data-surface="ink"
-            className="bg-sidebar text-sidebar-foreground w-[17rem] border-r-0 p-0"
+            className="bg-sidebar text-sidebar-foreground w-[17rem] gap-0 border-r-0 p-0"
           >
-            <SheetHeader className="px-4 pt-4 pb-2">
+            <SheetHeader className="shrink-0 px-4 pt-4 pb-2">
               <SheetTitle className="font-display text-lg font-extrabold tracking-[-0.02em] uppercase">
                 Foot Vault admin
               </SheetTitle>
@@ -115,7 +119,29 @@ export function AdminShell({
                 Signed in as {actorName}
               </SheetDescription>
             </SheetHeader>
-            <nav aria-label="Admin sections" className="px-2 pb-4">
+            {/*
+              **The scroll container, and the reason this drawer was broken.**
+              Fifteen sections at two lines each is about 810px of list; add
+              the header and the shop link and the drawer wants ~950px inside a
+              sheet that is exactly one viewport tall. On a phone that is 250px
+              of menu with nowhere to go — Radix locks `<body>` while the sheet
+              is open, so the page cannot scroll either, and Settings, Media,
+              Appearance and Health were simply not reachable on a phone.
+
+              `min-h-0` is the half that is easy to leave out and does nothing
+              visible until the list is long: a flex child's default
+              `min-height: auto` refuses to shrink below its content, so
+              `flex-1` alone grows the nav past the sheet and `overflow-y-auto`
+              never has an overflow to act on.
+
+              The rail on `md` and up has had `overflow-y-auto` since it was
+              written. Only the drawer went without, which is why this survived
+              — the panel is developed on the desktop layout.
+            */}
+            <nav
+              aria-label="Admin sections"
+              className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 py-2"
+            >
               <ul className="space-y-0.5">
                 {ADMIN_NAV.map((item) => (
                   <li key={item.href}>
@@ -140,7 +166,7 @@ export function AdminShell({
                 ))}
               </ul>
             </nav>
-            <div className="px-2 pb-4">
+            <div className="shrink-0 px-2 pb-4">
               <StorefrontLink />
             </div>
           </SheetContent>

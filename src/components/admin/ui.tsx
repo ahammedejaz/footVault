@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ChevronDown } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -87,6 +88,67 @@ export function Panel({
       ) : null}
       <div className="p-4">{children}</div>
     </section>
+  );
+}
+
+/**
+ * A panel that starts closed.
+ *
+ * **`<details>` rather than state, and that is the whole point of it.** This
+ * file is Server Components throughout; a disclosure built on `useState` would
+ * drag the panel it wraps across the client boundary along with every field
+ * inside it. The element does open-and-close natively, keyboard included, and
+ * — the part that is easy to miss — browser find-in-page opens a closed
+ * `<details>` to reveal a match, which no hand-rolled version does.
+ *
+ * What goes in one: fields that are **optional and have a working default**.
+ * Parcel dimensions fall back to the shop's box, the search title falls back to
+ * the product name. Nothing required is ever hidden behind a summary, because a
+ * form that cannot be submitted until you open something is worse than a long
+ * form — the owner reads the error, looks at the fields in front of them, and
+ * cannot see the one it refers to.
+ *
+ * The summary says what is inside *and* what happens if it is left alone. "What
+ * the courier is told" is a heading; "left alone, the shop's usual box is used"
+ * is the sentence that lets the owner skip it without wondering.
+ */
+export function Disclosure({
+  title,
+  hint,
+  children,
+  className,
+}: {
+  title: string;
+  /** What happens if this is never opened. Always answerable, or leave it out. */
+  hint: string;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <details className={cn("border-border rounded-md border", className)}>
+      <summary
+        className={cn(
+          // `list-none` plus the marker reset kills the native triangle in both
+          // engines; the chevron below is drawn from the open state instead so
+          // it can sit on the right where the tap target already is.
+          "flex min-h-11 cursor-pointer list-none items-center justify-between gap-2 px-4 py-3",
+          "marker:content-[''] [&::-webkit-details-marker]:hidden",
+          "hover:bg-muted/40 rounded-md transition-colors",
+        )}
+      >
+        <span className="min-w-0">
+          <span className="block text-base font-semibold">{title}</span>
+          <span className="text-muted-foreground block text-sm text-pretty">
+            {hint}
+          </span>
+        </span>
+        <ChevronDown
+          className="text-muted-foreground size-4 shrink-0 transition-transform [details[open]_&]:rotate-180"
+          aria-hidden
+        />
+      </summary>
+      <div className="border-border border-t p-4">{children}</div>
+    </details>
   );
 }
 

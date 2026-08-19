@@ -166,12 +166,17 @@ export default async function AdminBrandsPage({
                     >
                       Added
                     </SortableTh>
-                    <Th className="text-right">Edit</Th>
+                    <Th className="text-right" stickyEnd>
+                      Edit
+                    </Th>
                   </tr>
                 </thead>
                 <tbody>
                   {rows.map((brand) => (
-                    <tr key={brand.id} className="hover:bg-muted/40">
+                    <tr
+                      key={brand.id}
+                      className="group/row hover:bg-muted/40"
+                    >
                       <Td>
                         {/*
                           A logo address the owner pasted is not necessarily one
@@ -228,7 +233,7 @@ export default async function AdminBrandsPage({
                       <Td className="text-muted-foreground whitespace-nowrap">
                         {formatDate(brand.createdAt)}
                       </Td>
-                      <Td className="pr-1">
+                      <Td className="pr-1" stickyEnd>
                         <BrandRowActions
                           brand={{
                             id: brand.id,

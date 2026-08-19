@@ -12,14 +12,30 @@ import { CATALOG_CACHE_TAG, CHROME_CACHE_TAG } from "@/lib/queries/cached";
  * Simpler than categories — brands are a flat list — but the same two rules
  * apply and for the same reasons.
  *
- * **Deleting never un-brands a product.** `products.brand_id` is
- * `on delete set null`, so removing a brand that is in use silently strips the
- * maker off every product carrying it, including the soft-deleted ones that
- * would come back unbranded if they were ever restored. Unlike a category,
- * there is no sensible place to move them to — a Nike shoe is not an Adidas
- * shoe — so this refuses, and points at the thing the owner almost always
- * meant: switching the brand off, which hides it from the shop's filters and
- * leaves every product intact.
+ * **Deleting never un-brands a product by accident.** `products.brand_id` is
+ * `on delete set null`, so removing a brand that is in use strips the maker off
+ * every product carrying it, including the soft-deleted ones that would come
+ * back unbranded if they were ever restored. Unlike a category, there is no
+ * sensible place to move them to — a Nike shoe is not an Adidas shoe — so the
+ * default refuses and points at the thing the owner almost always meant:
+ * switching the brand off, which hides it from the shop's filters and leaves
+ * every product intact.
+ *
+ * **`force` is the escape hatch, and it exists because the refusal was the
+ * whole feature to the person using it.** The owner reported that the panel
+ * gave them no way to remove a brand at all. It did — but only for a brand
+ * nothing had ever pointed at, which in a real catalogue is almost none of
+ * them, and the row said "switch it off instead" where a delete control should
+ * have been. A tool that answers "no" to the only question you have is
+ * indistinguishable from a tool that does not have the feature.
+ *
+ * So the refusal stays the default and becomes overridable: the caller has to
+ * ask for it a second time, having been shown the count. The count is what
+ * makes that informed — "3 products will be left with no maker" is a fact the
+ * owner can weigh, where "are you sure?" is not. It is also recoverable, which
+ * the truly irreversible actions in this panel are not: the products keep their
+ * names, prices, sizes and photographs, and re-branding them is a dropdown per
+ * product. Only the link is destroyed, and only on purpose.
  *
  * **A write busts `chrome` as well as `catalog`.** `cachedPopularBrands` feeds
  * the search overlay from the layout, on an hour's revalidate. See
@@ -148,12 +164,23 @@ export async function setBrandActive(
   );
 }
 
-const deleteSchema = z.object({ id: z.uuid("That is not a brand.") });
+const deleteSchema = z.object({
+  id: z.uuid("That is not a brand."),
+  /**
+   * Delete it even though products carry it, leaving those products unbranded.
+   *
+   * Defaults to `false` rather than being optional-with-a-truthy-check, so a
+   * caller that forgets the flag gets the safe branch. A destructive default
+   * that depends on a field being *present* is one refactor away from being on
+   * everywhere.
+   */
+  force: z.boolean().default(false),
+});
 
 export async function deleteBrand(
   input: unknown,
-): Promise<AdminResult<{ id: string }>> {
-  return adminAction<{ id: string }>(
+): Promise<AdminResult<{ id: string; unbranded: number }>> {
+  return adminAction<{ id: string; unbranded: number }>(
     "deleteBrand",
     "adminMutation",
     async ({ supabase }) => {
@@ -167,21 +194,30 @@ export async function deleteBrand(
         .maybeSingle();
       if (readError) return writeFailure(readError, null);
       // Already gone is the outcome the caller asked for.
-      if (!brand) return { ok: true, id: parsed.data.id };
+      if (!brand) return { ok: true, id: parsed.data.id, unbranded: 0 };
 
+      /*
+        Counted with no `deleted_at` filter on purpose. A soft-deleted product
+        is one Restore away from being on the shop again, and it would come back
+        with no maker — the one case where the damage shows up long after the
+        decision that caused it. The owner is told the live figure separately by
+        the row; this is the figure that governs.
+      */
       const { count, error: countError } = await supabase
         .from("products")
         .select("id", { count: "exact", head: true })
         .eq("brand_id", brand.id);
       if (countError) return writeFailure(countError, null);
 
-      if ((count ?? 0) > 0) {
+      const attached = count ?? 0;
+
+      if (attached > 0 && !parsed.data.force) {
         return {
           ok: false,
           reason: "conflict",
           message:
-            `${brand.name} is on ${count} product${count === 1 ? "" : "s"}. Deleting it would leave ` +
-            `${count === 1 ? "that product" : "those products"} with no maker at all. Switch it off instead — ` +
+            `${brand.name} is on ${attached} product${attached === 1 ? "" : "s"}. Deleting it would leave ` +
+            `${attached === 1 ? "that product" : "those products"} with no maker at all. Switch it off instead — ` +
             `that takes it out of the shop's filters and keeps every product as it is.`,
         };
       }
@@ -193,7 +229,7 @@ export async function deleteBrand(
       if (error) return writeFailure(error, null);
 
       bust();
-      return { ok: true, id: brand.id };
+      return { ok: true, id: brand.id, unbranded: attached };
     },
   );
 }

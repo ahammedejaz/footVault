@@ -47,6 +47,26 @@ function DialogOverlay({
   );
 }
 
+/**
+ * A dialog that is always reachable, however tall its contents are.
+ *
+ * **`max-h` and `overflow-y-auto` are not styling here, they are the difference
+ * between a working form and an unusable one.** The box is `fixed` and centred
+ * with `-translate-y-1/2`, and Radix locks scrolling on `<body>` while it is
+ * open. So a dialog taller than the viewport does not push the page down and it
+ * does not scroll — it hangs off both ends of the screen with no gesture that
+ * can reach the rest of it. The owner reported exactly this on a phone: the
+ * fields below the fold were not hard to get to, they were unreachable.
+ *
+ * `100dvh` rather than `100vh` because mobile browsers shrink the visible
+ * viewport when the address bar is showing, and `vh` keeps measuring the tall
+ * one — which puts the confirm button behind the chrome on the device this
+ * matters most on. `overscroll-contain` stops a flick at the end of the list
+ * from being handed to the page underneath.
+ *
+ * `CouponForm` carried its own copy of this for months, which is how a fix ends
+ * up applying to one dialog out of nine. It belongs in the primitive.
+ */
 function DialogContent({
   className,
   children,
@@ -61,7 +81,7 @@ function DialogContent({
       <DialogPrimitive.Content
         data-slot="dialog-content"
         className={cn(
-          "fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl bg-popover p-4 text-sm text-popover-foreground ring-1 ring-foreground/10 duration-100 outline-none sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+          "fixed top-1/2 left-1/2 z-50 grid max-h-[calc(100dvh-2rem)] w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 overflow-y-auto overscroll-contain rounded-xl bg-popover p-4 text-sm text-popover-foreground ring-1 ring-foreground/10 duration-100 outline-none sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
           className,
         )}
         {...props}
