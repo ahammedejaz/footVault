@@ -72,7 +72,18 @@ export function Panel({
   actions?: React.ReactNode;
 }) {
   return (
-    <section className={cn("border-border rounded-md border", className)}>
+    /*
+      `min-w-0`: a Panel is usually a grid or flex child, and both default to
+      `min-width: auto` — the panel then refuses to shrink below its content,
+      so a table inside stretches the whole page sideways and the header's
+      action button lands past the right edge of a phone with no scroll path
+      to it ("All orders" at x=390 on a 390px screen, found by the 2026-08-20
+      sweep). With the panel clamped, TableWrap's own overflow-x has an
+      overflow to act on and becomes the scroll container it was written to
+      be. The primitive owns this, not each grid that places a panel — the
+      same rule as the dialog's max-h.
+    */
+    <section className={cn("border-border min-w-0 rounded-md border", className)}>
       {title ? (
         <header className="border-border flex flex-wrap items-center justify-between gap-2 border-b px-4 py-3">
           <div className="min-w-0">

@@ -318,6 +318,161 @@ async function main() {
     await page.keyboard.press("Escape");
     await confirmDialog.waitFor({ state: "hidden" });
     check("Escape closes it without deleting anything", true);
+
+    /* ═══ 4 · the sweep ════════════════════════════════════════════════════ */
+    section(
+      "4 · every control on every admin page is on screen or scrollably reachable, at 360px and 390px",
+    );
+
+    /*
+      Sections 1–3 are the three bugs the owner reported, preserved as
+      regression tests. This section is the generalisation, added 2026-08-20:
+      the brands delete button at x=728 and the drawer nav with no overflow
+      rule were both *instances*, and a gate that only knows the instances
+      finds the third one the way the first two were found — by the owner, on
+      a phone, mid-task.
+
+      Every page in ADMIN_NAV, at both widths the shop actually sees (360 is
+      the small-Android floor, 390 the iPhone), every interactive element in
+      the DOM, measured with boundingBox against the viewport — isVisible()
+      is exactly the lie this file exists to reject. The verdict per element:
+
+        - fully inside the viewport → fine;
+        - beyond it horizontally, inside an ancestor that really scrolls
+          sideways → fine for data (a wide table is allowed to scroll), but a
+          FAILURE for a button — an action you have to discover by dragging a
+          table sideways is the brands bug again;
+        - beyond it with no scrollable path, clipped by an overflow-hidden
+          ancestor, or position:fixed outside the screen → unreachable, the
+          drawer bug again.
+
+      Elements ≤1px in both dimensions are skipped as sr-only furniture —
+      intentionally invisible is the opposite of built-but-unreachable.
+    */
+    type SweepProblem = { kind: string; label: string; box: string };
+    const WIDTHS = [360, 390] as const;
+    for (const width of WIDTHS) {
+      const sweepContext = await browser.newContext({
+        viewport: { width, height: 664 },
+        hasTouch: true,
+      });
+      await sweepContext.addCookies(await sessionCookies(account.session));
+      const sweepPage = await sweepContext.newPage();
+
+      for (const item of ADMIN_NAV) {
+        await sweepPage.goto(`${BASE_URL}${item.href}`, { waitUntil: "load" });
+        const { counted, problems } = await sweepPage.evaluate(() => {
+          const vw = window.innerWidth;
+          const vh = window.innerHeight;
+          const problems: { kind: string; label: string; box: string }[] = [];
+          let counted = 0;
+          const controls = Array.from(
+            document.querySelectorAll<HTMLElement>(
+              'button, a[href], input, select, textarea, summary, [role="button"], [role="link"]',
+            ),
+          );
+          for (const el of controls) {
+            const cs = getComputedStyle(el);
+            if (cs.display === "none" || cs.visibility === "hidden") continue;
+            if (el.closest('[aria-hidden="true"]')) continue;
+            // An inert subtree is intentionally non-interactive — a preview,
+            // not a control surface. Nothing inside it is "unreachable"; it
+            // is unreachable BY DESIGN, which is the opposite finding.
+            if (el.closest("[inert]")) continue;
+            if (el instanceof HTMLInputElement && el.type === "hidden") continue;
+            const r = el.getBoundingClientRect();
+            if (r.width <= 1 && r.height <= 1) continue; // sr-only furniture
+            counted += 1;
+
+            const label =
+              `<${el.tagName.toLowerCase()}> ` +
+              (
+                el.getAttribute("aria-label") ||
+                el.textContent ||
+                el.getAttribute("name") ||
+                ""
+              )
+                .trim()
+                .slice(0, 48);
+            const box = `${Math.round(r.left)},${Math.round(r.top)} ${Math.round(r.width)}×${Math.round(r.height)}`;
+
+            // A fixed element outside the screen scrolls with nothing.
+            if (
+              cs.position === "fixed" &&
+              (r.top >= vh || r.bottom <= 0 || r.left >= vw || r.right <= 0)
+            ) {
+              problems.push({ kind: "fixed off-screen", label, box });
+              continue;
+            }
+
+            // Clipped by an overflow-hidden ancestor: no gesture reaches it.
+            let clipped = false;
+            let sidewaysScroller: HTMLElement | null = null;
+            for (
+              let a = el.parentElement;
+              a && a !== document.body;
+              a = a.parentElement
+            ) {
+              const acs = getComputedStyle(a);
+              const ar = a.getBoundingClientRect();
+              if (
+                (acs.overflowY === "hidden" || acs.overflowY === "clip") &&
+                (r.top >= ar.bottom - 1 || r.bottom <= ar.top + 1)
+              ) {
+                clipped = true;
+                break;
+              }
+              if (
+                (acs.overflowX === "hidden" || acs.overflowX === "clip") &&
+                (r.left >= ar.right - 1 || r.right <= ar.left + 1)
+              ) {
+                clipped = true;
+                break;
+              }
+              if (
+                !sidewaysScroller &&
+                (acs.overflowX === "auto" || acs.overflowX === "scroll") &&
+                a.scrollWidth > a.clientWidth + 1
+              ) {
+                sidewaysScroller = a;
+              }
+            }
+            if (clipped) {
+              problems.push({ kind: "clipped by overflow-hidden", label, box });
+              continue;
+            }
+
+            // Horizontal: the axis a page never scrolls on its own.
+            const beyond = r.right > vw + 1 || r.left < -1;
+            if (!beyond) continue;
+            if (!sidewaysScroller) {
+              problems.push({ kind: "off-screen, no scroll path", label, box });
+            } else if (el.matches('button, [role="button"]')) {
+              problems.push({
+                kind: "action needs sideways table scroll (the brands bug)",
+                label,
+                box,
+              });
+            }
+            // Data beyond the fold of a real sideways scroller is allowed.
+          }
+          return { counted, problems };
+        });
+
+        check(
+          `${item.href} at ${width}px — ${counted} controls, all reachable`,
+          counted > 0 && problems.length === 0,
+          counted === 0
+            ? "scanned 0 controls — the page did not render, which is not a pass"
+            : (problems as SweepProblem[])
+                .slice(0, 6)
+                .map((p) => `${p.kind}: ${p.label} @ ${p.box}`)
+                .join("; ") +
+              (problems.length > 6 ? ` … and ${problems.length - 6} more` : ""),
+        );
+      }
+      await sweepContext.close();
+    }
   } finally {
     await browser.close();
   }

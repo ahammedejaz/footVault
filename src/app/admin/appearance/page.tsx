@@ -70,7 +70,16 @@ export default async function AdminAppearancePage() {
         <p className="text-muted-foreground mt-1 text-sm">
           What the shop is showing at this moment — the last published layout.
         </p>
-        <div className="border-border mt-3 overflow-hidden rounded-lg border">
+        {/*
+          `inert`: this is a picture of the homepage, not the homepage. The
+          sections render real storefront components, so without it every
+          wishlist heart and product link inside is a live, focusable control
+          — 18 of them clipped by this very container's overflow-hidden on a
+          phone (found by the 2026-08-20 sweep), and all of them tab stops
+          between the owner and the editor above. A preview is for looking at;
+          the storefront is one tab away for operating.
+        */}
+        <div inert className="border-border mt-3 overflow-hidden rounded-lg border">
           {sections
             .filter((section) => section.isActive)
             .map((section) => (

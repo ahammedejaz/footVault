@@ -111,14 +111,28 @@ export default async function AdminCategoriesPage({
         ) : (
           <>
             <TableWrap label="Categories">
-              <Table className="min-w-[48rem]">
+              {/* 34rem below `sm`: the two action columns are gone there, and
+                  holding the full 48rem would be a screen of empty sideways
+                  scroll after the last real column. */}
+              <Table className="min-w-[34rem] sm:min-w-[48rem]">
                 <thead>
                   <tr>
                     <Th>Category</Th>
                     <Th numeric>Products</Th>
                     <Th>In the shop</Th>
-                    <Th className="text-right">Arrange</Th>
-                    <Th className="text-right">Edit</Th>
+                    {/*
+                      The two action columns exist from `sm` up only. On a
+                      phone they sat at x=473–741 of a 48rem table in a 360px
+                      viewport — eleven buttons per screen of rows reachable
+                      only by an unprompted sideways drag, the same shape as
+                      the brands delete bug (found by the 2026-08-20 sweep).
+                      Below `sm` the same controls render inside the first
+                      cell, which is always on screen; display:none keeps the
+                      hidden copy out of the tab order and the accessibility
+                      tree, so nothing is duplicated to a screen reader.
+                    */}
+                    <Th className="hidden text-right sm:table-cell">Arrange</Th>
+                    <Th className="hidden text-right sm:table-cell">Edit</Th>
                   </tr>
                 </thead>
                 <tbody>
@@ -169,6 +183,52 @@ export default async function AdminCategoriesPage({
                               >
                                 /shop/{row.slug}
                               </Link>
+                              {/* The phone copy of the action cluster — see
+                                  the note on the column headers. */}
+                              <div className="mt-1 flex flex-wrap items-center gap-1 sm:hidden">
+                                <CategoryRowActions
+                                  id={row.id}
+                                  name={row.name}
+                                  isActive={row.isActive}
+                                  canMoveUp={row.index > 0}
+                                  canMoveDown={row.index < row.siblingCount - 1}
+                                  canNest={nestBlockedBecause === null}
+                                  canUnnest={row.depth > 0}
+                                  nestBlockedBecause={nestBlockedBecause}
+                                />
+                                <CategoryForm
+                                  category={{
+                                    id: row.id,
+                                    name: row.name,
+                                    slug: row.slug,
+                                    description: row.description,
+                                    parentId: row.parentId,
+                                    isActive: row.isActive,
+                                  }}
+                                  parents={rootChoices.filter(
+                                    (choice) => !own.includes(choice.id),
+                                  )}
+                                  triggerLabel={
+                                    <>
+                                      Edit
+                                      <span className="sr-only"> {row.name}</span>
+                                    </>
+                                  }
+                                  triggerVariant="ghost"
+                                />
+                                <DeleteCategory
+                                  id={row.id}
+                                  name={row.name}
+                                  childNames={row.childNames}
+                                  productCount={row.productCountIncludingDeleted}
+                                  destinations={options
+                                    .filter((option) => option.id !== row.id)
+                                    .map((option) => ({
+                                      id: option.id,
+                                      path: option.path,
+                                    }))}
+                                />
+                              </div>
                             </div>
                           </div>
                         </Td>
@@ -197,7 +257,7 @@ export default async function AdminCategoriesPage({
                             <Chip tone="neutral">hidden</Chip>
                           )}
                         </Td>
-                        <Td className="pr-1">
+                        <Td className="hidden pr-1 sm:table-cell">
                           <CategoryRowActions
                             id={row.id}
                             name={row.name}
@@ -209,7 +269,7 @@ export default async function AdminCategoriesPage({
                             nestBlockedBecause={nestBlockedBecause}
                           />
                         </Td>
-                        <Td className="pr-1">
+                        <Td className="hidden pr-1 sm:table-cell">
                           <div className="flex items-center justify-end gap-1">
                             <CategoryForm
                               category={{

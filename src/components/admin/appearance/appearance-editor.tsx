@@ -466,7 +466,9 @@ export function AppearanceEditor({
                 : "Rendered by the storefront itself. Not yet published."}
             </p>
           </div>
-          <div className="border-border overflow-hidden rounded-lg border">
+          {/* `inert` for the same reason as the "Live now" render on the
+              page: a preview's controls are pictures of controls. */}
+          <div inert className="border-border overflow-hidden rounded-lg border">
             {preview.view}
           </div>
         </section>

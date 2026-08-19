@@ -165,6 +165,7 @@ export function SortableTh({
   extras,
   numeric,
   initialDir = "asc",
+  stickyEnd,
 }: {
   children: React.ReactNode;
   column: string;
@@ -173,6 +174,14 @@ export function SortableTh({
   extras?: Record<string, string | undefined>;
   numeric?: boolean;
   initialDir?: "asc" | "desc";
+  /**
+   * Pins the column to the right edge while the table scrolls under it.
+   * Added 2026-08-20 when the phone sweep found the inventory stock buttons
+   * at x=688 in a 360px viewport — the capability lived on `Th` alone, so a
+   * sortable actions column could not have it. Same class as the CouponForm
+   * overflow patch: the primitive owns the fix, not one call site.
+   */
+  stickyEnd?: boolean;
 }) {
   const active = params.sort === column;
   const nextDir = active ? (params.dir === "asc" ? "desc" : "asc") : initialDir;
@@ -191,6 +200,7 @@ export function SortableTh({
       className={cn(
         "bg-muted/60 text-muted-foreground border-border border-b px-1 py-1 text-left font-mono text-xs font-normal tracking-[0.06em] whitespace-nowrap uppercase",
         numeric && "text-right",
+        stickyEnd && `${STICKY_END} bg-muted z-20`,
       )}
     >
       <Link

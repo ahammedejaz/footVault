@@ -211,6 +211,10 @@ export default async function AdminInventoryPage({
                       SKU
                     </SortableTh>
                     <Th>Listed</Th>
+                    {/* stickyEnd: the count is the row's action (StockCell is
+                        a button), and on a phone it sat at x=688 in a 360px
+                        viewport — the brands bug, found by the 2026-08-20
+                        sweep. */}
                     <SortableTh
                       column="stock_quantity"
                       params={params}
@@ -218,6 +222,7 @@ export default async function AdminInventoryPage({
                       extras={extras}
                       numeric
                       initialDir="asc"
+                      stickyEnd
                     >
                       This size
                     </SortableTh>
@@ -225,7 +230,7 @@ export default async function AdminInventoryPage({
                 </thead>
                 <tbody>
                   {rows.map((row) => (
-                    <tr key={row.variantId} className="hover:bg-muted/40">
+                    <tr key={row.variantId} className="group/row hover:bg-muted/40">
                       <Td className="max-w-[16rem]">
                         <Link
                           href={`/admin/products/${row.productId}`}
@@ -248,7 +253,7 @@ export default async function AdminInventoryPage({
                           <Chip tone="neutral">off</Chip>
                         )}
                       </Td>
-                      <Td numeric className="pr-1">
+                      <Td numeric className="pr-1" stickyEnd>
                         <StockCell
                           variantId={row.variantId}
                           productName={row.productName}
