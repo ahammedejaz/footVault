@@ -260,6 +260,17 @@ function main(): void {
     "false",
   );
   expect(
+    // Dropped 2026-08-20: public, read by nothing, and it said online payment
+    // was off while the shop took online payments. A reseed that resurrects
+    // it has re-published the falsehood.
+    "the payment_methods row has not been reseeded",
+    sql(
+      dbUrl,
+      "select count(*)::text from site_settings where key = 'payment_methods'",
+    ),
+    "0",
+  );
+  expect(
     "the parcel is complete: 20 × 10 × 10 cm at 1000 g",
     sql(
       dbUrl,

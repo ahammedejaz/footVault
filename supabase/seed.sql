@@ -503,9 +503,11 @@ insert into public.site_settings (key, value, description) values
   ('contact', '{"email":"hello@footvault.in","phone":"+91 80 4718 2200","whatsapp":"+91 98450 22001","address":"42 Commercial Street, Shivaji Nagar, Bengaluru 560001"}'::jsonb, 'Shown in the footer and on the contact page.'),
   ('business_hours', '{"weekday":"10:30 – 20:30","saturday":"10:30 – 21:00","sunday":"11:00 – 19:00"}'::jsonb, 'Opening hours, shown on the contact page.'),
   ('social', '{"instagram":"https://instagram.com/footvault","facebook":"https://facebook.com/footvault"}'::jsonb, 'Social links in the footer.'),
-  ('return_window_days', '1'::jsonb, 'How long after delivery damage in transit may be reported. This row is that window — the returns page, the announcement strip and the terms all resolve it through {{return_window}}, so changing the number here changes every sentence at once. There is no returns window for a change of mind and no refunds; damage in transit is replaced. Stored in days because the column is days; a value of one is rendered to customers in hours.'),
-  ('payment_methods', '{"cod":true,"online":false}'::jsonb, 'Both methods run through Razorpay: prepaid settles in full, Pay on Delivery takes the advance. Read by nothing today — the checkout gates on isAvailable() and the cod_enabled flag in `shipping`.')
+  ('return_window_days', '1'::jsonb, 'How long after delivery damage in transit may be reported. This row is that window — the returns page, the announcement strip and the terms all resolve it through {{return_window}}, so changing the number here changes every sentence at once. There is no returns window for a change of mind and no refunds; damage in transit is replaced. Stored in days because the column is days; a value of one is rendered to customers in hours.')
 on conflict (key) do update set value = excluded.value, description = excluded.description;
+-- payment_methods is deliberately absent: it was public, read by nothing, and
+-- said online payment was off while the shop took online payments. Dropped
+-- 2026-08-20 — see migrations/20260820100000_drop_payment_methods_row.sql.
 
 -- --- homepage -------------------------------------------------------------
 -- Replaced wholesale: sort_order is the identity of a section here, and a

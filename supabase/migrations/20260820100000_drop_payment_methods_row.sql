@@ -1,0 +1,34 @@
+-- Remove site_settings.payment_methods — a public row read by nothing.
+--
+-- ## Why deleted rather than wired
+--
+-- The row said {"cod": true, "online": false} while the shop takes online
+-- payments. It was PUBLIC (RLS grants anon select on is_public rows), so the
+-- one thing it did was tell anyone who fetched the settings endpoint a
+-- falsehood about the checkout. Its own seed description admitted the state:
+-- "Read by nothing today — the checkout gates on isAvailable() and the
+-- cod_enabled flag in `shipping`."
+--
+-- Wiring it in would have *changed payment behaviour* (the row says online is
+-- off), which is exactly the class of change the 2026-08-20 overnight run was
+-- forbidden to make. A row that is not read, not true, and published is worse
+-- than no row. If the owner ever wants an online-payments kill switch it
+-- should be designed against checkout's real gate, deliberately, not
+-- resurrected from a flag that was never connected.
+--
+-- ## Restoring it, should that day come
+--
+-- The exact row as it stood on 2026-08-20 (also in the
+-- DB_Backups/backup-20260820-*-data.sql dump taken before this ran):
+--
+--   insert into public.site_settings (key, value, description) values
+--   ('payment_methods', '{"cod":true,"online":false}'::jsonb,
+--    'Both methods run through Razorpay: prepaid settles in full, Pay on
+--     Delivery takes the advance. Read by nothing today — the checkout gates
+--     on isAvailable() and the cod_enabled flag in `shipping`.');
+--
+-- Idempotent: deleting an absent row is a no-op, so replaying this against a
+-- database seeded without the row (the seed loses it in the same commit) is
+-- safe.
+
+delete from public.site_settings where key = 'payment_methods';

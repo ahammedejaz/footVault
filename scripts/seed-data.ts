@@ -1125,12 +1125,10 @@ export const siteSettings: Array<{
     description:
       "How long after delivery damage in transit may be reported. This row is that window \u2014 the returns page, the announcement strip and the terms all resolve it through {{return_window}}, so changing the number here changes every sentence at once. There is no returns window for a change of mind and no refunds; damage in transit is replaced. Stored in days because the column is days; a value of one is rendered to customers in hours.",
   },
-  {
-    key: "payment_methods",
-    value: { cod: true, online: false },
-    description:
-      "Both methods run through Razorpay: prepaid settles in full, Pay on Delivery takes the advance. Read by nothing today — the checkout gates on isAvailable() and the cod_enabled flag in `shipping`.",
-  },
+  // payment_methods is deliberately absent: it was public, read by nothing,
+  // and said online payment was off while the shop took online payments.
+  // Dropped 2026-08-20 — see
+  // supabase/migrations/20260820100000_drop_payment_methods_row.sql.
 ];
 
 // -----------------------------------------------------------------------------

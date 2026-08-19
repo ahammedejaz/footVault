@@ -66,10 +66,12 @@ export const SETTINGS_VISIBILITY: Record<string, SettingClassification> = {
     reason:
       "the phone, WhatsApp, email and address in the footer — a shop that hides these has no customers",
   },
-  payment_methods: {
-    visibility: "public",
-    reason: "what the checkout offers, which the customer is about to be shown anyway",
-  },
+  // payment_methods is gone, not reclassified: the row was read by nothing,
+  // published to anyone, and false ("online": false while the shop takes
+  // online payments). The classification gate fails on an orphaned entry, so
+  // this comment is the record of the decision rather than a dormant key.
+  // Dropped 2026-08-20 — see
+  // supabase/migrations/20260820100000_drop_payment_methods_row.sql.
   images: {
     visibility: "private",
     reason:
