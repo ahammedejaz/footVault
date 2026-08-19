@@ -51,8 +51,10 @@ Open http://localhost:3000. The design system renders at `/style-guide`.
 | `npm run seed:sql`                | Write `supabase/seed.sql` instead, for the rebuild below                                                                                       |
 | `npm run rebuild:stage`           | **The disaster-recovery drill**: staging from empty — clean, replay every migration, seed, verify. Refuses to aim anywhere but staging         |
 | `npm run seed:images`             | Regenerate the drawn product assets in `public/seed/`                                                                                          |
-| `npm run audit`                   | The browser and database gate — every `audit:*` below except `security`, `lighthouse`, `shots` and `teardown`                                  |
-| `npm run audit:literals`          | No policy number typed anywhere — in a component **or** in owner-edited CMS content                                                            |
+| `npm run audit`                   | The browser and database gate — every `audit:*` below except the deploy gates (`security`, `actions`, `build-smoke`, `deploy-drift`) and the tools (`lighthouse`, `shots`, `teardown`, `zero-stock`); `run-all.ts` fails if a new audit is in neither list |
+| `npm run audit:literals`          | No policy number typed in code, documents, or owner content — components, all of `src`, `docs/*.md`, and the CMS tables                        |
+| `npm run audit:admin-mobile`      | The panel as a phone: the three 2026-08-19 bugs as regressions, plus every ADMIN_NAV page at 360px and 390px — every control on screen or scrollably reachable, boundingBox against the viewport |
+| `npm run audit:deploy-drift`      | Production serves the tip of `origin/main` — `GET /api/version` against local git; exits non-zero when either side is unknowable               |
 | `npm run audit:overflow`          | Six widths × every route — overflow, 44px tap targets, 16px inputs                                                                             |
 | `npm run audit:a11y`              | axe-core, WCAG 2.2 A/AA, at 390px and 1440px, overlays included                                                                                |
 | `npm run audit:keyboard`          | home → category → filter → product → size, by keyboard only                                                                                    |
