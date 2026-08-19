@@ -48,6 +48,7 @@
     "audit:admin-pages": "tsx scripts/audit/admin-pages.ts",
     "audit:admin-mobile": "tsx scripts/audit/admin-mobile.ts",
     "audit:permanent-delete": "tsx scripts/audit/permanent-delete.ts",
+    "audit:deploy-drift": "tsx scripts/audit/deploy-drift.ts",
     "audit:security-advance": "tsx scripts/audit/security-advance.ts",
     "audit:literals": "tsx scripts/audit/literals.ts",
     "images:reprocess": "NODE_OPTIONS=--conditions=react-server tsx scripts/reprocess-images.ts",

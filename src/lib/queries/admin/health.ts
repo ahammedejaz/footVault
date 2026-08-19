@@ -1,5 +1,6 @@
 import "server-only";
 
+import { deployedCommit } from "@/lib/deploy/version";
 import { razorpayModeHealth, type ModeCheck, type WebhookHealth } from "@/lib/payments/health";
 import { readWebhookLiveness } from "@/lib/queries/admin/dashboard";
 import { maybeRow, rows } from "@/lib/queries/run";
@@ -72,6 +73,47 @@ export type DriftHealth =
     }
   | { state: "unreadable"; message: string };
 
+/**
+ * Whether the build that is answering this request is the one at the tip of the
+ * production branch.
+ *
+ * **This is the check that did not exist on 2026-08-20**, when Vercel refused
+ * four deployments in a row before any build started, `main` moved three
+ * commits ahead, every CI job stayed green, and the shop quietly went on
+ * serving a build from six days earlier. Nothing in the panel, the gates or CI
+ * could see it. A person noticed the colour behind a photograph.
+ *
+ * `unknown` is deliberately not a fourth flavour of `clean`. Determining the
+ * *expected* side means asking GitHub for the tip of `main`, which needs a
+ * token because the repository is private; without one this reports that it
+ * could not tell, in a tone that is not green. The page's standing rule is that
+ * a wrong "fine" teaches the owner to stop opening the page, and there is no
+ * version of this check worth having that can be satisfied by not looking.
+ */
+export type DeploymentHealth =
+  | {
+      state: "in_sync";
+      deployed: string;
+      ref: string | null;
+      environment: string | null;
+    }
+  | {
+      state: "drifted";
+      deployed: string;
+      expected: string;
+      ref: string | null;
+      environment: string | null;
+    }
+  | {
+      /** The build knows its commit; nothing could be learned about the branch. */
+      state: "expected_unknown";
+      deployed: string;
+      ref: string | null;
+      environment: string | null;
+      reason: string;
+    }
+  | { state: "unknown"; reason: string };
+
 export type HealthSnapshot = {
   keyMode: ModeCheck;
   webhook: WebhookHealth;
@@ -84,6 +126,8 @@ export type HealthSnapshot = {
     unreadable: string | null;
   };
   drift: DriftHealth;
+  /** Named for the deployment, not the stock ledger — `drift` above is that. */
+  deployment: DeploymentHealth;
   cron: { jobs: CronJobHealth[]; unreadable: string | null };
   /**
    * What the delivery poller is watching: shipped orders with an AWB and no
@@ -98,16 +142,25 @@ export type HealthSnapshot = {
 export async function getHealth(): Promise<HealthSnapshot> {
   const supabase = await createClient();
 
-  const [webhook, wallet, shiprocketAuth, stuck, drift, cron, parcelsInFlight] =
-    await Promise.all([
-      readWebhookLiveness(supabase),
-      shiprocketWalletStatus(),
-      readShiprocketAuth(),
-      readStuckOrders(supabase),
-      readDrift(),
-      readCron(),
-      readParcelsInFlight(supabase),
-    ]);
+  const [
+    webhook,
+    wallet,
+    shiprocketAuth,
+    stuck,
+    drift,
+    deployment,
+    cron,
+    parcelsInFlight,
+  ] = await Promise.all([
+    readWebhookLiveness(supabase),
+    shiprocketWalletStatus(),
+    readShiprocketAuth(),
+    readStuckOrders(supabase),
+    readDrift(),
+    readDeployment(),
+    readCron(),
+    readParcelsInFlight(supabase),
+  ]);
 
   return {
     keyMode: razorpayModeHealth(),
@@ -116,9 +169,102 @@ export async function getHealth(): Promise<HealthSnapshot> {
     shiprocketAuth,
     stuck,
     drift,
+    deployment,
     cron,
     parcelsInFlight,
   };
+}
+
+/**
+ * The deployed commit, and the tip of the branch it claims to be built from.
+ *
+ * The deployed side is free — Vercel bakes it into the bundle at build time, so
+ * a stale build reports its own staleness rather than something newer.
+ *
+ * The expected side costs a network call to GitHub, and the repository is
+ * private, so it needs `GITHUB_REPO_TOKEN`. When that is absent this returns
+ * `expected_unknown` and the page says so; it does **not** fall back to
+ * reporting the deployed commit as correct, because a check that passes when it
+ * cannot see is worse than no check — it is a check that lies.
+ *
+ * Failures here are caught and reported rather than thrown: this is one card on
+ * a page whose whole job is to be openable when things are broken, and taking
+ * the page down to report that GitHub is slow would be the wrong trade.
+ */
+async function readDeployment(): Promise<DeploymentHealth> {
+  const commit = deployedCommit();
+  if (commit.state === "unknown") {
+    return { state: "unknown", reason: commit.reason };
+  }
+
+  const token = process.env.GITHUB_REPO_TOKEN;
+  const owner = process.env.VERCEL_GIT_REPO_OWNER;
+  const repo = process.env.VERCEL_GIT_REPO_SLUG;
+  const branch = commit.ref ?? "main";
+
+  const base = {
+    deployed: commit.sha,
+    ref: commit.ref,
+    environment: commit.environment,
+  };
+
+  if (!token || !owner || !repo) {
+    return {
+      state: "expected_unknown",
+      ...base,
+      reason: !token
+        ? "GITHUB_REPO_TOKEN is not set, so the tip of the branch cannot be read — the repository is private."
+        : "VERCEL_GIT_REPO_OWNER / VERCEL_GIT_REPO_SLUG are not set on this build.",
+    };
+  }
+
+  try {
+    const response = await fetch(
+      `https://api.github.com/repos/${owner}/${repo}/commits/${encodeURIComponent(branch)}`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: "application/vnd.github+json",
+          "User-Agent": "footvault-health",
+        },
+        // Never cached. The whole question is "what is true right now", and a
+        // cached answer is how this reports the previous tip and passes.
+        cache: "no-store",
+        signal: AbortSignal.timeout(6_000),
+      },
+    );
+    if (!response.ok) {
+      return {
+        state: "expected_unknown",
+        ...base,
+        reason: `GitHub answered ${response.status} for ${owner}/${repo}@${branch}.`,
+      };
+    }
+    const body: unknown = await response.json();
+    const expected =
+      typeof body === "object" && body !== null && "sha" in body
+        ? String((body as { sha: unknown }).sha).toLowerCase()
+        : "";
+    if (!/^[0-9a-f]{40}$/.test(expected)) {
+      return {
+        state: "expected_unknown",
+        ...base,
+        reason: "GitHub did not return a commit SHA for that branch.",
+      };
+    }
+    return expected === commit.sha
+      ? { state: "in_sync", ...base }
+      : { state: "drifted", ...base, expected };
+  } catch (error) {
+    return {
+      state: "expected_unknown",
+      ...base,
+      reason:
+        error instanceof Error
+          ? `Could not reach GitHub: ${error.message}`
+          : "Could not reach GitHub.",
+    };
+  }
 }
 
 /** The same filter the poller's selector uses; null when unreadable. */

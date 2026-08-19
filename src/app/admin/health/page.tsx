@@ -171,6 +171,14 @@ export default async function AdminHealthPage() {
           )}
         </section>
 
+        {/*
+          First section on the page, above everything else, because it is the
+          only one that can invalidate the rest: if the build answering this
+          request is not the build that was merged, then every other card is
+          reporting truthfully about the wrong code.
+        */}
+        <DeploymentSection deployment={health.deployment} />
+
         <section className="space-y-2">
           <h2 className="font-mono text-xs tracking-[0.06em] uppercase">
             Stock ledger{" "}
@@ -273,6 +281,97 @@ export default async function AdminHealthPage() {
         </section>
       </AdminPage>
     </>
+  );
+}
+
+/**
+ * What is deployed, and whether it is what was merged.
+ *
+ * The four states are drawn differently on purpose, and only one of them is
+ * green. `expected_unknown` is the one worth being careful about: the build
+ * knows its own commit but nothing could be learned about the branch, and the
+ * honest rendering of that is a warning that names the missing piece — not a
+ * tick, and not silence. This page's standing rule is that it never renders a
+ * guess, and "I could not check" is a guess wearing a tick.
+ *
+ * Both SHAs are always printed when both are known. A verdict without the
+ * figures behind it is not something anybody can act on: "drifted" tells the
+ * owner to worry, `2e0527b → 317839e` tells them what to redeploy.
+ */
+function DeploymentSection({
+  deployment,
+}: {
+  deployment: HealthSnapshot["deployment"];
+}) {
+  return (
+    <section className="space-y-2">
+      <h2 className="font-mono text-xs tracking-[0.06em] uppercase">
+        Deployed build{" "}
+        {deployment.state === "in_sync" ? (
+          <Chip tone="good">in sync with main</Chip>
+        ) : deployment.state === "drifted" ? (
+          <Chip tone="bad">behind main</Chip>
+        ) : (
+          <Chip tone="warn">unverified</Chip>
+        )}
+      </h2>
+
+      {deployment.state === "unknown" ? (
+        <p className="text-sm text-pretty">
+          <span className="text-destructive font-medium">
+            Cannot tell which commit is running.
+          </span>{" "}
+          <span className="text-muted-foreground">{deployment.reason}</span>
+        </p>
+      ) : (
+        <div className="border-border rounded-md border p-3 text-sm">
+          <dl className="grid gap-x-6 gap-y-1 sm:grid-cols-[10rem_1fr]">
+            <dt className="text-muted-foreground">Serving</dt>
+            <dd className="font-mono">
+              {deployment.deployed.slice(0, 7)}
+              <span className="text-muted-foreground">
+                {" "}
+                {deployment.deployed.slice(7)}
+              </span>
+            </dd>
+
+            {deployment.state === "drifted" ? (
+              <>
+                <dt className="text-muted-foreground">Tip of {deployment.ref ?? "main"}</dt>
+                <dd className="font-mono">
+                  {deployment.expected.slice(0, 7)}
+                  <span className="text-muted-foreground">
+                    {" "}
+                    {deployment.expected.slice(7)}
+                  </span>
+                </dd>
+              </>
+            ) : null}
+
+            <dt className="text-muted-foreground">Branch</dt>
+            <dd>
+              {deployment.ref ?? "—"}
+              {deployment.environment ? ` · ${deployment.environment}` : ""}
+            </dd>
+          </dl>
+
+          {deployment.state === "drifted" ? (
+            <p className="text-destructive mt-2 text-sm text-pretty">
+              The shop is serving an older build than the one on{" "}
+              {deployment.ref ?? "main"}. Work that has been merged is not live.
+              Check Vercel for a deployment that never built — a refusal before
+              the build starts produces no logs and reports as a failed check.
+            </p>
+          ) : deployment.state === "expected_unknown" ? (
+            <p className="text-muted-foreground mt-2 text-sm text-pretty">
+              The commit above is running, but it could not be compared against
+              the branch, so this is <strong>not</strong> a confirmation that
+              the shop is up to date. {deployment.reason}
+            </p>
+          ) : null}
+        </div>
+      )}
+    </section>
   );
 }
 

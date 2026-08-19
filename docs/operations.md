@@ -116,3 +116,81 @@ recorded zero violations from a session run against `next dev`, whose policy
 carries `'unsafe-eval'`, so the one real violation on `/checkout` could not have
 appeared. **Measure against a production build, and say which instrument you
 used.**
+
+## Is production serving what was merged?
+
+`main` moving and production not following is a failure with **no natural
+signal**. Nothing goes red: CI passes on the commit, the merge succeeds, and the
+shop keeps answering 200 with older code. On 2026-08-20 that ran for 23 minutes
+across four refused deployments and was caught by a person noticing the colour
+behind a photograph.
+
+Two things now answer the question.
+
+### `/admin/health` → "Deployed build"
+
+The first card on the page, because it can invalidate every card below it: if
+the build answering the request is not the build that was merged, the rest of
+the page is reporting truthfully about the wrong code.
+
+| Chip | Meaning |
+|---|---|
+| `in sync with main` | the deployed commit is the tip of `main` |
+| `behind main` | **merged work is not live** — both SHAs are printed |
+| `unverified` | it could not check, which is *not* a pass |
+
+`unverified` appears when the build has no `VERCEL_GIT_COMMIT_SHA` (any build
+that is not a Vercel build — `next dev`, `start:stage`, CI) or when the tip of
+the branch could not be read.
+
+**To get the full verdict rather than `unverified`, set `GITHUB_REPO_TOKEN`** in
+the Vercel project's environment variables — a fine-grained token with read-only
+Contents access to this repository is enough. It is optional: without it the
+page still shows which commit is running, it simply will not claim that commit
+is current. `VERCEL_GIT_REPO_OWNER` and `VERCEL_GIT_REPO_SLUG` come from Vercel
+automatically.
+
+### `npm run audit:deploy-drift`
+
+The loud version, and the one to run after any deploy:
+
+```
+deploy drift  https://www.footvault.in
+  serving   317839ed602b496c59a3faafe9ee86b4dcd75607  (main)
+  origin/main 317839ed602b496c59a3faafe9ee86b4dcd75607
+
+✓ production is serving the tip of main
+```
+
+It compares `GET /api/version` on the live site against `git rev-parse
+origin/main`, and **exits non-zero whenever it cannot establish either side** —
+an unreachable site, a 404, a build that does not know its own commit. "Could
+not read" is not "in sync"; a check that goes quiet when it cannot see is the
+same shape of bug as the one it exists to catch.
+
+To exercise the failure path deliberately:
+
+```bash
+npm run audit:deploy-drift -- --expect b87d81741cd48352df9e6a362691aee7f79276e7
+```
+
+It announces the override, so a control run can never be mistaken for a real
+green one. `DRIFT_BASE_URL` points it somewhere other than production.
+
+**It is deliberately not a PR gate.** Between merging and the deployment going
+live, production is legitimately behind `main` — wiring this into CI would make
+every merge red for two minutes and teach everyone to ignore it.
+
+### When it is red
+
+The usual cause is a deployment that never built. Vercel reports those as
+`readyState: BLOCKED` with `buildingAt == ready == createdAt`, so the inspector
+shows no logs, and `gh pr checks` renders it as a plain `fail` on a "Vercel"
+check — indistinguishable from a compile error. Read `readyStateReason` on the
+deployment rather than the check name:
+
+```bash
+curl -s -H "Authorization: Bearer $VERCEL_TOKEN" \
+  "https://api.vercel.com/v13/deployments/<id>?teamId=<team>" \
+  | python3 -c "import json,sys;print(json.load(sys.stdin).get('readyStateReason'))"
+```
