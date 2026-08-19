@@ -16,8 +16,8 @@ import { SHIPROCKET_SERVICEABILITY_TIMEOUT_MS } from "@/lib/shipping/config";
  *
  * **What the customer is charged is decided in `deliveryFee()`, not here.** Two
  * rupee figures used to sit in this paragraph describing the fee and the free
- * threshold; both were stale within a phase — the threshold has been ₹6,499 for
- * some time while this said ₹2,499 — which is the third recorded instance of the
+ * threshold; both were stale within a phase — the row read ₹6,499 while this
+ * said ₹2,499 — which is the third recorded instance of the
  * same number escaping into text nobody re-reads. Every threshold now resolves
  * from `site_settings.shipping` at the point of use, and this comment names no
  * amounts.

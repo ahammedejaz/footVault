@@ -22,6 +22,11 @@ import { Button } from "@/components/ui/button";
  */
 export function NotFoundBody() {
   return (
+    // A marker attribute for gates was tried here on 2026-08-20 and removed
+    // the same night: the App Router serialises this template into EVERY
+    // page's flight payload, so any string in this file appears on found and
+    // not-found pages alike, and a gate matching it is vacuous. audit:security
+    // asserts on order-content disclosure instead.
     <div className="mx-auto flex max-w-xl flex-col items-center px-4 py-24 text-center sm:px-6">
       <TreadMark className="text-line h-24 w-12" />
       <p className="text-muted-foreground mt-8 font-mono text-xs tracking-[0.06em] uppercase">

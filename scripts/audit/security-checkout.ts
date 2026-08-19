@@ -116,6 +116,33 @@ const BASE = (process.env.FV_BASE_URL ?? "http://localhost:3210").replace(
 const WEBHOOK_SECRET = (process.env.RAZORPAY_WEBHOOK_SECRET ?? "").trim();
 const GUEST_COOKIE = "fv_guest";
 
+/**
+ * The page-layer oracle for "did this response disclose the order?"
+ *
+ * Two implementations of this check are known NOT to work, both tried:
+ *
+ *   - **The status line.** `loading.tsx` streams a skeleton, so every order
+ *     page commits `200 OK` before ownership is decided and `notFound()`
+ *     swaps the body in-stream — the 2026-08-10 contract recorded in
+ *     /order/[orderNumber]/page.tsx. Six checks in this file asserted 404
+ *     against that contract and sat red from then until 2026-08-20.
+ *   - **A not-found marker in the HTML.** The App Router serialises the
+ *     not-found *template* into every page's flight payload
+ *     (`"notFound":[...]`), found pages included — and how many copies appear
+ *     measures boundary nesting, not outcome. Measured 2026-08-20: the
+ *     owner's own order page carries the marker twice, same as a stranger's.
+ *
+ * What actually discriminates is the order's CONTENT. Every fixture order in
+ * this file ships to ADDRESS, whose recipient is the distinctive string
+ * below; it renders only when `getOrderForViewer` authorises the caller, and
+ * it cannot be derived from the URL the way the order number can (the
+ * requested number is echoed into the router payload for everyone). So the
+ * property asserted is disclosure itself: an authorised body contains it —
+ * the positive control proving the marker renders — and no stranger's body
+ * may.
+ */
+const ORDER_CONTENT_MARK = "Security Runner";
+
 const ADDRESS = {
   recipientName: "Security Runner",
   phone: "9876543210",
@@ -1135,20 +1162,37 @@ async function main() {
             redirect: "manual",
           },
         );
+        /*
+          The contract these five assert changed on 2026-08-10 and the checks
+          sat red on the old one until 2026-08-20. `loading.tsx` streams a
+          skeleton, so the response commits `200 OK` before `getOrderForViewer`
+          resolves and `notFound()` swaps the body in-stream — a stranger gets
+          **200 carrying the not-found body**, and the anti-enumeration
+          property lives in the body, not the status line. The decision, its
+          measurement, and the instruction to bring this file up to date are
+          all in /order/[orderNumber]/page.tsx; routes.ts carries the same
+          note. `data-not-found` is the hook NotFoundBody renders for exactly
+          this assertion. Do NOT put the 404 expectation back — making it pass
+          would mean deleting the skeleton every real customer sees, for no
+          secrecy the body is not already keeping.
+        */
+        const strangerHtml = await asStranger.text();
+        const nobodyHtml = await asNobody.text();
         check(
           "page — the guest who placed it gets 200",
           asVictim.status === 200,
           `${asVictim.status}`,
         );
         check(
-          "page — a guest with another token gets 404",
-          asStranger.status === 404,
-          `${asStranger.status}`,
+          "page — a guest with another token gets a body that discloses nothing of the order",
+          asStranger.status === 200 &&
+            !strangerHtml.includes(ORDER_CONTENT_MARK),
+          `${asStranger.status}, content ${strangerHtml.includes(ORDER_CONTENT_MARK) ? "LEAKED" : "withheld"}`,
         );
         check(
-          "page — no cookie at all gets 404",
-          asNobody.status === 404,
-          `${asNobody.status}`,
+          "page — no cookie at all gets a body that discloses nothing of the order",
+          asNobody.status === 200 && !nobodyHtml.includes(ORDER_CONTENT_MARK),
+          `${asNobody.status}, content ${nobodyHtml.includes(ORDER_CONTENT_MARK) ? "LEAKED" : "withheld"}`,
         );
 
         const detailAsStranger = await fetch(
@@ -1158,19 +1202,22 @@ async function main() {
             redirect: "manual",
           },
         );
+        const detailHtml = await detailAsStranger.text();
         check(
-          "page — /account/orders/<A's id> is 404 (or a redirect to sign in) for a stranger",
-          detailAsStranger.status === 404 ||
-            detailAsStranger.status === 307 ||
-            detailAsStranger.status === 302,
-          `${detailAsStranger.status}`,
+          "page — /account/orders/<A's id> discloses nothing of the order to a stranger",
+          (detailAsStranger.status === 307 ||
+            detailAsStranger.status === 302 ||
+            detailAsStranger.status === 200) &&
+            !detailHtml.includes(ORDER_CONTENT_MARK),
+          `${detailAsStranger.status}, content ${detailHtml.includes(ORDER_CONTENT_MARK) ? "LEAKED" : "withheld"}`,
         );
 
         const html = await asVictim.text();
         check(
-          "page — the owner's page really renders the order (so the 404s mean something)",
-          html.includes(victimOrder.order.orderNumber),
-          `${html.length} bytes`,
+          "page — the owner's page really renders the order, address and all (the positive control: the mark would show if leaked)",
+          html.includes(victimOrder.order.orderNumber) &&
+            html.includes(ORDER_CONTENT_MARK),
+          `${html.length} bytes, mark ${html.includes(ORDER_CONTENT_MARK) ? "rendered" : "MISSING — every 'withheld' above is unproven"}`,
         );
       }
     }
@@ -1213,30 +1260,48 @@ async function main() {
     if (!serverUp) {
       skip("page — walking the sequence", `${BASE} is not answering`);
     } else {
-      const statuses = await Promise.all(
+      /*
+        Same 2026-08-10 contract as section 6: 200 carrying the not-found
+        body, asserted on the body's `data-not-found` hook. The oracle an
+        attacker is denied is any DIFFERENCE along the walk — so the real
+        neighbour and the never-issued numbers must all carry the marker, and
+        the pair check below compares the two bodies' verdicts rather than
+        two status lines that are now both 200 by construction.
+      */
+      const walk = await Promise.all(
         numbers.map(async (n) => {
           const r = await fetch(`${BASE}/order/${n}`, {
             headers: { cookie: `${GUEST_COOKIE}=${randomUUID()}` },
             redirect: "manual",
           });
-          return r.status;
+          const body = await r.text();
+          return {
+            status: r.status,
+            leaked: body.includes(ORDER_CONTENT_MARK),
+          };
         }),
       );
       check(
-        "page — every neighbour is 404, including the one that exists",
-        statuses.every((s) => s === 404),
-        statuses.join(","),
+        "page — walking the sequence discloses no order's contents, including the one that exists",
+        walk.every((w) => w.status === 200 && !w.leaked),
+        walk.map((w) => `${w.status}${w.leaked ? "·LEAK" : ""}`).join(","),
       );
       // An existing-but-not-yours order must be indistinguishable from a
-      // nonexistent one, or the 404 itself is the oracle.
+      // nonexistent one, or the difference itself is the oracle. Status and
+      // disclosure are the two observables a fetch gives an attacker; the
+      // bodies also differ only in per-request tokens and the URL echo,
+      // measured and recorded in /order/[orderNumber]/page.tsx.
       const nonexistent = await fetch(`${BASE}/order/FV-1999-99999`, {
         headers: { cookie: `${GUEST_COOKIE}=${randomUUID()}` },
         redirect: "manual",
       });
+      const nonexistentBody = await nonexistent.text();
       check(
-        "page — a real order and an imaginary one answer identically",
-        nonexistent.status === 404 && statuses[0] === 404,
-        `${statuses[0]} vs ${nonexistent.status}`,
+        "page — a real order and an imaginary one answer identically (status, and neither discloses)",
+        nonexistent.status === walk[0].status &&
+          !walk[0].leaked &&
+          !nonexistentBody.includes(ORDER_CONTENT_MARK),
+        `${walk[0].status}${walk[0].leaked ? "·LEAK" : ""} vs ${nonexistent.status}${nonexistentBody.includes(ORDER_CONTENT_MARK) ? "·LEAK" : ""}`,
       );
     }
 
@@ -2067,10 +2132,12 @@ async function main() {
             redirect: "manual",
           },
         );
+        const strangerBody14 = await stranger.text();
         check(
-          "page — a stranger with no cookie and no session still gets 404",
-          stranger.status === 404,
-          `${stranger.status}`,
+          "page — a stranger with no cookie and no session is still disclosed nothing",
+          stranger.status === 200 &&
+            !strangerBody14.includes(ORDER_CONTENT_MARK),
+          `${stranger.status}, content ${strangerBody14.includes(ORDER_CONTENT_MARK) ? "LEAKED" : "withheld"}`,
         );
       }
     }

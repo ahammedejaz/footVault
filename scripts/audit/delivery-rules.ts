@@ -73,7 +73,12 @@ const rupees = (paise: number) => `₹${(paise / 100).toFixed(2)}`;
 /** Delhivery Surface on the tested lane, in paise. */
 const SURFACE = { rate: 19_136, freight: 13_936, cod: 5_200, rto: 14_200 };
 
-/** The free-delivery threshold as the owner has it today: ₹6,499. */
+/**
+ * A frozen fixture — the threshold as the owner set it on 2026-08-09, kept on
+ * purpose (see settings() below). NOT today's value: the live row has moved
+ * since (₹1,599 on 2026-08-20) and this file must keep proving the *rule*
+ * whatever the row says. The figure is arbitrary to every assertion here.
+ */
 const FREE_ABOVE = 649_900;
 
 function live(over: Partial<ServiceabilityVerdict> = {}): ServiceabilityVerdict {

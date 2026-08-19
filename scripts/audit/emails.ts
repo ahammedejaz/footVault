@@ -19,8 +19,11 @@
  *
  *   npx tsx scripts/audit/emails.ts
  */
+import { execSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 
+import { buildCspViolationEmail } from "../../src/lib/email/csp-violation";
+import { buildIncidentEmail } from "../../src/lib/email/incident";
 import {
   buildDeliveredEmail,
   buildOwnerNewOrderEmail,
@@ -148,7 +151,86 @@ const built: [string, EmailMessage][] = [
       contactEmail: "a@b.c",
     }),
   ],
+  /*
+    The two operator emails, added 2026-08-20. Until then `built` held five
+    entries while src/lib/email exported seven builders, and the header above
+    still said "every email" — the same hand-list rot as the guarded-harness
+    list that was wrong by six. The tripwire after this array is what now
+    makes the header true by force rather than by memory.
+  */
+  [
+    "csp-violation",
+    buildCspViolationEmail({
+      to: "owner@shop",
+      directive: "script-src-elem",
+      blockedUri: "https://evil.example/x.js",
+      documentUri: "https://www.footvault.in/checkout",
+      sourceFile: null,
+      lineNumber: null,
+      disposition: "enforce",
+      critical: false,
+      occurredAt: "2026-08-20T02:00:00.000Z",
+    }),
+  ],
+  [
+    "incident",
+    buildIncidentEmail({
+      to: "owner@shop",
+      path: "/checkout",
+      method: "POST",
+      routePath: "/checkout",
+      routeType: "action",
+      message: "fixture error for the audit",
+      digest: null,
+      stack: null,
+      occurredAt: "2026-08-20T02:00:00.000Z",
+    }),
+  ],
 ];
+
+/*
+  The tripwire: every `build*Email` export under src/lib/email must be
+  exercised above. Derived from the tree, so a new email cannot ship
+  untested by forgetting this file exists — the gate names the missing
+  builder instead.
+*/
+{
+  const exported = execSync(
+    "git ls-files --cached --others --exclude-standard 'src/lib/email/*.ts'",
+    { encoding: "utf8" },
+  )
+    .split("\n")
+    .filter(Boolean)
+    .flatMap((file) =>
+      [...readFileSync(file, "utf8").matchAll(/export function (build\w*Email)\(/g)].map(
+        (m) => m[1],
+      ),
+    );
+  const self = readFileSync("scripts/audit/emails.ts", "utf8");
+  if (exported.length === 0) {
+    console.error(
+      "\n\x1b[31mRefusing to report a pass: found 0 email builders in src/lib/email.\x1b[0m\n",
+    );
+    process.exit(1);
+  }
+  console.log(`  \x1b[2m·\x1b[0m ${exported.length} builders exported by src/lib/email`);
+  for (const name of exported) {
+    check(
+      `${name} is exercised by this file`,
+      new RegExp(`${name}\\(\\{`).test(self),
+      "a builder the audit has never called is an email nobody has ever proofread",
+    );
+  }
+}
+
+/**
+ * The two operator alerts are emails about the *site*, not about an order —
+ * there is no order number to name and no storefront branding to carry, and
+ * asserting order-email properties on them would either fail forever or
+ * teach someone to bolt an irrelevant logo onto a pager message. What they
+ * must name instead is the thing that broke, asserted per-template below.
+ */
+const OPERATOR = new Set(["csp-violation", "incident"]);
 
 for (const [name, message] of built) {
   check(
@@ -157,10 +239,33 @@ for (const [name, message] of built) {
       message.html.trim().length > 20 &&
       message.subject.trim().length > 5,
   );
+  if (!OPERATOR.has(name)) {
+    check(
+      `${name}: names the order number`,
+      message.text.includes("FV-2026-00660") &&
+        message.html.includes("FV-2026-00660"),
+    );
+  }
+}
+
+{
+  const csp = built.find(([n]) => n === "csp-violation")?.[1];
   check(
-    `${name}: names the order number`,
-    message.text.includes("FV-2026-00660") &&
-      message.html.includes("FV-2026-00660"),
+    "csp-violation: names the directive and what it blocked",
+    Boolean(
+      csp &&
+        csp.text.includes("script-src-elem") &&
+        csp.text.includes("https://evil.example/x.js"),
+    ),
+  );
+  const incident = built.find(([n]) => n === "incident")?.[1];
+  check(
+    "incident: names the path and method that broke",
+    Boolean(
+      incident &&
+        incident.text.includes("/checkout") &&
+        incident.text.includes("POST"),
+    ),
   );
 }
 
@@ -212,7 +317,7 @@ for (const [name, message] of built) {
 
 const replyTos = new Set(built.map(([, m]) => m.replyTo ?? "unset"));
 check(
-  "all five agree on one reply-to",
+  `all ${built.length} agree on one reply-to`,
   replyTos.size === 1,
   [...replyTos].join(", "),
 );
@@ -228,6 +333,12 @@ console.log("\n[1m2b · every email carries the shop's logo[0m");
  * rather than shipping bare.
  */
 for (const [name, message] of built) {
+  if (OPERATOR.has(name)) {
+    console.log(
+      `  \x1b[2m·\x1b[0m ${name} — operator alert, no storefront branding on purpose`,
+    );
+    continue;
+  }
   check(
     `${name}: the HTML part shows /brand/logo-email.png with alt text`,
     message.html.includes("/brand/logo-email.png") &&

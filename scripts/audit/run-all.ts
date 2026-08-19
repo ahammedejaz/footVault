@@ -64,6 +64,7 @@ const GATES = [
   "audit:privacy",
   "audit:contact",
   // Database-backed, read-mostly.
+  "audit:permanent-delete",
   "audit:refunds",
   "audit:coupons",
   "audit:transitions",
@@ -103,6 +104,7 @@ const GATES = [
   "audit:checkout",
   "audit:admin",
   "audit:admin-pages",
+  "audit:admin-mobile",
   "audit:settings-controls",
   "audit:loyalty",
   "audit:appearance",
@@ -141,7 +143,24 @@ const EXCLUDED: Record<string, string> = {
     "reported would mean 'the request never reached the action'. Excluded " +
     "must not mean forgotten: it is in the deploy sequence in " +
     "docs/staging.md §4.4 beside audit:build-smoke.",
-  "audit:security": "superseded by audit:security-advance",
+  "audit:security":
+    "a DEPLOY gate, not a suite member — and NOT 'superseded by " +
+    "audit:security-advance', which is what this entry said until " +
+    "2026-08-20 and which was false the same way audit:actions' old " +
+    "reason was false: they test different layers. security-advance " +
+    "attacks the data layer with a customer JWT; this drives the page " +
+    "and webhook layer over HTTP — signature forgery, replay, order-page " +
+    "enumeration, the currency guard. What actually keeps it out of the " +
+    "suite is the artifact it needs: its later sections read " +
+    ".next/static, so it runs against build:stage + start:stage, not the " +
+    "dev server the suite drives. It belongs in the deploy sequence in " +
+    "docs/staging.md §4.4 beside audit:actions.",
+  "audit:deploy-drift":
+    "interrogates PRODUCTION (www.footvault.in) by design — it asks " +
+    "whether the live site serves the tip of origin/main. Putting it in " +
+    "the suite would make every audit run depend on the production " +
+    "network and would fail red on any working branch that is ahead of " +
+    "the deploy. It runs in the deploy sequence, after promotion.",
   "audit:zero-stock": "a seeding helper, not an assertion",
   "audit:build-smoke":
     "the DEPLOY gate, not a suite member. It runs a full production build " +

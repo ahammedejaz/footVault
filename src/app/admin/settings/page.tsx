@@ -77,7 +77,7 @@ export default async function AdminSettingsPage() {
                 Every fallback here is 0, and none of them used to be: this page
                 carried ₹2,499, ₹999 and ₹500 as the values to show when a field
                 was missing. ₹2,499 was the free-delivery threshold two phases
-                ago and has been ₹6,499 for some time, so a row that lost the
+                ago and the row had long since moved on, so a row that lost the
                 field would have shown the owner a stale number, invited them to
                 press Save, and written it back as though they had chosen it.
                 Zero renders as an empty box and cannot be mistaken for a

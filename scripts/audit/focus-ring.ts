@@ -28,6 +28,7 @@ import { chromium, type Page } from "playwright";
 import { buildGuestBag } from "./fixtures";
 import { assertServerNotProduction } from "./clients";
 import { BASE_URL } from "./routes";
+import { scanned } from "./scanned";
 
 const ORANGE = "rgb(254, 147, 1)";
 
@@ -434,11 +435,20 @@ async function main() {
     forever or teach whoever hit it to delete the explanation. The first version
     of this check did exactly that.
   */
-  const offenders = execSync("git ls-files 'src/**/*.tsx'", {
-    encoding: "utf8",
-  })
+  // `--cached --others --exclude-standard`: an uncommitted new component is
+  // exactly where the next `outline-none` gets typed, and a plain `ls-files`
+  // cannot see it — the same blind spot audit:privacy §5 and audit:literals
+  // already closed. `--exclude-standard` keeps .gitignore honoured.
+  const sources = execSync(
+    "git ls-files --cached --others --exclude-standard 'src/**/*.tsx'",
+    {
+      encoding: "utf8",
+    },
+  )
     .split("\n")
-    .filter(Boolean)
+    .filter(Boolean);
+  scanned("component sources for outline-none", sources.length);
+  const offenders = sources
     .filter((file) => !ALLOWED_OUTLINE_OFF.has(file))
     .filter((file) => {
       let inBlock = false;

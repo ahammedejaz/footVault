@@ -34,6 +34,7 @@ import { readFileSync } from "node:fs";
 import { execSync } from "node:child_process";
 
 import { adminClient } from "./clients";
+import { scanned as refuseEmptyScan } from "./scanned";
 
 let failed = 0;
 let checked = 0;
@@ -81,8 +82,16 @@ const ALLOWED = new Map<string, string>([
 
 console.log("\n\x1b[1m1 · no internal vocabulary in customer-facing code\x1b[0m");
 
+/*
+  `--cached --others --exclude-standard`: a brand-new checkout component is
+  exactly where the next internal word reaches a customer, and a plain
+  `ls-files` cannot see an uncommitted file — the same blind spot audit:privacy
+  §5 and audit:literals already closed. `--exclude-standard` keeps .gitignore
+  honoured, so .next and node_modules stay out.
+*/
 const files = execSync(
-  "git ls-files 'src/components/checkout/**/*.tsx' " +
+  "git ls-files --cached --others --exclude-standard " +
+    "'src/components/checkout/**/*.tsx' " +
     "'src/components/storefront/**/*.tsx' " +
     "'src/app/(storefront)/**/*.tsx' " +
     "'src/components/checkout/order-format.ts'",
@@ -90,6 +99,8 @@ const files = execSync(
 )
   .split("\n")
   .filter(Boolean);
+
+refuseEmptyScan("customer-facing sources", files.length);
 
 let scanned = 0;
 for (const file of files) {

@@ -34,8 +34,9 @@ import { createAdminClient } from "@/lib/supabase/admin";
  *
  * This file used to answer an unreadable `site_settings` row with a hardcoded
  * `ShippingSettings` — free delivery above ₹2,499, a ₹199 prepaid fee, a ₹349
- * Pay-on-Delivery fee. Every one of those was stale: the live threshold is
- * ₹6,499. So a settings-table blip did not degrade the shop, it silently
+ * Pay-on-Delivery fee. Every one of those was stale: the live threshold was
+ * ₹6,499 by then (and has moved again since — no figure in a comment stays
+ * true). So a settings-table blip did not degrade the shop, it silently
  * repriced it, and `npm run audit:literals` could not see it because the numbers
  * were in a constant rather than in a component.
  *

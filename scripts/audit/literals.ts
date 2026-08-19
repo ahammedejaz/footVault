@@ -166,8 +166,14 @@ console.log("\n\x1b[1m1 · no currency literal in a component or a page\x1b[0m")
   `.next` stay out. The two lists are unioned by git itself and cannot
   double-count: `--cached` is the index, `--others` is only what is not in it.
 */
+/*
+  All of src, not just components/ and app/: an action module can be a .tsx
+  too (appearance.tsx returns JSX from a server action), and a scope of "the
+  two directories components usually live in" is a claim narrower than the
+  summary line at the bottom of this file. Widened 2026-08-20.
+*/
 const files = execSync(
-  "git ls-files --cached --others --exclude-standard 'src/components/**/*.tsx' 'src/app/**/*.tsx'",
+  "git ls-files --cached --others --exclude-standard 'src/**/*.tsx'",
   { encoding: "utf8" },
 )
   .split("\n")
@@ -372,10 +378,62 @@ console.log(
     : `  ${paiseScanned} files scanned`,
 );
 
-/* ------------------------------------------------------------ 3 · content -- */
+/* --------------------------------------------------------------- 3 · docs -- */
+
+console.log("\n\x1b[1m3 · no document states a current policy value\x1b[0m");
+
+/*
+  The drift this closes was found on 2026-08-20: docs/admin-guide.md carried a
+  "Today" column stating the free-delivery threshold as ₹6,499 while the live
+  row — and the announcement strip printing from it — said ₹1,599. "Today" in
+  a committed file is a lie with a delay on it. The rule is the same one
+  sections 1 and 2 apply to code: prose may explain a control and may narrate
+  history with dates, but the current value lives in site_settings and on the
+  screen that edits it, nowhere else.
+
+  Matched as a table header cell named Today (case-insensitive), which is the
+  exact shape the rot took. Worked examples with dated figures stay legal —
+  "at the rates this account was quoted on 8 August" names its own staleness.
+*/
+{
+  const docFiles = execSync(
+    "git ls-files --cached --others --exclude-standard 'docs/*.md' 'README.md'",
+    { encoding: "utf8" },
+  )
+    .split("\n")
+    .filter(Boolean);
+  let docsScanned = 0;
+  const before = failed;
+  for (const file of docFiles) {
+    docsScanned += 1;
+    const lines = readFileSync(file, "utf8").split("\n");
+    lines.forEach((line, index) => {
+      if (/^\s*\|.*\|\s*Today\s*\|/i.test(line) || /^\s*\|\s*Today\s*\|/i.test(line)) {
+        failed += 1;
+        console.log(
+          `  \x1b[31m✗\x1b[0m ${file}:${index + 1} — a "Today" column states a ` +
+            "current value; point at the settings screen instead",
+        );
+      }
+    });
+  }
+  if (docsScanned === 0) {
+    console.error(
+      "\n\x1b[31mRefusing to report a pass: scanned 0 documents.\x1b[0m\n",
+    );
+    process.exit(1);
+  }
+  console.log(
+    failed === before
+      ? `  \x1b[32m✓\x1b[0m ${docsScanned} documents, none claims to know today's values`
+      : `  ${docsScanned} documents scanned`,
+  );
+}
+
+/* ------------------------------------------------------------ 4 · content -- */
 
 console.log(
-  "\n\x1b[1m3 · no policy figure in owner-edited content\x1b[0m",
+  "\n\x1b[1m4 · no policy figure in owner-edited content\x1b[0m",
 );
 
 /**
@@ -732,7 +790,13 @@ function finish(): void {
     );
     process.exit(1);
   }
-  console.log("\n\x1b[1mNo policy number is typed anywhere.\x1b[0m\n");
+  // The claim matches the coverage: sections 1–4 are JSX sources, paise
+  // assignments across src and scripts, committed documents, and the owner's
+  // content tables. It does not say "anywhere" — a claim broader than a scan
+  // is how the town sweep missed a card that was never in its reach.
+  console.log(
+    "\n\x1b[1mNo policy number is typed in code, documents, or owner content.\x1b[0m\n",
+  );
 }
 
 void checkContent().then(finish);

@@ -18,6 +18,7 @@
  * that needed a deployment to prove it would not be run.
  */
 
+import { execSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 
 import sharp from "sharp";
@@ -209,12 +210,28 @@ async function main() {
   );
 
   /*
-    Every well a photograph lands in, not just the card.
+    Every well a photograph lands in, not just the card — in two halves,
+    because each half rots differently.
 
-    The seam the owner reported is visible anywhere a padded image sits on a
-    surface of a different colour, and the card is only the most-looked-at of
-    eight. Repainting one and forgetting the rest is the likely half-fix, so the
-    gate names them.
+    **The floor**: the wells known on 2026-08-15, named. A hand list cannot
+    see a *new* well, but it is the only thing that notices a *known* well
+    losing its pad — several of these render the (already-square) variants
+    without `object-contain`, so no lexical property re-derives them from the
+    tree once the `bg-photo` class is gone. Deleting a file from this list
+    must be a deliberate act.
+
+    **The tripwire**: derived from the tree, for the well the list has never
+    heard of. Any component that renders with `object-contain` is padding
+    something into a frame, and if what it pads is a photograph the pad must
+    be `bg-photo`. Brand marks are the known exception and are exempted by
+    name, with the reason. This is the half that catches the ninth well being
+    written next month — the hand list alone was the guarded-harness mistake
+    (a list wrong by six) wearing different clothes.
+
+    What neither half can see: a well that neither contains nor pads. That
+    file has no lexical signature at all, and the claim above is narrowed
+    accordingly — this gate covers contain-fit wells and the named floor, not
+    "every well" by construction.
   */
   const WELLS = [
     "src/components/storefront/product-gallery.tsx",
@@ -232,6 +249,40 @@ async function main() {
       `${file.replace(/^src\//, "")} pads its photograph well with bg-photo`,
       source.includes("bg-photo"),
       "a photograph well left on bg-fog shows the pad as a grey square",
+    );
+  }
+
+  /** Contain-fit renders that are not photograph wells, and why. */
+  const CONTAIN_EXEMPT = new Map<string, string>([
+    [
+      "src/app/admin/brands/page.tsx",
+      "brand marks, not photographs — logos sit directly on the card surface and never pass through the pipeline",
+    ],
+    [
+      "src/components/admin/brands/brand-form.tsx",
+      "the logo upload preview — same brand marks, same reason",
+    ],
+  ]);
+  const containUsers = execSync(
+    "git ls-files --cached --others --exclude-standard 'src/**/*.tsx'",
+    { encoding: "utf8" },
+  )
+    .split("\n")
+    .filter(Boolean)
+    .filter((file) => readFileSync(file, "utf8").includes("object-contain"));
+  scanned("contain-fit components", containUsers.length);
+  for (const file of containUsers) {
+    if (WELLS.includes(file) || file === "src/components/storefront/product-card.tsx")
+      continue;
+    const exempt = CONTAIN_EXEMPT.get(file);
+    if (exempt) {
+      console.log(`  \x1b[2m·\x1b[0m ${file} — exempt: ${exempt}`);
+      continue;
+    }
+    check(
+      `${file.replace(/^src\//, "")} contain-fits with a bg-photo pad`,
+      readFileSync(file, "utf8").includes("bg-photo"),
+      "a new contain-fit well must pad with bg-photo, or be exempted here with a reason",
     );
   }
 
@@ -639,7 +690,15 @@ async function main() {
       width: SCENE_W,
       height: SCENE_H,
       channels: 3,
-      background: "#eef1f5",
+      /*
+        CARD_SURFACE by import, never by value: this fixture's whole premise
+        is "a photograph whose own background IS the pad colour", and it
+        carried a copy of the old fog hex — so when the pad moved to white on
+        2026-08-20 the fixture stopped matching its own premise and the
+        byte-identity check below sat red against a correct pipeline. A check
+        holding a private copy of a constant is asserting the past.
+      */
+      background: CARD_SURFACE,
     },
   })
     .composite([
@@ -852,15 +911,19 @@ async function main() {
    * encoder, and it would go red on the day that encoder is upgraded — for a
    * reason having nothing to do with whether the padding is the right colour.
    */
+  // Against CARD_SURFACE itself, not a copy of its bytes: the inline
+  // 0xee/0xf1/0xf5 this held condemned a correct white pad for failing to be
+  // the fog colour the card stopped using on 2026-08-20.
+  const padExpected = hexToRgb(CARD_SURFACE);
   const padOff = Math.max(
-    Math.abs(corneredPixel[0]! - 0xee),
-    Math.abs(corneredPixel[1]! - 0xf1),
-    Math.abs(corneredPixel[2]! - 0xf5),
+    Math.abs(corneredPixel[0]! - padExpected.r),
+    Math.abs(corneredPixel[1]! - padExpected.g),
+    Math.abs(corneredPixel[2]! - padExpected.b),
   );
   check(
     "a crop that runs off the edge is padded in the card's colour",
     padOff <= 2,
-    `#${corneredPixel.subarray(0, 3).toString("hex")} against #eef1f5, off by ${padOff} — CARD_SURFACE within the encoder's tolerance, so the seam does not exist`,
+    `#${corneredPixel.subarray(0, 3).toString("hex")} against ${CARD_SURFACE}, off by ${padOff} — CARD_SURFACE within the encoder's tolerance, so the seam does not exist`,
   );
 
   /* ------------------------------------------------- 9 · auto-frame ------- */
