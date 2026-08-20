@@ -1,6 +1,6 @@
 import "server-only";
 
-import { deployedCommit } from "@/lib/deploy/version";
+import { readDeployment, type DeploymentHealth } from "@/lib/deploy/expected";
 import { razorpayModeHealth, type ModeCheck, type WebhookHealth } from "@/lib/payments/health";
 import { readWebhookLiveness } from "@/lib/queries/admin/dashboard";
 import { maybeRow, rows } from "@/lib/queries/run";
@@ -73,51 +73,8 @@ export type DriftHealth =
     }
   | { state: "unreadable"; message: string };
 
-/**
- * Whether the build that is answering this request is the one at the tip of the
- * production branch.
- *
- * **This is the check that did not exist on 2026-08-20**, when Vercel refused
- * four deployments in a row before any build started, `main` moved three
- * commits ahead, every CI job stayed green, and the shop quietly went on
- * serving a build from six days earlier. Nothing in the panel, the gates or CI
- * could see it. A person noticed the colour behind a photograph.
- *
- * `unknown` is deliberately not a fourth flavour of `clean`. Determining the
- * *expected* side means asking GitHub for the tip of `main`. The repository is
- * **public** — this check shipped on 2026-08-20 believing it private and
- * demanding `GITHUB_REPO_TOKEN`, which would have left the card saying
- * "unverified" until somebody minted a token for a fact anyone can already
- * read. So the call is made either way; a token, when present, only buys
- * rate-limit headroom (5,000/hr against 60/hr per egress IP). When GitHub
- * cannot be read the card says so, in a tone that is not green: the page's
- * standing rule is that a wrong "fine" teaches the owner to stop opening the
- * page, and there is no version of this check worth having that can be
- * satisfied by not looking.
- */
-export type DeploymentHealth =
-  | {
-      state: "in_sync";
-      deployed: string;
-      ref: string | null;
-      environment: string | null;
-    }
-  | {
-      state: "drifted";
-      deployed: string;
-      expected: string;
-      ref: string | null;
-      environment: string | null;
-    }
-  | {
-      /** The build knows its commit; nothing could be learned about the branch. */
-      state: "expected_unknown";
-      deployed: string;
-      ref: string | null;
-      environment: string | null;
-      reason: string;
-    }
-  | { state: "unknown"; reason: string };
+/** Re-exported for the page; the type and its story live in `@/lib/deploy/expected`. */
+export type { DeploymentHealth };
 
 export type HealthSnapshot = {
   keyMode: ModeCheck;
@@ -178,103 +135,6 @@ export async function getHealth(): Promise<HealthSnapshot> {
     cron,
     parcelsInFlight,
   };
-}
-
-/**
- * The deployed commit, and the tip of the branch it claims to be built from.
- *
- * The deployed side is free — Vercel bakes it into the bundle at build time, so
- * a stale build reports its own staleness rather than something newer.
- *
- * The expected side costs a network call to GitHub. The repository is public,
- * so the call needs no credential; `GITHUB_REPO_TOKEN`, when set, is attached
- * for rate-limit headroom only. When GitHub cannot be read this returns
- * `expected_unknown` and the page says so; it does **not** fall back to
- * reporting the deployed commit as correct, because a check that passes when it
- * cannot see is worse than no check — it is a check that lies.
- *
- * Failures here are caught and reported rather than thrown: this is one card on
- * a page whose whole job is to be openable when things are broken, and taking
- * the page down to report that GitHub is slow would be the wrong trade.
- */
-async function readDeployment(): Promise<DeploymentHealth> {
-  const commit = deployedCommit();
-  if (commit.state === "unknown") {
-    return { state: "unknown", reason: commit.reason };
-  }
-
-  const token = process.env.GITHUB_REPO_TOKEN;
-  const owner = process.env.VERCEL_GIT_REPO_OWNER;
-  const repo = process.env.VERCEL_GIT_REPO_SLUG;
-  const branch = commit.ref ?? "main";
-
-  const base = {
-    deployed: commit.sha,
-    ref: commit.ref,
-    environment: commit.environment,
-  };
-
-  if (!owner || !repo) {
-    return {
-      state: "expected_unknown",
-      ...base,
-      reason:
-        "VERCEL_GIT_REPO_OWNER / VERCEL_GIT_REPO_SLUG are not set on this build.",
-    };
-  }
-
-  try {
-    const response = await fetch(
-      `https://api.github.com/repos/${owner}/${repo}/commits/${encodeURIComponent(branch)}`,
-      {
-        headers: {
-          // The repo is public; the token is optional headroom, not access.
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          Accept: "application/vnd.github+json",
-          "User-Agent": "footvault-health",
-        },
-        // Never cached. The whole question is "what is true right now", and a
-        // cached answer is how this reports the previous tip and passes.
-        cache: "no-store",
-        signal: AbortSignal.timeout(6_000),
-      },
-    );
-    if (!response.ok) {
-      return {
-        state: "expected_unknown",
-        ...base,
-        reason:
-          `GitHub answered ${response.status} for ${owner}/${repo}@${branch}.` +
-          (response.status === 403 && !token
-            ? " Likely the unauthenticated rate limit (60/hr per IP, shared on Vercel) — a GITHUB_REPO_TOKEN raises it to 5,000/hr."
-            : ""),
-      };
-    }
-    const body: unknown = await response.json();
-    const expected =
-      typeof body === "object" && body !== null && "sha" in body
-        ? String((body as { sha: unknown }).sha).toLowerCase()
-        : "";
-    if (!/^[0-9a-f]{40}$/.test(expected)) {
-      return {
-        state: "expected_unknown",
-        ...base,
-        reason: "GitHub did not return a commit SHA for that branch.",
-      };
-    }
-    return expected === commit.sha
-      ? { state: "in_sync", ...base }
-      : { state: "drifted", ...base, expected };
-  } catch (error) {
-    return {
-      state: "expected_unknown",
-      ...base,
-      reason:
-        error instanceof Error
-          ? `Could not reach GitHub: ${error.message}`
-          : "Could not reach GitHub.",
-    };
-  }
 }
 
 /** The same filter the poller's selector uses; null when unreadable. */

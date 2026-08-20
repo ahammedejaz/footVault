@@ -45,6 +45,8 @@
 
 import { execFileSync } from "node:child_process";
 
+import { readDeployment } from "../../src/lib/deploy/expected";
+
 /** Production, and www rather than the apex — the apex is a redirect. */
 const DEFAULT_BASE = "https://www.footvault.in";
 const BASE = (process.env.DRIFT_BASE_URL ?? DEFAULT_BASE).replace(/\/$/, "");
@@ -150,7 +152,157 @@ async function servedSha(): Promise<{ sha: string; ref: string | null }> {
   return { sha, ref: record.ref === null ? null : String(record.ref) };
 }
 
+/**
+ * The health card's verdict logic, held against a mocked GitHub before the
+ * real production interrogation runs.
+ *
+ * Written the day the repository went private (2026-08-20). The card's whole
+ * worth is that it can never render a false "in sync", and the branch that
+ * threatens that is exactly the one nobody exercises on purpose: GitHub
+ * answering something other than 200. A private repository answers an
+ * unauthenticated request with **404** — not 403 — so that branch is now the
+ * card's steady state whenever the token is missing, and this proves it reads
+ * as "unverified" with the remedy named, not as a pass.
+ *
+ * Mocked rather than fetched: these cases must hold whether the repository is
+ * public, private, or renamed, and whether this machine has network. The one
+ * thing a mock cannot prove — that production's own GitHub call succeeds — is
+ * the owner opening /admin/health, which the docs tell them to do after the
+ * token lands.
+ */
+async function verdictLogic(): Promise<void> {
+  const realFetch = globalThis.fetch;
+  const saved = {
+    sha: process.env.VERCEL_GIT_COMMIT_SHA,
+    ref: process.env.VERCEL_GIT_COMMIT_REF,
+    env: process.env.VERCEL_ENV,
+    owner: process.env.VERCEL_GIT_REPO_OWNER,
+    repo: process.env.VERCEL_GIT_REPO_SLUG,
+    token: process.env.GITHUB_REPO_TOKEN,
+  };
+  const DEPLOYED = "a".repeat(40);
+  const OTHER = "b".repeat(40);
+
+  const respond = (status: number, body: unknown) => {
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify(body), { status })) as typeof fetch;
+  };
+
+  let ran = 0;
+  const logic = (label: string, pass: boolean, detail = "") => {
+    ran += 1;
+    if (!pass) {
+      globalThis.fetch = realFetch;
+      fail(`verdict logic: ${label}`, detail || "the case above did not hold");
+    }
+    console.log(`  ${green}✓${off} ${label}${detail ? `  ${dim}${detail}${off}` : ""}`);
+  };
+
+  console.log(`\n${bold}verdict logic${off}  ${dim}mocked GitHub, no network${off}`);
+
+  process.env.VERCEL_GIT_COMMIT_SHA = DEPLOYED;
+  process.env.VERCEL_GIT_COMMIT_REF = "main";
+  process.env.VERCEL_ENV = "production";
+  process.env.VERCEL_GIT_REPO_OWNER = "ahammedejaz";
+  process.env.VERCEL_GIT_REPO_SLUG = "footVault";
+  delete process.env.GITHUB_REPO_TOKEN;
+
+  // The steady state of a tokenless build against a private repository.
+  respond(404, { message: "Not Found" });
+  const on404 = await readDeployment();
+  logic(
+    "404 without a token degrades to unverified, never to in sync",
+    on404.state === "expected_unknown",
+    `state ${on404.state}`,
+  );
+  logic(
+    "and the reason names the private repository and the token remedy",
+    on404.state === "expected_unknown" &&
+      on404.reason.includes("private") &&
+      on404.reason.includes("GITHUB_REPO_TOKEN"),
+    on404.state === "expected_unknown" ? on404.reason.slice(0, 90) : "",
+  );
+
+  respond(403, { message: "rate limited" });
+  const on403 = await readDeployment();
+  logic(
+    "403 without a token degrades and names the rate limit",
+    on403.state === "expected_unknown" &&
+      on403.reason.includes("GITHUB_REPO_TOKEN"),
+    `state ${on403.state}`,
+  );
+
+  // The token, when present, must actually ride the request.
+  process.env.GITHUB_REPO_TOKEN = "test-token-value";
+  let sawAuth: string | null = null;
+  globalThis.fetch = (async (_url: unknown, init?: RequestInit) => {
+    const headers = (init?.headers ?? {}) as Record<string, string>;
+    sawAuth = headers.Authorization ?? null;
+    return new Response(JSON.stringify({ sha: DEPLOYED }), { status: 200 });
+  }) as typeof fetch;
+  const withToken = await readDeployment();
+  logic(
+    "a set GITHUB_REPO_TOKEN is sent as the bearer, and agreement is in sync",
+    sawAuth === "Bearer test-token-value" && withToken.state === "in_sync",
+    `Authorization ${sawAuth ?? "missing"}, state ${withToken.state}`,
+  );
+
+  respond(200, { sha: OTHER });
+  const onDrift = await readDeployment();
+  logic(
+    "a different tip is drift, with the expected SHA carried",
+    onDrift.state === "drifted" && onDrift.expected === OTHER,
+    `state ${onDrift.state}`,
+  );
+
+  respond(200, { message: "no sha here" });
+  const onGarbage = await readDeployment();
+  logic(
+    "a 200 without a SHA is not a pass",
+    onGarbage.state === "expected_unknown",
+    `state ${onGarbage.state}`,
+  );
+
+  globalThis.fetch = (async () => {
+    throw new Error("network unreachable");
+  }) as typeof fetch;
+  const onDown = await readDeployment();
+  logic(
+    "an unreachable GitHub degrades rather than passing or throwing",
+    onDown.state === "expected_unknown",
+    `state ${onDown.state}`,
+  );
+
+  delete process.env.VERCEL_GIT_COMMIT_SHA;
+  const onNoSha = await readDeployment();
+  logic(
+    "a build that does not know its own commit says so",
+    onNoSha.state === "unknown",
+    `state ${onNoSha.state}`,
+  );
+
+  globalThis.fetch = realFetch;
+  for (const [key, value] of [
+    ["VERCEL_GIT_COMMIT_SHA", saved.sha],
+    ["VERCEL_GIT_COMMIT_REF", saved.ref],
+    ["VERCEL_ENV", saved.env],
+    ["VERCEL_GIT_REPO_OWNER", saved.owner],
+    ["VERCEL_GIT_REPO_SLUG", saved.repo],
+    ["GITHUB_REPO_TOKEN", saved.token],
+  ] as const) {
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
+
+  if (ran === 0) {
+    fail("verdict logic ran zero cases", "a scan of nothing proves nothing");
+  }
+  console.log(`  ${dim}${ran} cases held${off}`);
+}
+
 async function main() {
+  await verdictLogic();
+
   console.log(`\n${bold}deploy drift${off}  ${dim}${BASE}${off}`);
   if (expectOverride !== null) {
     console.log(

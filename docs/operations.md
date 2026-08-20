@@ -143,17 +143,55 @@ the page is reporting truthfully about the wrong code.
 that is not a Vercel build — `next dev`, `start:stage`, CI) or when the tip of
 the branch could not be read.
 
-**The repository is public, so no token is needed for a full verdict** — the
-card asks GitHub's API unauthenticated. (The check shipped on 2026-08-20
-believing the repo private and demanding `GITHUB_REPO_TOKEN`; that premise was
-false, and would have left the card saying `unverified` until somebody minted a
-token for a fact anyone can read.) The one limit of the tokenless call is
-GitHub's unauthenticated rate cap — 60 requests/hour per IP, shared across
-whoever else exits Vercel through the same address. If the card starts showing
-"GitHub answered 403", set `GITHUB_REPO_TOKEN` in the Vercel project's
-environment variables — a fine-grained token with read-only Contents access to
-this repository raises the cap to 5,000/hour. `VERCEL_GIT_REPO_OWNER` and
-`VERCEL_GIT_REPO_SLUG` come from Vercel automatically.
+**The repository is private (since 2026-08-20), so the card needs
+`GITHUB_REPO_TOKEN` for a full verdict.** Without it, GitHub answers the card's
+unauthenticated request with 404 — GitHub hides that a private repository
+exists at all — and the card shows `unverified` with that exact explanation. It
+never guesses: in the window between the repository going private and the token
+landing, the card says it cannot tell, which is the honest state. (History, for
+whoever reads the diffs: the check shipped on the morning of 2026-08-20
+believing the repo private, was corrected that night when it turned out to be
+public, and the repo was then *made* private the next day. The tokenless path
+now exists only as the degraded state.)
+
+**Minting the token — the exact clicks, on github.com logged in as the
+repository owner:**
+
+1. Click your avatar (top right) → **Settings**.
+2. Left sidebar, bottom: **Developer settings**.
+3. **Personal access tokens** → **Fine-grained tokens** → **Generate new
+   token**.
+4. **Token name**: `footvault-health-card`. **Expiration**: 90 days is the
+   longest that does not become a forgotten credential — put a reminder where
+   you will see it, because when it lapses the card degrades back to
+   `unverified` (honestly, with the reason named) until you mint a new one.
+5. **Resource owner**: your account. **Repository access**: *Only select
+   repositories* → pick `footVault` and nothing else.
+6. **Permissions** → *Repository permissions* → **Contents**: *Read-only*.
+   (Metadata: Read-only is added automatically.) Leave every other permission
+   on *No access*.
+7. **Generate token**, and copy it — it is shown once.
+
+**Putting it where the card reads it — on vercel.com:**
+
+1. Open the `footvault` project → **Settings** → **Environment Variables**.
+2. **Add**: key `GITHUB_REPO_TOKEN`, paste the token as the value.
+3. Environment: tick **Production** only — the card only renders a verdict on
+   production builds, and a token in Preview is a copy that exists for no
+   reason.
+4. **Save**, then — this is the step that is easy to skip — go to
+   **Deployments**, open the **⋯** menu on the latest Production deployment,
+   and **Redeploy**. Environment variables reach a build when it is *created*;
+   the running deployment keeps the environment it was built with, so until a
+   redeploy the card stays `unverified`.
+5. Open `/admin/health` and confirm the Deployed-build card reads
+   `in sync with main`.
+
+`VERCEL_GIT_REPO_OWNER` and `VERCEL_GIT_REPO_SLUG` come from Vercel
+automatically. The card's degradation logic — 404 names the private repo and
+this remedy, 403 names the token being refused, and no non-200 answer can ever
+read as `in sync` — is held by `npm run audit:deploy-drift`, which proves every
+branch against a mocked GitHub before it interrogates production.
 
 ### `npm run audit:deploy-drift`
 
