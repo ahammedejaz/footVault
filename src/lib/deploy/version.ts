@@ -55,8 +55,9 @@ export function deployedCommit(): DeployedCommit {
     return {
       state: "unknown",
       reason:
-        "VERCEL_GIT_COMMIT_SHA is not set — this build was not made by Vercel " +
-        "(next dev, start:stage and CI containers all land here).",
+        "VERCEL_GIT_COMMIT_SHA is not set — this build carries no git " +
+        "metadata (next dev, start:stage, CI containers, and a CLI deploy " +
+        "of an exported tree all land here).",
     };
   }
   // Guard the shape rather than trusting it. A truncated or decorated value

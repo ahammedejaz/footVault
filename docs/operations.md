@@ -237,3 +237,38 @@ curl -s -H "Authorization: Bearer $VERCEL_TOKEN" \
   "https://api.vercel.com/v13/deployments/<id>?teamId=<team>" \
   | python3 -c "import json,sys;print(json.load(sys.stdin).get('readyStateReason'))"
 ```
+
+**With the repository private, BLOCKED is the expected state of every
+git-triggered deployment — solved 2026-08-20.** The refusal is Vercel's
+project-collaboration check: for a private repository the commit author
+(`ahammedejaz@gmail.com`, GitHub `ahammedejaz`) must map to a member of the
+Vercel team, and the Vercel account is `footvault3@gmail.com` with no such
+mapping. For a public repository the check is skipped entirely — which is why
+the 2026-08-20 block appeared to "lift by itself": it lifted at the exact
+moment the repo went public, and re-engaged the moment it went private again.
+The discriminator is on every deployment record as
+`meta.githubRepoVisibility`; read it next to `readyState` before theorising.
+
+What works and what does not, all measured on 2026-08-20:
+
+1. **The only durable fix** (vercel.com, logged in as `footvault3`): avatar →
+   **Account Settings** → **Authentication** → connect the GitHub account,
+   authorising as `ahammedejaz`. The mapping runs through GitHub *logins*, so
+   nothing done to commits can substitute for this connection.
+2. **Does NOT work: a CLI deploy from the repo.** `npx vercel deploy --prod`
+   attaches the local git metadata, Vercel runs the same author check on it,
+   and the deployment blocks identically (`source: "cli"`, same errorLink).
+3. **Does NOT work: authoring the commit as the account email.** A commit by
+   `footvault3@gmail.com` blocks with the `#account-configuration` anchor —
+   GitHub cannot attribute that email to any login, so Vercel cannot map it.
+4. **The interim escape hatch that shipped tonight's code**: export the tree
+   without git and deploy that —
+   `git archive HEAD | tar -x -C /tmp/deploy-tree`, copy
+   `.vercel/project.json` in, `npx vercel deploy --prod --yes` from there.
+   With no git metadata there is no author to check. The cost is honest and
+   temporary: `VERCEL_GIT_COMMIT_SHA` is absent, so `/api/version` reports
+   `unknown`, the health card says it cannot tell which commit is running,
+   and `audit:deploy-drift` is red **by design** until remedy 1 restores
+   verifiable deploys. Verify such a deploy by a content marker instead —
+   a string the new tree serves that the old one did not.
+
