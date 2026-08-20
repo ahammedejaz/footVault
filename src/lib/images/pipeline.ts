@@ -33,20 +33,23 @@ import {
  * ## The frame, and why the output is square
  *
  * `ProductCard` renders into `aspect-4/5` with `object-contain` over
- * `bg-fog`, so nothing is ever cropped by the card and the letterboxing is
- * already fog-coloured. What the card cannot do is make two differently-shaped
+ * `bg-photo`, so nothing is ever cropped by the card and the letterboxing is
+ * the well's own colour. What the card cannot do is make two differently-shaped
  * photographs occupy the *same proportion* of that frame.
  *
  * So the canonical asset is **square**, with the shoe contained inside it and
- * the remainder padded in the card's own surface colour. A square dropped into
- * a 4:5 frame with `object-contain` letterboxes top and bottom — in fog, over
- * fog, so the seam does not exist — and every product now presents at an
- * identical scale regardless of how it was shot.
+ * the remainder padded — and since v2 (2026-08-20) **the pad is transparent
+ * and the alpha channel is preserved**, loudly and on purpose. v1 flattened
+ * everything onto `CARD_SURFACE`, which burnt the frame into the pixels: a
+ * transparent product PNG became a white rectangle forever, and every surface
+ * that was not white showed the rectangle. Now the asset carries only the
+ * photograph; the surface behind it is paint, applied by the page (`bg-photo`
+ * on every well, enforced by `audit:images`), and changing that surface is a
+ * CSS edit rather than a reprocess of the catalogue.
  *
  * The brief asked for "the card's aspect ratio" in one sentence and for a
  * square asset in its gate. Square is the one that produces the consistency
- * both sentences are after, and because the pad colour and the frame colour are
- * the same value it is indistinguishable from the alternative.
+ * both sentences are after.
  *
  * ## Never crop
  *
@@ -101,6 +104,17 @@ export {
  * on an upload the owner is already waiting on, not per request.
  */
 const WEBP_OPTIONS = { quality: 82, effort: 6 } as const;
+
+/**
+ * The pad, since v2: no colour at all.
+ *
+ * Anywhere the frame is larger than the photograph — contain-padding, the
+ * overhang of a crop, the corners a straighten uncovers — the pixels added are
+ * fully transparent, and the surface behind the photograph is painted by the
+ * page (`bg-photo`, held equal to `CARD_SURFACE` by `audit:images`). The RGB
+ * under a zero alpha is irrelevant; black is sharp's convention.
+ */
+const TRANSPARENT = { r: 0, g: 0, b: 0, alpha: 0 } as const;
 
 /**
  * How an **untrusted** buffer is opened.
@@ -254,10 +268,14 @@ export async function normaliseProductImage(
    * not another. Downscaling a single square keeps every variant the same
    * picture.
    *
-   * `flatten` before `resize` because a PNG with a transparent background would
-   * otherwise composite against the pad colour only where the pad is, leaving
-   * the subject's own transparency to become black in a format that has no
-   * alpha channel to put it in.
+   * **There is no `flatten` here, and that is the load-bearing change of v2.**
+   * v1 flattened everything onto `CARD_SURFACE` before resizing, which burnt
+   * the pad — and any transparency the source carried — into white pixels
+   * forever. From v2 (2026-08-20) the alpha channel is **preserved**: WebP
+   * carries alpha natively, the contain-padding is `TRANSPARENT`, and a
+   * transparent source PNG stays transparent all the way to the customer. The
+   * surface behind the photograph is the well the page paints — `bg-photo` on
+   * every catalogue surface, held there by the gate's well tripwire.
    */
   /**
    * **Enlargement is allowed, deliberately.**
@@ -279,10 +297,9 @@ export async function normaliseProductImage(
     : await decoding(() =>
         sharp(input, SOURCE_DECODE)
           .rotate()
-          .flatten({ background: CARD_SURFACE })
           .resize(CANONICAL_EDGE, CANONICAL_EDGE, {
             fit: "contain",
-            background: CARD_SURFACE,
+            background: TRANSPARENT,
           })
           .png()
           .toBuffer(),
@@ -291,7 +308,7 @@ export async function normaliseProductImage(
   const variants: Variant[] = [];
   for (const width of CANONICAL_WIDTHS) {
     const data = await sharp(square)
-      .resize(width, width, { fit: "contain", background: CARD_SURFACE })
+      .resize(width, width, { fit: "contain", background: TRANSPARENT })
       .webp(WEBP_OPTIONS)
       .toBuffer();
 
@@ -306,7 +323,9 @@ export async function normaliseProductImage(
   }
 
   const hash = createHash("sha256");
-  hash.update(`v${PIPELINE_VERSION}:${CARD_SURFACE}:${CANONICAL_EDGE}`);
+  // "alpha" where v1 wrote the pad colour: the pad no longer has one, and a
+  // hash input that named a colour would imply the pixels depend on it.
+  hash.update(`v${PIPELINE_VERSION}:alpha:${CANONICAL_EDGE}`);
   for (const variant of variants) hash.update(variant.data);
 
   return {
@@ -339,9 +358,10 @@ export async function normaliseProductImage(
  *
  * A crop square is allowed to reach past the edge of the photograph, and at
  * `size: 1` on anything not already square it always does. That overhang is
- * exactly the fog padding this pipeline has added since it was written — so it
- * is extended in `CARD_SURFACE` before the extract, and the default crop is
- * the same picture the untouched branch produces rather than a near miss.
+ * exactly the padding this pipeline has always added — extended in
+ * `TRANSPARENT` since v2, so the default crop is the same picture the
+ * untouched branch produces rather than a near miss, and the surface behind
+ * it stays the page's business.
  *
  * ## Two decodes
  *
@@ -353,7 +373,7 @@ export async function normaliseProductImage(
  * decode, once per upload, on an operation the owner is already waiting on.
  */
 async function croppedSquare(input: Buffer, crop: Crop): Promise<Buffer> {
-  const framed = await frameFor(input, crop.rotation);
+  const framed = await frameFor(input, crop.rotation, "store");
 
   const rect = resolveCrop(framed.width, framed.height, crop);
   const pad = paddingFor(framed.width, framed.height, rect);
@@ -371,7 +391,7 @@ async function croppedSquare(input: Buffer, crop: Crop): Promise<Buffer> {
   const padded =
     pad.left || pad.top || pad.right || pad.bottom
       ? await sharp(framed.data)
-          .extend({ ...pad, background: CARD_SURFACE })
+          .extend({ ...pad, background: TRANSPARENT })
           .png()
           .toBuffer()
       : framed.data;
@@ -386,7 +406,7 @@ async function croppedSquare(input: Buffer, crop: Crop): Promise<Buffer> {
   return adjusted(pipeline, crop)
     .resize(CANONICAL_EDGE, CANONICAL_EDGE, {
       fit: "contain",
-      background: CARD_SURFACE,
+      background: TRANSPARENT,
     })
     .png()
     .toBuffer();
@@ -541,50 +561,60 @@ export async function findSubject(frame: Buffer): Promise<Subject | null> {
 }
 
 /**
- * The frame a crop is measured against: oriented, flattened, optionally
- * straightened — and its dimensions, read back rather than predicted.
+ * The frame a crop is measured against: oriented, optionally straightened —
+ * and its dimensions, read back rather than predicted.
  *
  * Shared by `findSubject`'s caller and by `croppedSquare` so that a bounding
  * box found at one moment and a crop applied at another are talking about the
- * same rectangle.
+ * same rectangle. The `pad` mode decides whether transparency is composited
+ * away (measuring) or preserved (storing); it never changes the geometry.
  */
 export async function frameFor(
   input: Buffer,
   rotation = 0,
   /**
-   * Pad the rotation with the photograph's **own** corner colour instead of
-   * `CARD_SURFACE`.
+   * What the frame is *for*, which decides what happens to transparency and
+   * what colour a rotation's uncovered corners take.
    *
-   * For measuring, and only for measuring. `findSubject` infers the background
-   * from the frame's top-left pixel, and rotating fills the new corners with
-   * whatever colour is asked for — so padding a warm wooden table with fog
-   * makes the corner fog, the rest of the photograph "not background", and the
-   * detector correctly reports that it cannot find anything. Straightening a
-   * photograph would therefore switch auto-frame off, silently, which is
-   * exactly what it did until `audit:image-editor` caught it.
+   * - **`"measure"`** (the default): flattened onto `CARD_SURFACE`, rotation
+   *   corners padded in `CARD_SURFACE`. `findSubject`'s trim needs a composited
+   *   image — a transparent corner has no colour to trim against — and
+   *   flattening changes no geometry, so fractions resolved against a measured
+   *   frame hold against a stored one.
+   * - **`"measure-own-corner"`**: as above, but rotation corners take the
+   *   photograph's **own** corner colour. `findSubject` infers the background
+   *   from the top-left pixel, and padding a warm wooden table with white makes
+   *   the corner white, the table "not background", and the detector correctly
+   *   reports that it cannot find anything. Straightening would therefore
+   *   switch auto-frame off, silently, which is exactly what it did until
+   *   `audit:image-editor` caught it.
+   * - **`"store"`**: what `croppedSquare` feeds the stored asset. No flatten —
+   *   since v2 the alpha channel is preserved end to end — and rotation
+   *   corners are `TRANSPARENT`, because stored padding no longer has a colour.
    *
-   * The output frame keeps `CARD_SURFACE`, because that padding is stored and
-   * has to match the card. Both frames come out the same *size*, so the
-   * fractions resolved against one hold against the other.
+   * All three come out the same *size*, so a crop measured against one frame
+   * applies exactly to another.
    */
-  padWithOwnCorner = false,
+  pad: "measure" | "measure-own-corner" | "store" = "measure",
 ): Promise<{ data: Buffer; width: number; height: number }> {
-  const oriented = await decoding(() =>
-    sharp(input, SOURCE_DECODE)
-      .rotate()
-      .flatten({ background: CARD_SURFACE })
+  const oriented = await decoding(() => {
+    const base = sharp(input, SOURCE_DECODE).rotate();
+    return (pad === "store" ? base : base.flatten({ background: CARD_SURFACE }))
       .png()
-      .toBuffer(),
-  );
+      .toBuffer();
+  });
 
   const data =
     rotation === 0
       ? oriented
       : await sharp(oriented)
           .rotate(rotation, {
-            background: padWithOwnCorner
-              ? await cornerColour(oriented)
-              : CARD_SURFACE,
+            background:
+              pad === "store"
+                ? TRANSPARENT
+                : pad === "measure-own-corner"
+                  ? await cornerColour(oriented)
+                  : CARD_SURFACE,
           })
           .png()
           .toBuffer();

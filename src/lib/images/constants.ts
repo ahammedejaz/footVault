@@ -14,17 +14,24 @@
  */
 
 /**
- * The colour a photograph is padded out to, and it must equal `--fv-photo` in
- * `globals.css`.
+ * The colour of the well a photograph sits in, and it must equal `--fv-photo`
+ * in `globals.css`.
  *
- * Baked into every stored asset at upload time, because the padding is burnt
- * into the pixels. A CSS variable that changed later would repaint the frame
- * and leave every previously processed image padded in the old colour — a
- * visible square inside every card. `audit:images` asserts the two agree.
+ * ## Since pipeline v2 this is paint, not pixels
  *
- * Safe to bake in for a second reason: `--fv-photo` is defined once on `:root`
- * and deliberately not redefined for dark mode, so there is no second value it
- * could need to be.
+ * Up to v1 this colour was **flattened into every stored asset**: the pad, and
+ * any transparency the source PNG carried, were burnt to this value at upload
+ * time. From v2 (2026-08-20, owner's decision) the pipeline **preserves the
+ * alpha channel** — the pad is transparent, a transparent source stays
+ * transparent, and the colour behind a photograph is whatever surface the page
+ * paints. This constant is that surface: every well that shows a catalogue
+ * photograph paints `bg-photo`, and `audit:images` holds this value and the CSS
+ * variable equal so the two cannot drift. It is also still what the *measuring*
+ * frame is flattened onto — subject detection composites transparency away
+ * before trimming, which changes nothing about what is stored.
+ *
+ * `--fv-photo` is defined once on `:root` and deliberately not redefined for
+ * dark mode, so there is no second value it could need to be.
  *
  * ## Why this is white, and why it is no longer `--fv-fog`
  *
@@ -33,27 +40,11 @@
  * card it sits in, and it did.
  *
  * What that missed is what the owner actually photographs against. A shoe on a
- * white sheet of paper, contained into a square frame and padded in `#eef1f5`,
- * does not read as a photograph on a card — it reads as a white rectangle
- * floating inside a grey one, with a hard seam where the photograph's own
- * background meets the pad. The pad was matching the *card* and disagreeing
- * with the *photograph*, and the photograph is the part the customer is looking
- * at. White makes the two meet invisibly, which is the whole reason the shop
- * asks for "a plain light background" in `UPLOAD_RECOMMENDATION`.
- *
- * ## What this does to photographs already in the catalogue
- *
- * Nothing, and that is deliberate rather than lucky. `derivativeKey()` hashes
- * this constant into the storage path, so changing it re-derives every path:
- * uploads from here on write to new objects at white, and rows already in the
- * database keep pointing at the objects they were given. There is no rewrite,
- * no window where a product has no image, and nothing to roll back but this
- * line.
- *
- * The cost of that is a mixed catalogue — old photographs still padded in fog,
- * sitting in wells that are now white. The owner chose this over reprocessing
- * on 2026-08-20, having been told. `npm run images:reprocess` re-derives the
- * whole catalogue from `originals/` whenever they want the older ones to match.
+ * white sheet of paper framed against `#eef1f5` does not read as a photograph
+ * on a card — it reads as a white rectangle floating inside a grey one, with a
+ * hard seam where the photograph's own background meets the frame. White makes
+ * the two meet invisibly, which is the whole reason the shop asks for "a plain
+ * light background" in `UPLOAD_RECOMMENDATION`.
  */
 export const CARD_SURFACE = "#ffffff";
 
@@ -78,8 +69,13 @@ export const CANONICAL_EDGE = 1600;
  * *new* objects instead of overwriting live ones: the old catalogue keeps
  * rendering until the new rows are swapped in, so a half-finished reprocess is
  * never a half-broken shop.
+ *
+ * v2 (2026-08-20): the pipeline stopped flattening. v1 assets carry the pad —
+ * and any source transparency — burnt to `CARD_SURFACE`; v2 assets keep their
+ * alpha channel and the page paints the surface. `npm run images:reprocess`
+ * rebuilds the catalogue from `originals/` under the new version.
  */
-export const PIPELINE_VERSION = 1;
+export const PIPELINE_VERSION = 2;
 
 /**
  * Below this on either side, the pipeline is upscaling and it will look like

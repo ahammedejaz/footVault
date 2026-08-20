@@ -211,7 +211,7 @@ export default async function AdminMediaPage({
                           href={item.publicUrl}
                           target="_blank"
                           rel="noreferrer"
-                          className="border-border block size-14 overflow-hidden rounded-sm border"
+                          className="border-border bg-photo block size-14 overflow-hidden rounded-sm border"
                         >
                           <Image
                             src={item.publicUrl}

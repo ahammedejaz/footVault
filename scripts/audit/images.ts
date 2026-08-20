@@ -139,37 +139,38 @@ async function pixelAt(image: Buffer, fx: number, fy: number) {
     (meta.height ?? 1) - 1,
     Math.round((meta.height ?? 1) * fy),
   );
-  const { data } = await sharp(image)
+  const { data, info } = await sharp(image)
     .extract({ left: x, top: y, width: 1, height: 1 })
     .raw()
     .toBuffer({ resolveWithObject: true });
-  return { r: data[0]!, g: data[1]!, b: data[2]! };
-}
-
-function hexToRgb(hex: string) {
+  // A three-channel image is fully opaque; report it as such rather than
+  // reading a missing fourth byte.
   return {
-    r: parseInt(hex.slice(1, 3), 16),
-    g: parseInt(hex.slice(3, 5), 16),
-    b: parseInt(hex.slice(5, 7), 16),
+    r: data[0]!,
+    g: data[1]!,
+    b: data[2]!,
+    a: info.channels === 4 ? data[3]! : 255,
   };
 }
+
 
 async function main() {
   /* ------------------------------------------------- 1 · the pad colour --- */
 
   console.log(
-    "\n\x1b[1m1 · the baked pad colour still matches the card frame\x1b[0m",
+    "\n\x1b[1m1 · the well colour, and the wells that must paint it\x1b[0m",
   );
 
   /**
-   * The one thing in this pipeline that can rot silently.
-   *
-   * `CARD_SURFACE` is burnt into every stored asset at upload time. If someone
-   * restyles the well and nothing checks, the frame repaints and every
-   * previously processed photograph keeps its old padding — a visible square
-   * inside every card, on a catalogue that is expensive to reprocess. The two
-   * values have to be asserted equal somewhere, and this is cheaper than
-   * discovering it on the shop.
+   * Since pipeline v2 nothing is burnt into the pixels — the pad is
+   * transparent and `CARD_SURFACE` is *paint*, applied by every well as
+   * `bg-photo`. What this check now guards is the constant's own claim: code
+   * (the measuring flatten, and whatever reads `CARD_SURFACE` next) and CSS
+   * must mean the same colour by "the well", or the next consumer of the
+   * constant inherits a lie. Under v1 this was the check that kept baked
+   * padding from disagreeing with the frame; the assertion survives because
+   * the two values agreeing is still the invariant, only the failure mode
+   * softened.
    *
    * **The token is `--fv-photo`, not `--fv-fog`, and the split is the point.**
    * They held the same value until 2026-08-20, when the pad went white so that
@@ -221,17 +222,23 @@ async function main() {
     must be a deliberate act.
 
     **The tripwire**: derived from the tree, for the well the list has never
-    heard of. Any component that renders with `object-contain` is padding
-    something into a frame, and if what it pads is a photograph the pad must
-    be `bg-photo`. Brand marks are the known exception and are exempted by
+    heard of. Any component that renders with `object-contain` OR
+    `object-cover` is fitting an image into a frame, and since v2 the stakes
+    rose from cosmetic to structural: the pad is transparent, so a well that
+    paints nothing shows *whatever happens to be behind the photograph* —
+    which on a dark admin row or a lightbox overlay is not a seam, it is a
+    hole. Cover joined the scan on 2026-08-20 for exactly that reason: the
+    square assets pad top-and-bottom or side-to-side, and a cover fit of a
+    square into a square (every thumbnail in the shop) shows the pad whole.
+    Brand marks and the brand film are the known exceptions, exempted by
     name, with the reason. This is the half that catches the ninth well being
     written next month — the hand list alone was the guarded-harness mistake
     (a list wrong by six) wearing different clothes.
 
-    What neither half can see: a well that neither contains nor pads. That
-    file has no lexical signature at all, and the claim above is narrowed
-    accordingly — this gate covers contain-fit wells and the named floor, not
-    "every well" by construction.
+    What neither half can see: a well that renders an image with no fit class
+    at all. That file has a weaker lexical signature (bare next/image), and
+    the claim above is narrowed accordingly — this gate covers fit-classed
+    wells and the named floor, not "every well" by construction.
   */
   const WELLS = [
     "src/components/storefront/product-gallery.tsx",
@@ -248,12 +255,12 @@ async function main() {
     check(
       `${file.replace(/^src\//, "")} pads its photograph well with bg-photo`,
       source.includes("bg-photo"),
-      "a photograph well left on bg-fog shows the pad as a grey square",
+      "an unpainted well shows whatever is behind a transparent pad",
     );
   }
 
-  /** Contain-fit renders that are not photograph wells, and why. */
-  const CONTAIN_EXEMPT = new Map<string, string>([
+  /** Fit-classed renders that are not photograph wells, and why. */
+  const FIT_EXEMPT = new Map<string, string>([
     [
       "src/app/admin/brands/page.tsx",
       "brand marks, not photographs — logos sit directly on the card surface and never pass through the pipeline",
@@ -262,27 +269,31 @@ async function main() {
       "src/components/admin/brands/brand-form.tsx",
       "the logo upload preview — same brand marks, same reason",
     ],
+    [
+      "src/components/storefront/hero-video.tsx",
+      "the brand film cover-fits the viewport edge to edge; it is not a catalogue photograph and there is no pad to show",
+    ],
   ]);
-  const containUsers = execSync(
+  const fitUsers = execSync(
     "git ls-files --cached --others --exclude-standard 'src/**/*.tsx'",
     { encoding: "utf8" },
   )
     .split("\n")
     .filter(Boolean)
-    .filter((file) => readFileSync(file, "utf8").includes("object-contain"));
-  scanned("contain-fit components", containUsers.length);
-  for (const file of containUsers) {
+    .filter((file) => /object-(contain|cover)/.test(readFileSync(file, "utf8")));
+  scanned("image-fit components", fitUsers.length);
+  for (const file of fitUsers) {
     if (WELLS.includes(file) || file === "src/components/storefront/product-card.tsx")
       continue;
-    const exempt = CONTAIN_EXEMPT.get(file);
+    const exempt = FIT_EXEMPT.get(file);
     if (exempt) {
       console.log(`  \x1b[2m·\x1b[0m ${file} — exempt: ${exempt}`);
       continue;
     }
     check(
-      `${file.replace(/^src\//, "")} contain-fits with a bg-photo pad`,
+      `${file.replace(/^src\//, "")} fits its image over a bg-photo well`,
       readFileSync(file, "utf8").includes("bg-photo"),
-      "a new contain-fit well must pad with bg-photo, or be exempted here with a reason",
+      "a new fit-classed well must paint bg-photo, or be exempted here with a reason",
     );
   }
 
@@ -336,19 +347,22 @@ async function main() {
         .join(" "),
     );
 
-    // The corners of a contained image are padding by construction, and the
-    // padding is the thing that has to be the card's colour.
-    const expected = hexToRgb(CARD_SURFACE);
+    // The corners of a contained image are padding by construction, and since
+    // v2 the padding is transparent — the surface behind it is the page's
+    // business, so any colour here would be a colour the pipeline had no right
+    // to choose.
     const largest = result.variants.at(-1)!;
     const corner = await pixelAt(largest.data, 0.01, 0.99);
-    const near =
-      Math.abs(corner.r - expected.r) <= 4 &&
-      Math.abs(corner.g - expected.g) <= 4 &&
-      Math.abs(corner.b - expected.b) <= 4;
     check(
-      `${testCase.label}: padded with the card surface`,
-      near || testCase.width === testCase.height,
-      `corner rgb(${corner.r},${corner.g},${corner.b})`,
+      `${testCase.label}: padding is transparent, not a baked colour`,
+      corner.a <= 2 || testCase.width === testCase.height,
+      `corner alpha ${corner.a}`,
+    );
+    const largestMeta = await sharp(largest.data).metadata();
+    check(
+      `${testCase.label}: the stored WebP carries an alpha channel`,
+      largestMeta.hasAlpha === true || testCase.width === testCase.height,
+      `hasAlpha ${String(largestMeta.hasAlpha)}`,
     );
   }
 
@@ -357,6 +371,95 @@ async function main() {
     "a source below the recommended edge is flagged for the admin warning",
     small.belowRecommended,
     `< ${MIN_RECOMMENDED_EDGE}px`,
+  );
+
+  /* -------------------------------------- 2b · transparency, preserved --- */
+
+  console.log(
+    "\n\x1b[1m2b · a transparent source stays transparent (v2's whole point)\x1b[0m",
+  );
+
+  /**
+   * A product cut-out: an opaque dark block on a fully transparent canvas,
+   * off-centre so the sampled points cannot lie about which region they hit.
+   * 2000×1500, so the untouched branch letterboxes it into the square with
+   * pad bands top and bottom — three distinct regions to interrogate:
+   * the subject (opaque), the source's own transparency (inside the
+   * photograph), and the contain-pad (outside it). Under v1 all three came
+   * out white; each one is a separate way for a flatten to sneak back in.
+   */
+  const CUTOUT_W = 2000;
+  const CUTOUT_H = 1500;
+  const cutout = await sharp({
+    create: {
+      width: CUTOUT_W,
+      height: CUTOUT_H,
+      channels: 4,
+      background: { r: 0, g: 0, b: 0, alpha: 0 },
+    },
+  })
+    .composite([
+      {
+        input: await sharp({
+          create: {
+            width: 600,
+            height: 900,
+            channels: 4,
+            background: { r: 43, g: 43, b: 51, alpha: 1 },
+          },
+        })
+          .png()
+          .toBuffer(),
+        left: 200,
+        top: 300,
+      },
+    ])
+    .png()
+    .toBuffer();
+
+  const asCutout = await normaliseProductImage(cutout);
+  const cutoutLargest = asCutout.variants.at(-1)!;
+  // The photograph maps to 1600×1200 centred in the square; the subject block
+  // lands around x 0.16–0.64, y 0.28–0.88 of the canvas.
+  const inSubject = await pixelAt(cutoutLargest.data, 0.3, 0.5);
+  const inSourceTransparency = await pixelAt(cutoutLargest.data, 0.8, 0.5);
+  const inPad = await pixelAt(cutoutLargest.data, 0.5, 0.02);
+
+  check(
+    "the subject survives, opaque",
+    inSubject.a >= 253 && inSubject.r < 120,
+    `alpha ${inSubject.a}, rgb(${inSubject.r},${inSubject.g},${inSubject.b})`,
+  );
+  check(
+    "the source's own transparency is preserved, not composited onto a colour",
+    inSourceTransparency.a <= 2,
+    `alpha ${inSourceTransparency.a} — under v1 this pixel was ${CARD_SURFACE}`,
+  );
+  check(
+    "and the contain-pad is transparent too",
+    inPad.a <= 2,
+    `alpha ${inPad.a}`,
+  );
+
+  /**
+   * Brightness and contrast ride `modulate`/`linear`, and `linear` in
+   * particular is the kind of operation that could scale the alpha band along
+   * with the colour ones — which would fade the whole photograph as a side
+   * effect of the owner touching a slider. Held here empirically rather than
+   * trusted from the library's documentation.
+   */
+  const adjustedCutout = await normaliseProductImage(cutout, {
+    ...DEFAULT_CROP,
+    brightness: 20,
+    contrast: 20,
+  });
+  const adjLargest = adjustedCutout.variants.at(-1)!;
+  const adjSubject = await pixelAt(adjLargest.data, 0.3, 0.5);
+  const adjTransparent = await pixelAt(adjLargest.data, 0.8, 0.5);
+  check(
+    "brightness and contrast leave the alpha band alone",
+    adjSubject.a >= 253 && adjTransparent.a <= 2,
+    `subject alpha ${adjSubject.a}, background alpha ${adjTransparent.a}`,
   );
   const big = await normaliseProductImage(await markedImage(2000, 2000));
   check("a source at the recommendation is not flagged", !big.belowRecommended);
@@ -516,8 +619,10 @@ async function main() {
    * "every application write goes through addProductImage", and that sentence
    * belongs in the report rather than being implied by a green tick.
    */
-  const derivedUrl =
-    "https://x.supabase.co/storage/v1/object/public/product-images/derived/v1/abc123/shoe-1600.webp";
+  // Built from derivativePath rather than typed: this fixture carried a
+  // hand-written `derived/v1/` and went red the day PIPELINE_VERSION moved to
+  // 2 — a copy of a derivable value asserting the past, again.
+  const derivedUrl = `https://x.supabase.co/storage/v1/object/public/product-images/${derivativePath("shoe", "abc123", 1600)}`;
   const originalUrl =
     "https://x.supabase.co/storage/v1/object/public/product-images/originals/p1/raw.jpg";
 
@@ -802,15 +907,30 @@ async function main() {
     whiteDefault.variants[3]!.data,
   );
 
-  check(
-    "the two paths agree exactly when the photograph's own edge is the pad colour",
-    untouched.variants[3]!.data.equals(asDefault.variants[3]!.data),
-    "nothing to blend at the seam, so contain-padding and extend-then-resize land on the same bytes",
+  /*
+    Under v1 these two were byte-identical when the photograph's own edge was
+    the pad colour, and that identity was asserted here. A transparent pad ends
+    it for every photograph: the untouched branch resizes the picture and then
+    embeds it, so its edge pixels are resampled from picture alone, while the
+    crop branch extends first and resamples the edge against transparent
+    neighbours. Neither is wrong, both draw the same picture, and the bytes
+    disagree in a thin line at the seam — which is precisely why a null crop
+    still takes the untouched branch: routing the catalogue through the crop
+    path would rewrite every content hash to arrive at the same image.
+  */
+  const sceneSeam = await comparePixels(
+    untouched.variants[3]!.data,
+    asDefault.variants[3]!.data,
   );
   check(
-    "and differ only along the seam when it is not — which is why null keeps the old branch",
-    seam.differing > 0 && seam.differing < 0.05 && seam.maxDelta <= 64,
-    `${(seam.differing * 100).toFixed(2)}% of bytes, max delta ${seam.maxDelta} — enough to change a content hash, which would repath the whole catalogue`,
+    "the two paths draw the same picture, disagreeing only at the seam",
+    sceneSeam.differing < 0.05,
+    `${(sceneSeam.differing * 100).toFixed(2)}% of bytes differ — enough to change a content hash, which is why null keeps the old branch`,
+  );
+  check(
+    "and the same holds when the photograph's own edge is not the well colour",
+    seam.differing > 0 && seam.differing < 0.05,
+    `${(seam.differing * 100).toFixed(2)}% of bytes, max delta ${seam.maxDelta}`,
   );
 
   /* ---- auto-frame's arithmetic, end to end ---- */
@@ -905,25 +1025,19 @@ async function main() {
     .raw()
     .toBuffer();
   /**
-   * Within two levels per channel rather than exactly: the variant is WebP at
-   * quality 82, and a lossy encoder is entitled to move a flat field by a level
-   * or two. Asserting the exact bytes here would be asserting a property of the
-   * encoder, and it would go red on the day that encoder is upgraded — for a
-   * reason having nothing to do with whether the padding is the right colour.
+   * Within two levels rather than exactly: WebP codes the alpha plane
+   * near-losslessly at these settings, but asserting exact bytes would assert
+   * a property of the encoder, and it would go red on the day the encoder is
+   * upgraded — for a reason having nothing to do with whether the padding is
+   * transparent.
    */
-  // Against CARD_SURFACE itself, not a copy of its bytes: the inline
-  // 0xee/0xf1/0xf5 this held condemned a correct white pad for failing to be
-  // the fog colour the card stopped using on 2026-08-20.
-  const padExpected = hexToRgb(CARD_SURFACE);
-  const padOff = Math.max(
-    Math.abs(corneredPixel[0]! - padExpected.r),
-    Math.abs(corneredPixel[1]! - padExpected.g),
-    Math.abs(corneredPixel[2]! - padExpected.b),
-  );
+  const corneredMeta = await sharp(cornered.variants[3]!.data).metadata();
+  const corneredAlpha =
+    corneredMeta.hasAlpha === true ? corneredPixel[3]! : 255;
   check(
-    "a crop that runs off the edge is padded in the card's colour",
-    padOff <= 2,
-    `#${corneredPixel.subarray(0, 3).toString("hex")} against ${CARD_SURFACE}, off by ${padOff} — CARD_SURFACE within the encoder's tolerance, so the seam does not exist`,
+    "a crop that runs off the edge is padded with transparency",
+    corneredAlpha <= 2,
+    `corner alpha ${corneredAlpha} — the overhang belongs to the page's surface, not to the pixels`,
   );
 
   /* ------------------------------------------------- 9 · auto-frame ------- */
@@ -1080,7 +1194,7 @@ async function main() {
    */
   const straightScene = await on("#e8e2d6");
   const beforeTilt = await found(straightScene);
-  const afterTilt = await findSubject((await frameFor(straightScene, 6, true)).data);
+  const afterTilt = await findSubject((await frameFor(straightScene, 6, "measure-own-corner")).data);
   check(
     "the subject is still found after a straighten",
     beforeTilt !== null && afterTilt !== null,
@@ -1131,7 +1245,10 @@ async function subjectBounds(
 
   for (let i = 0; i < info.width * info.height; i += 1) {
     const offset = i * info.channels;
-    // Anything markedly darker than the fog surface is subject.
+    // Transparent padding decodes as rgb(0,0,0) — dark, but not subject.
+    // Without this guard every measurement returns the whole frame.
+    if (info.channels === 4 && data[offset + 3]! < 128) continue;
+    // Anything markedly darker than the well surface is subject.
     if (data[offset]! < 120 && data[offset + 1]! < 120 && data[offset + 2]! < 120) {
       const x = i % info.width;
       const y = Math.floor(i / info.width);

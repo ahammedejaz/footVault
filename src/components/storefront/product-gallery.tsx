@@ -212,7 +212,7 @@ export function ProductGallery({
             <Dialog.Description className="sr-only">
               {current.alt}
             </Dialog.Description>
-            <div className="relative aspect-4/5 h-full max-h-[88vh]">
+            <div className="bg-photo relative aspect-4/5 h-full max-h-[88vh] overflow-hidden rounded-lg">
               <ProductPhoto
                 src={current.url}
                 alt={current.alt}

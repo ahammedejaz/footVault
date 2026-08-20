@@ -394,7 +394,7 @@ async function CategoryGrid({ section }: { section: HomepageSection }) {
           <li key={tile.slug} className="reveal">
             <Link
               href={`/shop/${tile.slug}`}
-              className="group relative flex aspect-4/3 flex-col justify-end overflow-hidden rounded-lg"
+              className="bg-photo group relative flex aspect-4/3 flex-col justify-end overflow-hidden rounded-lg"
             >
               {tile.imageUrl ? (
                 <Image

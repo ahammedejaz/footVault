@@ -1132,7 +1132,7 @@ export function CheckoutFlow({
                   key={line.id}
                   className="flex items-start gap-3 py-3 first:pt-0"
                 >
-                  <div className="bg-paper relative aspect-4/5 w-12 shrink-0 overflow-hidden rounded-md">
+                  <div className="bg-photo relative aspect-4/5 w-12 shrink-0 overflow-hidden rounded-md">
                     {line.imageUrl ? (
                       <Image
                         src={line.imageUrl}

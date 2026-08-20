@@ -419,7 +419,7 @@ function Thumbnail({ row }: { row: ProductListRow }) {
       alt=""
       width={40}
       height={40}
-      className="bg-muted size-10 shrink-0 rounded-sm object-cover"
+      className="bg-photo size-10 shrink-0 rounded-sm object-cover"
     />
   );
 }

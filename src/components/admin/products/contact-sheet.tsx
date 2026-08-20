@@ -17,7 +17,7 @@ import { loaderFor } from "@/lib/images/srcset";
  * becomes obviously wrong beside the thirty-four that do not.
  *
  * So this renders the whole catalogue in the card's own frame — `aspect-4/5`,
- * `bg-fog`, `object-contain`, the three the storefront uses — at roughly card
+ * `bg-photo`, `object-contain`, the three the storefront uses — at roughly card
  * size. The odd one out is then a glance rather than a hunt, and the fix is one
  * click away because each tile links to the product it belongs to.
  *

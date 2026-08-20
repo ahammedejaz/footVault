@@ -338,8 +338,8 @@ export async function proposeFrame(
           Buffer.from(await file.arrayBuffer()),
           parsed.data.rotation ?? 0,
           // Measuring, so the rotation is padded with the photograph's own
-          // corner rather than with fog — see frameFor.
-          true,
+          // corner rather than the well colour — see frameFor.
+          "measure-own-corner",
         );
         subject = await findSubject(frame.data);
       } catch (error) {
