@@ -8,7 +8,11 @@ import { ExternalLink, Menu } from "lucide-react";
 
 import lockup from "../../../public/brand/logo.png";
 
-import { ADMIN_NAV, isActive, type AdminNavItem } from "@/components/admin/nav";
+import {
+  ADMIN_NAV_SECTIONS,
+  isActive,
+  type AdminNavItem,
+} from "@/components/admin/nav";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -94,13 +98,18 @@ export function AdminShell({
           aria-label="Admin sections"
           className="flex-1 overflow-y-auto px-2 pb-4"
         >
-          <ul className="space-y-0.5">
-            {ADMIN_NAV.map((item) => (
-              <li key={item.href}>
-                <RailLink item={item} active={isActive(item, pathname)} />
-              </li>
-            ))}
-          </ul>
+          {ADMIN_NAV_SECTIONS.map((section) => (
+            <div key={section.label} className="mb-3 last:mb-0">
+              <SectionHeading>{section.label}</SectionHeading>
+              <ul className="space-y-0.5">
+                {section.items.map((item) => (
+                  <li key={item.href}>
+                    <RailLink item={item} active={isActive(item, pathname)} />
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
         </nav>
         <StorefrontLink />
       </aside>
@@ -156,29 +165,36 @@ export function AdminShell({
               aria-label="Admin sections"
               className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 py-2"
             >
-              <ul className="space-y-0.5">
-                {ADMIN_NAV.map((item) => (
-                  <li key={item.href}>
-                    <Link
-                      href={item.href}
-                      aria-current={
-                        isActive(item, pathname) ? "page" : undefined
-                      }
-                      className={cn(
-                        "flex min-h-11 flex-col justify-center rounded-sm px-3 py-2 transition-colors",
-                        isActive(item, pathname)
-                          ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                          : "hover:bg-sidebar-accent/60",
-                      )}
-                    >
-                      <span className="text-sm font-medium">{item.label}</span>
-                      <span className="text-sidebar-foreground/60 text-xs">
-                        {item.hint}
-                      </span>
-                    </Link>
-                  </li>
-                ))}
-              </ul>
+              {ADMIN_NAV_SECTIONS.map((section) => (
+                <div key={section.label} className="mb-3 last:mb-0">
+                  <SectionHeading>{section.label}</SectionHeading>
+                  <ul className="space-y-0.5">
+                    {section.items.map((item) => (
+                      <li key={item.href}>
+                        <Link
+                          href={item.href}
+                          aria-current={
+                            isActive(item, pathname) ? "page" : undefined
+                          }
+                          className={cn(
+                            "flex min-h-11 flex-col justify-center rounded-sm px-3 py-2 transition-colors",
+                            isActive(item, pathname)
+                              ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                              : "hover:bg-sidebar-accent/60",
+                          )}
+                        >
+                          <span className="text-sm font-medium">
+                            {item.label}
+                          </span>
+                          <span className="text-sidebar-foreground/60 text-xs">
+                            {item.hint}
+                          </span>
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
             </nav>
             <div className="shrink-0 px-2 pb-4">
               <StorefrontLink />
@@ -218,6 +234,39 @@ function Wordmark() {
         </span>
       </Link>
     </div>
+  );
+}
+
+/**
+ * A heading over a run of links.
+ *
+ * `aria-hidden` and not a real heading element. The two navs already have
+ * `aria-label="Admin sections"` and every link inside carries its own name; a
+ * screen reader user navigating by link or by landmark gets the whole list
+ * either way. Adding six `<h3>`s inside a `<nav>` would put six more stops in
+ * the heading rotor of every admin page for a grouping that exists to help the
+ * eye scan — and the alternative, marking each group as its own labelled nav
+ * landmark, turns one landmark into seven.
+ *
+ * The visual grouping does the work; the accessible name of each link already
+ * says where it goes.
+ */
+function SectionHeading({ children }: { children: React.ReactNode }) {
+  return (
+    <p
+      aria-hidden
+      /*
+        `/70`, not `/45`. The first version was `/45` and axe found six
+        contrast failures on every admin page — one per heading — because a
+        12px uppercase label needs 4.5:1 and 45% of the sidebar's foreground
+        over the sidebar's own ink does not reach it. The hint lines under each
+        link have been `/60` since they were written; a heading must not be
+        quieter than the thing it labels.
+      */
+      className="text-sidebar-foreground/70 px-3 pt-2 pb-1 font-mono text-xs tracking-[0.1em] uppercase"
+    >
+      {children}
+    </p>
   );
 }
 

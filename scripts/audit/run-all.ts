@@ -111,6 +111,7 @@ const GATES = [
   "audit:image-upload",
   "audit:image-colour",
   "audit:image-editor",
+  "audit:site-images",
   "audit:security-advance",
   "audit:shipping",
   "audit:courier-choice",

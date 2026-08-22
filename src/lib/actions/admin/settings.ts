@@ -420,6 +420,126 @@ export async function saveStoreSettings(
   );
 }
 
+/* ---------------------------------------------------------- branding ----- */
+
+/**
+ * The artwork, as three addresses.
+ *
+ * The **bytes** are not here. `/admin/site-images` puts them in the bucket and
+ * hands back a URL; this only records which URL each place uses, exactly the
+ * way `categories.image_url` and the hero payload do. Keeping it that way is
+ * what lets the header, the tab icon and the share card be replaceable without
+ * any renderer learning about a new table.
+ *
+ * The rule on each field is the one `logoField` states in the brands action:
+ * a site-relative path or https, so `javascript:` typed into an admin field
+ * dies at validation rather than becoming something the chrome renders. A
+ * protocol-relative `//host` is rejected by requiring the leading slash to
+ * stand alone.
+ */
+const brandingUrl = z
+  .string()
+  .trim()
+  .max(500, "That address is too long.")
+  .nullish()
+  .transform((value) => (value ? value : null))
+  .refine(
+    (value) =>
+      value === null ||
+      (value.startsWith("/") && !value.startsWith("//")) ||
+      value.startsWith("https://"),
+    "Give a full https:// address, or a path beginning with / for a file in this site.",
+  );
+
+const brandingSchema = z.object({
+  /**
+   * The sentence search engines and link previews print.
+   *
+   * 300 rather than unbounded: Google truncates a description at roughly 160
+   * characters and a link preview at fewer, so a longer one is not a longer
+   * description — it is a sentence that ends mid-word in the only place anyone
+   * reads it. The form says so; this stops the case where they did not.
+   */
+  description: z
+    .string()
+    .trim()
+    .max(300, "Keep it under 300 characters — search results cut it off.")
+    .default(""),
+  logoUrl: brandingUrl,
+  faviconUrl: brandingUrl,
+  shareImageUrl: brandingUrl,
+});
+
+export async function saveBranding(
+  input: unknown,
+): Promise<AdminResult<object>> {
+  return adminAction<object>(
+    "saveBranding",
+    "adminMutation",
+    async ({ supabase }) => {
+      const parsed = brandingSchema.safeParse(input);
+      if (!parsed.success) {
+        return {
+          ok: false,
+          reason: "invalid",
+          message: parsed.error.issues[0]?.message ?? "Check that and try again.",
+        };
+      }
+      const v = parsed.data;
+
+      /*
+        Upsert, not update.
+
+        Every other setting on this page updates a row seeded by a migration,
+        and that is safe because those rows have existed since Phase 7. This one
+        is new, and an `update` that matches no row **succeeds** — PostgREST
+        reports no error for zero rows changed. So in the window between this
+        code deploying and its migration being applied, the owner would press
+        Save, see "Artwork saved", and have changed nothing at all. A silent
+        no-op that reports success is worse than an error.
+
+        Upserting also makes the seed row a convenience rather than a
+        dependency: the panel is correct whether or not the migration that
+        inserts it has run.
+      */
+      const { error } = await supabase.from("site_settings").upsert(
+        {
+          key: "branding",
+          value: {
+            description: v.description,
+            logo_url: v.logoUrl,
+            favicon_url: v.faviconUrl,
+            share_image_url: v.shareImageUrl,
+          } satisfies Json,
+          is_public: true,
+        },
+        { onConflict: "key" },
+      );
+
+      if (error) {
+        console.error("[admin] saveBranding failed:", error.message);
+        return {
+          ok: false,
+          reason: "error",
+          message: "The artwork could not be saved. Try again in a moment.",
+        };
+      }
+
+      /*
+        `CHROME_CACHE_TAG` because the logo is in the header and footer of every
+        page, and `revalidatePath("/", "layout")` because the browser tab icon
+        and the page title come from the root layout's metadata, which is not
+        behind that tag. Missing either one means the owner uploads a logo,
+        reloads, and sees the old one — which is how somebody decides the panel
+        does not work.
+      */
+      updateTag(CHROME_CACHE_TAG);
+      revalidatePath("/", "layout");
+      return { ok: true };
+    },
+  );
+}
+
 /* ------------------------------------------------ the shop's parcel ------- */
 
 /**

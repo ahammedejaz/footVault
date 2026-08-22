@@ -59,6 +59,7 @@
     "audit:images": "NODE_OPTIONS=--conditions=react-server tsx scripts/audit/images.ts",
     "audit:image-colour": "NODE_OPTIONS=--conditions=react-server tsx scripts/audit/image-colour.ts",
     "audit:image-editor": "NODE_OPTIONS=--conditions=react-server tsx scripts/audit/image-editor.ts",
+    "audit:site-images": "NODE_OPTIONS=--conditions=react-server tsx scripts/audit/site-images.ts",
     "audit:actions": "tsx scripts/audit/server-actions.ts",
     "audit:zero-stock": "tsx scripts/audit/zero-stock.ts",
     "audit:fixtures-guard": "tsx scripts/audit/fixtures-guard.ts",

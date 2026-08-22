@@ -3,6 +3,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 
+import { SiteImageField } from "@/components/admin/site-images/site-image-field";
 import { FieldLabel } from "@/components/admin/ui";
 import { Button } from "@/components/ui/button";
 import {
@@ -16,6 +17,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { createBrand, updateBrand } from "@/lib/actions/admin/brands";
+import { slotFor, type SiteImageValue } from "@/lib/images/site-image";
 import { toast } from "@/lib/toast";
 
 /**
@@ -43,12 +45,19 @@ export type BrandDraft = {
 
 export function BrandForm({
   brand,
+  siteImage = null,
   triggerLabel,
   triggerVariant = "outline",
   triggerSize = "sm",
 }: {
   /** Absent when adding. */
   brand?: BrandDraft;
+  /**
+   * The stored original and framing for this maker's mark, so Adjust works
+   * without a re-upload. Always null while adding: a picture is filed under a
+   * slot named after the row's id, and a row being created has none.
+   */
+  siteImage?: SiteImageValue;
   triggerLabel: React.ReactNode;
   triggerVariant?: "default" | "outline" | "ghost" | "secondary";
   triggerSize?: "sm" | "default" | "icon-sm";
@@ -64,7 +73,6 @@ export function BrandForm({
   const [isActive, setIsActive] = React.useState(brand?.isActive ?? true);
   const [pending, setPending] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
-  const [logoBroken, setLogoBroken] = React.useState(false);
 
   const fieldId = React.useId();
 
@@ -75,7 +83,6 @@ export function BrandForm({
     setLogoUrl(brand?.logoUrl ?? "");
     setIsActive(brand?.isActive ?? true);
     setError(null);
-    setLogoBroken(false);
   }
 
   async function submit(event: React.FormEvent) {
@@ -184,51 +191,33 @@ export function BrandForm({
             />
           </div>
 
-          <div>
-            <FieldLabel
-              htmlFor={`${fieldId}-logo`}
-              hint="Optional. Upload the picture on the Media screen, then paste its address here."
-            >
-              Logo address
-            </FieldLabel>
-            <div className="flex items-center gap-2">
-              <Input
-                id={`${fieldId}-logo`}
-                value={logoUrl}
-                onChange={(event) => {
-                  setLogoUrl(event.target.value);
-                  setLogoBroken(false);
-                }}
-                placeholder="https://…/storage/v1/object/public/…"
-                inputMode="url"
-                autoComplete="off"
-                spellCheck={false}
-                className="text-sm"
-                disabled={pending}
-              />
-              {/*
-                A pasted address is not necessarily one of next.config's
-                remotePatterns, and the optimiser answers 400 rather than
-                degrading — so `next/image` would break exactly the preview
-                whose job is to show whether the address works.
-              */}
-              {logoUrl.trim() && !logoBroken ? (
-                // eslint-disable-next-line @next/next/no-img-element -- unoptimisable by design; see the note above
-                <img
-                  src={logoUrl.trim()}
-                  alt=""
-                  className="border-border size-11 shrink-0 rounded-sm border object-contain"
-                  onError={() => setLogoBroken(true)}
-                />
-              ) : null}
-            </div>
-            {logoBroken ? (
-              <p className="text-muted-foreground mt-1 text-xs text-pretty">
-                Nothing loaded from that address. It will still save — but check
-                it before customers see it.
-              </p>
-            ) : null}
-          </div>
+          {/*
+            The logo was a text box you pasted a storage URL into, with the
+            instruction "upload the picture on the Media screen, then paste its
+            address here". Every brand on this shop has a null logo, which is
+            what that instruction is worth: a field that works is not the same
+            as a field anybody can use.
+
+            The address field is gone rather than kept alongside. Two ways to
+            set the same value is how one of them goes stale, and the pasted
+            address had no framing behind it — so a logo set that way could
+            never be adjusted, only replaced.
+          */}
+          {editing ? (
+            <SiteImageField
+              slot={slotFor.brand(brand.id)}
+              frame="brand_logo"
+              initial={siteImage}
+              disabled={pending}
+              hint="Optional. Shown on this maker's products and on the brand list. Artwork with a transparent background sits best on the page."
+              showAlt={false}
+              onChange={(url) => setLogoUrl(url ?? "")}
+            />
+          ) : (
+            <p className="text-muted-foreground text-sm">
+              Add the brand first — its logo can be chosen as soon as it exists.
+            </p>
+          )}
 
           <label className="flex min-h-11 items-center gap-2.5">
             <input

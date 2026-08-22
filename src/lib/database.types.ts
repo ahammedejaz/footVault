@@ -1877,6 +1877,54 @@ export type Database = {
           },
         ]
       }
+      site_images: {
+        Row: {
+          alt: string | null
+          created_at: string
+          frame: string
+          framing: Json
+          original_height: number
+          original_path: string
+          original_width: number
+          rendered_height: number
+          rendered_path: string
+          rendered_url: string
+          rendered_width: number
+          slot: string
+          updated_at: string
+        }
+        Insert: {
+          alt?: string | null
+          created_at?: string
+          frame: string
+          framing?: Json
+          original_height: number
+          original_path: string
+          original_width: number
+          rendered_height: number
+          rendered_path: string
+          rendered_url: string
+          rendered_width: number
+          slot: string
+          updated_at?: string
+        }
+        Update: {
+          alt?: string | null
+          created_at?: string
+          frame?: string
+          framing?: Json
+          original_height?: number
+          original_path?: string
+          original_width?: number
+          rendered_height?: number
+          rendered_path?: string
+          rendered_url?: string
+          rendered_width?: number
+          slot?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       site_settings: {
         Row: {
           created_at: string

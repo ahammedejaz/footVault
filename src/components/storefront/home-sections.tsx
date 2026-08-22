@@ -548,6 +548,7 @@ function PromoStrip({ section }: { section: HomepageSection }) {
 function Banner({ section }: { section: HomepageSection }) {
   const ctaLabel = payloadString(section.payload, "cta_label");
   const ctaHref = payloadString(section.payload, "cta_href");
+  const background = payloadString(section.payload, "background_image_url");
 
   return (
     <section className="mx-auto max-w-7xl px-4 py-14 sm:px-6">
@@ -555,6 +556,35 @@ function Banner({ section }: { section: HomepageSection }) {
         data-surface="ink"
         className="relative isolate overflow-hidden rounded-lg px-6 py-12 sm:px-10 sm:py-14"
       >
+        {/*
+          A photograph is optional and the tread texture is not a fallback for
+          it — they stack. The texture is what gives the plain banner its
+          surface, and behind a picture it disappears under the scrim anyway, so
+          removing it when an image is present would only add a branch.
+
+          The scrim is unconditional for the same reason the hero's is: the
+          picture is owner-editable, so no gate can assert the contrast of a
+          photograph that does not exist yet, and white display type over an
+          unknown image is a legibility promise nobody can keep. `ink/70` is the
+          floor that makes it keepable.
+        */}
+        {background ? (
+          <>
+            <Image
+              src={background}
+              alt=""
+              aria-hidden
+              fill
+              loading="lazy"
+              sizes="(max-width: 1280px) 100vw, 1280px"
+              className="-z-10 object-cover"
+            />
+            <div
+              className="bg-ink/70 pointer-events-none absolute inset-0 -z-10"
+              aria-hidden
+            />
+          </>
+        ) : null}
         <div
           className="tread-texture pointer-events-none absolute inset-0"
           aria-hidden

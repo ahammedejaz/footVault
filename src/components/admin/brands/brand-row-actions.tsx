@@ -11,6 +11,7 @@ import {
 } from "@/components/admin/brands/brand-form";
 import { Button } from "@/components/ui/button";
 import { deleteBrand, setBrandActive } from "@/lib/actions/admin/brands";
+import type { SiteImageValue } from "@/lib/images/site-image";
 import { toast } from "@/lib/toast";
 
 /**
@@ -36,10 +37,13 @@ import { toast } from "@/lib/toast";
  */
 export function BrandRowActions({
   brand,
+  siteImage = null,
   productCount,
   productCountIncludingHidden,
 }: {
   brand: BrandDraft;
+  /** Passed straight through to the edit form's logo field. */
+  siteImage?: SiteImageValue;
   /** Live products. What the copy quotes, because it is what the owner sees. */
   productCount: number;
   /** Including soft-deleted ones. What actually blocks the delete. */
@@ -100,6 +104,7 @@ export function BrandRowActions({
       */}
       <BrandForm
         brand={brand}
+        siteImage={siteImage}
         triggerLabel={
           <>
             <Pencil className="size-4" aria-hidden />

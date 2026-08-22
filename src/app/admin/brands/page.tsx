@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import { BrandForm } from "@/components/admin/brands/brand-form";
+import { slotFor } from "@/lib/images/site-image";
+import { getSiteImages } from "@/lib/queries/admin/site-images";
 import { BrandRowActions } from "@/components/admin/brands/brand-row-actions";
 import { SearchField } from "@/components/admin/search-field";
 import {
@@ -64,6 +66,12 @@ export default async function AdminBrandsPage({
 
   const extras = { show: filter || undefined };
   const { rows, total } = await listBrands(params, filter);
+
+  /* Every maker's stored framing in one query — see the categories page for why
+     this is not fetched lazily inside each dialog. */
+  const siteImages = await getSiteImages(
+    rows.map((brand) => slotFor.brand(brand.id)),
+  );
 
   return (
     <>
@@ -242,6 +250,9 @@ export default async function AdminBrandsPage({
                             logoUrl: brand.logoUrl,
                             isActive: brand.isActive,
                           }}
+                          siteImage={
+                            siteImages.get(slotFor.brand(brand.id)) ?? null
+                          }
                           productCount={brand.productCount}
                           productCountIncludingHidden={
                             brand.productCountIncludingDeleted

@@ -15,11 +15,11 @@ import {
   cachedSiteSettings,
 } from "@/lib/queries/cached";
 import {
+  brandingOf,
   setting,
   type ContactSettings,
   type SocialSettings,
 } from "@/lib/queries/content";
-import { siteConfig } from "@/lib/site-config";
 
 /**
  * Navy footer, assembled entirely from the database.
@@ -93,6 +93,7 @@ export async function SiteFooter() {
   });
   const social = setting<SocialSettings>(settings, "social", {});
   const socialLinks = renderableSocials(social);
+  const branding = brandingOf(settings);
 
   return (
     <footer data-surface="ink" className="mt-auto">
@@ -100,9 +101,14 @@ export async function SiteFooter() {
       <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:py-16">
         <div className="grid gap-10 md:grid-cols-[1.2fr_repeat(3,1fr)]">
           <div>
-            <Logo showTagline />
+            <Logo
+              showTagline
+              src={branding.logoUrl}
+              name={branding.shopName}
+              tagline={branding.tagline}
+            />
             <p className="text-muted-foreground mt-5 max-w-xs text-sm text-pretty">
-              {siteConfig.description}
+              {branding.description}
             </p>
             {/*
               Was three hand-written branches for phone, email and address —
@@ -166,7 +172,7 @@ export async function SiteFooter() {
 
         <div className="mt-12 flex flex-col gap-3 border-t border-white/10 pt-6 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-muted-foreground font-mono text-xs">
-            © {new Date().getFullYear()} {siteConfig.name}
+            © {new Date().getFullYear()} {branding.shopName}
           </p>
           <p className="text-muted-foreground font-mono text-xs">
             Prices in INR, inclusive of all taxes

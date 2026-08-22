@@ -8,6 +8,7 @@ import {
   ShippingSettingsForm,
   StoreSettingsForm,
 } from "@/components/admin/settings/settings-forms";
+import { BrandingForm } from "@/components/admin/settings/branding-form";
 import { AdminPage, PageHeader, Panel } from "@/components/admin/ui";
 import {
   getAdminSettings,
@@ -18,6 +19,8 @@ import {
 import { SUGGESTED_TARGET_FILL_PERCENT } from "@/lib/images/target-fill";
 import { istWallClock } from "@/lib/announcement";
 import { parcelDefaultsStatus } from "@/lib/shipping/quote";
+import { slotFor, type SiteImageValue } from "@/lib/images/site-image";
+import { getSiteImages } from "@/lib/queries/admin/site-images";
 
 export const metadata: Metadata = { title: "Settings" };
 export const dynamic = "force-dynamic";
@@ -37,9 +40,14 @@ export const dynamic = "force-dynamic";
  * where they live and sends the owner there.
  */
 export default async function AdminSettingsPage() {
-  const [settings, parcel] = await Promise.all([
+  const [settings, parcel, brandingImages] = await Promise.all([
     getAdminSettings(),
     parcelDefaultsStatus(),
+    getSiteImages([
+      slotFor.branding("logo"),
+      slotFor.branding("favicon"),
+      slotFor.branding("share_image"),
+    ]),
   ]);
 
   const shipping = settingObject(settings, "shipping");
@@ -48,6 +56,7 @@ export default async function AdminSettingsPage() {
   const announcement = settingObject(settings, "announcement");
   const social = settingObject(settings, "social");
   const images = settingObject(settings, "images");
+  const branding = settingObject(settings, "branding");
   const prepaidDiscount = (shipping.prepaid_discount ?? {}) as {
     mode?: string;
     value?: unknown;
@@ -209,6 +218,31 @@ export default async function AdminSettingsPage() {
             />
           </Panel>
 
+          {/*
+            Under "The shop" rather than beside it, because the name and the
+            logo are the same question asked twice and an owner changing one
+            usually wants to look at the other.
+          */}
+          <Panel
+            title="Logo and artwork"
+            description="The mark in the header, the icon on the browser tab, and the picture people see when they share a link. Leave any of them empty to keep the artwork the shop came with."
+          >
+            <BrandingForm
+              initial={{
+                description: String(branding.description ?? ""),
+                logoUrl: stringOrNull(branding.logo_url),
+                faviconUrl: stringOrNull(branding.favicon_url),
+                shareImageUrl: stringOrNull(branding.share_image_url),
+              }}
+              images={
+                Object.fromEntries(brandingImages.entries()) as Record<
+                  string,
+                  SiteImageValue
+                >
+              }
+            />
+          </Panel>
+
           <Panel
             title="The announcement bar"
             description="The strip across the top of every page. It can be scheduled; a customer who closes it does not see the same words again."
@@ -278,4 +312,9 @@ export default async function AdminSettingsPage() {
       </div>
     </AdminPage>
   );
+}
+
+/** A jsonb field that should be a URL or absent, and may be neither. */
+function stringOrNull(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
 }

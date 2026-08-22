@@ -544,13 +544,19 @@ works.
 
 **In the admin panel, these work:** Dashboard, Orders and the single order
 screen (money, shipping buttons, replacements, notes, refunds), Returns to
-origin, Products, Inventory, Categories, Brands, Coupons, Customers, Media,
-**Appearance** (the homepage editor — §10a), Settings (delivery, the parcel
-box, Pay on Delivery, the courier choice, the announcement bar), and Health.
+origin, Products, Inventory, Categories, Brands, Coupons, Vault Coins, Reviews,
+Customers, Media, **Appearance** (the homepage editor — §10a), **Pages** (About,
+Contact and the policies — §10c), Settings (delivery, the parcel box, Pay on
+Delivery, the courier choice, the announcement bar, and the shop's logo and
+artwork), and Health.
 
-**Not built:** reviews, and a homepage **hero video** — the editor can place
-images today; video is queued behind real product photography, at your
-instruction, and needs a storage bucket only you can create.
+**Every picture on the shop can now be replaced from the panel, and moved
+around inside its frame — §10b.** That includes the ones that used to be
+drawn placeholders: the three department tiles on the homepage and the hero.
+
+**The menu is now grouped.** Sixteen sections under five headings — Today,
+Selling, What you sell, The website, Offers and customers, The shop itself.
+Nothing was removed or renamed; it is the same list, filed.
 
 **Order emails are built and wired — five to the customer and one to you — but
 nobody receives them until an email provider is connected.** That is a
@@ -821,6 +827,107 @@ Three things worth knowing:
   permanent.
 - **"Live now"** at the bottom is the homepage as customers currently see it —
   the last published layout, not your working copy.
+
+---
+
+## 10b · Every picture on the shop is yours to change
+
+Anywhere the shop shows a picture that is not a product photograph, there is now
+the same small control: **Choose picture**, **Adjust**, **Remove**. It works the
+same way in every one of these places, so there is one thing to learn.
+
+| Picture | Where to change it |
+|---|---|
+| The logo, in the header and footer | Settings → **Logo and artwork** |
+| The browser tab icon (favicon) | Settings → **Logo and artwork** |
+| The picture shown when someone shares a link | Settings → **Logo and artwork** |
+| The big homepage picture, on laptops | Appearance → Hero → Edit |
+| The big homepage picture, on phones | Appearance → Hero → Edit |
+| The still frame behind the hero video | Appearance → Hero → Edit |
+| A department tile on the homepage | Categories → Edit that department |
+| A banner section's background | Appearance → that banner → Edit |
+| A brand's logo | Brands → Edit that brand |
+
+### How it works
+
+**Choose picture** puts one there straight away, centred. That is one press and
+you are done — most of the time the middle of the photograph is the right part
+of it.
+
+**Adjust** is for when it is not. It opens the picture inside the exact shape
+that spot on the shop uses, and you move it: **drag with one finger, pinch to
+zoom**. On a computer, drag with the mouse and scroll to zoom. There are sliders
+underneath for zoom, brightness and contrast if you would rather type a number
+than drag. Press **Use this framing** when it looks right, or **Centre it** to
+start over.
+
+**You can adjust it again any time, without uploading it again.** The shop keeps
+the picture exactly as you sent it and cuts a fresh copy each time you move it —
+so a photograph does not get slightly worse every time you change your mind.
+
+**Remove** puts the place back to how it was. For the logo, the favicon and the
+share picture that means the artwork the shop was built with, not an empty
+space, so removing one is safe.
+
+### Two things worth knowing
+
+- **Phones and laptops get separate hero pictures, on purpose.** A wide
+  photograph cropped to a phone's shape is rarely the same picture. Set both.
+- **The shop tells you when a picture is too small.** Upload something smaller
+  than the space needs and it says so, with both sizes, rather than quietly
+  blurring it.
+
+### What it will not take
+
+JPEG, PNG, WebP or AVIF, up to 5MB. Not SVG — that format can carry hidden
+instructions, and these pictures are shown to the public.
+
+---
+
+## 10c · The words on your pages
+
+**Pages** in the admin menu holds everything at `/page/…` on the shop: About,
+Contact, Shipping, Returns, Size guide, Privacy and Terms. Until now these could
+only be changed by a developer running database commands.
+
+Press a page to open it. **Preview** shows it exactly as a customer will read
+it — that is the shop's own renderer, not an impression of it.
+
+### The format is deliberately tiny
+
+Leave a blank line between paragraphs. A run of lines each starting with `- `
+becomes a bulleted list. `**Words like this**` come out bold. Nothing else is
+interpreted, which is why nothing you type here can break the page.
+
+### Never type a price, a number of days, or a time
+
+Type the token instead. Under the words there is **"Show the things the shop
+fills in for you"** — a list of names like `{{free_shipping_threshold}}` and
+`{{return_window}}`, each with what it says right now. Type the name in braces
+and the shop prints the live value.
+
+This is not a style preference. The shop **refuses to build** if it finds a
+rupee figure or a day count typed into a page, and it does that because the
+same free-delivery figure has gone stale on this site three separate times —
+once promising customers a threshold that checkout did not honour. A token
+cannot go stale, because there is only one of it.
+
+### Two more things
+
+- **"Show it on the shop"** is the switch between a draft and a live page. Off,
+  the page returns not-found for customers and disappears from the footer; your
+  own View link still opens it.
+- **The web address cannot be changed once a page exists.** It is in the footer
+  of every page, in the terms customers agreed to at checkout, in Google, and in
+  whatever people have bookmarked — and renaming it would break all of those
+  with nothing to redirect them. New pages choose their address once.
+
+### The search description is worth two minutes
+
+It is the grey sentence Google prints under the page. The Returns page went live
+promising *"a 7 day free return and size exchange policy"* in that field while
+the page itself said replacement only, within 24 hours, no refunds. Nobody could
+fix it, so nobody did. Check each page's says the same thing the page says.
 
 ---
 

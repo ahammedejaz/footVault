@@ -85,7 +85,7 @@ function TreadMark({
 }
 
 /**
- * The logo, from the owner's artwork rather than the vector recreation.
+ * The logo — the owner's uploaded artwork, or the committed lockup.
  *
  * `public/brand/logo.png` is `logo-original.png` trimmed to its content box —
  * the wordmark and tagline are baked into the art, with enough glow behind
@@ -97,21 +97,55 @@ function TreadMark({
  * name as live text beside the art and marks the image decorative. The large
  * form (`showTagline`) is big enough for the art to speak for itself, and the
  * name and tagline it shows are delivered to a screen reader as alt text.
+ *
+ * ## The uploaded logo, and why the import stayed
+ *
+ * `src` and `name` arrive from `site_settings.branding`, so the owner can
+ * replace the shop's mark from the panel. When `src` is absent the committed
+ * lockup is used — the same static import, with everything Next does for one
+ * (dimensions known at build, no layout shift, no remote fetch). Deleting the
+ * import in favour of "always read the database" would have made the header of
+ * every page depend on a query succeeding, to change a picture that changes
+ * once a year.
+ *
+ * An uploaded logo is a plain `<img>` rather than `next/image`. The file is
+ * already cut to exactly the pixels this renders at by the site-image pipeline
+ * — 540x180 for a mark drawn at 176 — so the optimiser has nothing left to do,
+ * and routing it through `/_next/image` would spend a transform per size to
+ * produce the bytes we already have.
  */
 function Logo({
   className,
   showTagline = false,
+  src,
+  name = "Foot Vault",
+  tagline = "every step counts",
   ...props
-}: React.ComponentProps<"span"> & { showTagline?: boolean }) {
+}: React.ComponentProps<"span"> & {
+  showTagline?: boolean;
+  /** The owner's uploaded mark, or undefined for the committed lockup. */
+  src?: string | null;
+  name?: string;
+  tagline?: string;
+}) {
   if (showTagline) {
     return (
       <span className={cn("inline-block", className)} {...props}>
-        <Image
-          src={lockup}
-          alt="Foot Vault — every step counts"
-          className="h-auto w-44"
-          sizes="176px"
-        />
+        {src ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={src}
+            alt={`${name} — ${tagline}`}
+            className="h-auto w-44 max-w-full"
+          />
+        ) : (
+          <Image
+            src={lockup}
+            alt={`${name} — ${tagline}`}
+            className="h-auto w-44"
+            sizes="176px"
+          />
+        )}
       </span>
     );
   }
@@ -121,15 +155,20 @@ function Logo({
       className={cn("inline-flex items-center gap-2.5", className)}
       {...props}
     >
-      <Image
-        src={lockup}
-        alt=""
-        className="h-10 w-auto"
-        sizes="40px"
-        priority
-      />
+      {src ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={src} alt="" className="h-10 w-auto" />
+      ) : (
+        <Image
+          src={lockup}
+          alt=""
+          className="h-10 w-auto"
+          sizes="40px"
+          priority
+        />
+      )}
       <span className="font-display text-lg leading-none font-extrabold tracking-[-0.02em] whitespace-nowrap uppercase">
-        Foot Vault
+        {name}
       </span>
     </span>
   );

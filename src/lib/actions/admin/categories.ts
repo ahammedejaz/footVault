@@ -70,6 +70,31 @@ const descriptionField = z
   .nullish()
   .transform((value) => (value ? value : null));
 
+/**
+ * The department's picture, as an address.
+ *
+ * The bytes are put there by `/admin/site-images` — this column has only ever
+ * held a URL, and it still does, which is what keeps `home-sections.tsx`
+ * untouched by the whole image feature. The rule matches `logoField` in the
+ * brands action for the same reason it exists there: `javascript:` typed into
+ * an admin field must die at validation rather than become something the
+ * storefront renders. A protocol-relative `//host` is rejected by requiring the
+ * one leading slash to stand alone.
+ */
+const imageUrlField = z
+  .string()
+  .trim()
+  .max(500, "That address is too long.")
+  .nullish()
+  .transform((value) => (value ? value : null))
+  .refine(
+    (value) =>
+      value === null ||
+      (value.startsWith("/") && !value.startsWith("//")) ||
+      value.startsWith("https://"),
+    "Give a full https:// address, or a path beginning with / for a file in this site.",
+  );
+
 const createSchema = z.object({
   name: nameField,
   slug: slugField,
@@ -78,6 +103,7 @@ const createSchema = z.object({
     .nullish()
     .transform((value) => value ?? null),
   description: descriptionField,
+  imageUrl: imageUrlField,
   isActive: z.boolean(),
 });
 
@@ -107,6 +133,7 @@ export async function createCategory(
           slug: parsed.data.slug,
           parent_id: parsed.data.parentId,
           description: parsed.data.description,
+          image_url: parsed.data.imageUrl,
           is_active: parsed.data.isActive,
           // Straight onto the end rather than into the middle: a new category
           // appearing above ones the owner has already ordered reads as a bug.
@@ -160,6 +187,7 @@ export async function updateCategory(
           slug: parsed.data.slug,
           parent_id: parsed.data.parentId,
           description: parsed.data.description,
+          image_url: parsed.data.imageUrl,
           is_active: parsed.data.isActive,
           ...(moving
             ? { sort_order: childrenOf(shape, parsed.data.parentId).length }

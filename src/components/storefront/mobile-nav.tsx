@@ -29,9 +29,12 @@ const MobileNavPanel = dynamic(
 export function MobileNav({
   items,
   user,
+  branding,
 }: {
   items: NavItem[];
   user: AccountUser | null;
+  /** The shop's own mark and name, so the drawer matches the header above it. */
+  branding: { logoUrl: string | null; shopName: string };
 }) {
   const [open, setOpen] = React.useState(false);
   const [mounted, setMounted] = React.useState(false);
@@ -59,6 +62,7 @@ export function MobileNav({
         <MobileNavPanel
           items={items}
           user={user}
+          branding={branding}
           open={open}
           onOpenChange={setOpen}
         />

@@ -31,11 +31,14 @@ import { cn } from "@/lib/utils";
 export function MobileNavPanel({
   items,
   user,
+  branding,
   open,
   onOpenChange,
 }: {
   items: NavItem[];
   user: AccountUser | null;
+  /** The shop's own mark and name, so the drawer matches the header above it. */
+  branding: { logoUrl: string | null; shopName: string };
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
@@ -67,8 +70,8 @@ export function MobileNavPanel({
           <div className="border-border flex items-center justify-between border-b px-4 py-3">
             <Dialog.Title asChild>
               <span>
-                <Logo />
-                <span className="sr-only">Foot Vault menu</span>
+                <Logo src={branding.logoUrl} name={branding.shopName} />
+                <span className="sr-only">{branding.shopName} menu</span>
               </span>
             </Dialog.Title>
             <Dialog.Close asChild>

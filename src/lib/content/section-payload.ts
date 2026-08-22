@@ -145,6 +145,17 @@ export const promoStripPayloadSchema = z.object({
 export const bannerPayloadSchema = z.object({
   cta_label: optionalText("The button label"),
   cta_href: href("The button destination"),
+  /**
+   * An optional photograph behind the message.
+   *
+   * Absent means the section renders exactly what it rendered before this field
+   * existed — ink with the tread texture over it — so every banner already on a
+   * homepage is untouched by this. That is the same rule `media_mode` follows
+   * above, and for the same reason: a new payload field whose default is not
+   * "what happens today" silently redecorates every existing row the moment it
+   * ships.
+   */
+  background_image_url: href("The banner picture"),
 });
 
 export const richTextPayloadSchema = z.object({

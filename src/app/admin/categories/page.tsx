@@ -15,6 +15,8 @@ import {
   MAX_CATEGORY_DEPTH,
   type CategorySort,
 } from "@/lib/queries/admin/categories";
+import { getSiteImages } from "@/lib/queries/admin/site-images";
+import { slotFor } from "@/lib/images/site-image";
 
 export const metadata: Metadata = { title: "Categories" };
 export const dynamic = "force-dynamic";
@@ -50,6 +52,16 @@ export default async function AdminCategoriesPage({
 
   const { rows, total, options, capped, totalCategories } =
     await listCategoryTree(params);
+
+  /*
+    One query for every department's stored framing, rather than one per row.
+    The edit form needs the original and its dimensions to offer Adjust, and a
+    lazy fetch inside each dialog would mean the control appears a moment after
+    the dialog does — which reads as the panel being broken rather than slow.
+  */
+  const siteImages = await getSiteImages(
+    rows.map((row) => slotFor.category(row.id)),
+  );
 
   /** Only a top-level category can be a parent — the menu shows two levels. */
   const rootChoices = options
@@ -203,8 +215,13 @@ export default async function AdminCategoriesPage({
                                     slug: row.slug,
                                     description: row.description,
                                     parentId: row.parentId,
+                                    imageUrl: row.imageUrl,
                                     isActive: row.isActive,
                                   }}
+                                  siteImage={
+                                    siteImages.get(slotFor.category(row.id)) ??
+                                    null
+                                  }
                                   parents={rootChoices.filter(
                                     (choice) => !own.includes(choice.id),
                                   )}
@@ -278,8 +295,12 @@ export default async function AdminCategoriesPage({
                                 slug: row.slug,
                                 description: row.description,
                                 parentId: row.parentId,
+                                imageUrl: row.imageUrl,
                                 isActive: row.isActive,
                               }}
+                              siteImage={
+                                siteImages.get(slotFor.category(row.id)) ?? null
+                              }
                               parents={rootChoices.filter(
                                 (choice) => !own.includes(choice.id),
                               )}

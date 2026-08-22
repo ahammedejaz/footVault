@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { ArrowDown, ArrowUp, GripVertical, Plus, Trash2 } from "lucide-react";
 
 import { HeroVideoUploader } from "@/components/admin/appearance/hero-video-uploader";
+import { SiteImageField } from "@/components/admin/site-images/site-image-field";
 import { Field, RadioChoice, Text } from "@/components/admin/settings/controls";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,6 +21,8 @@ import {
   parseSectionPayload,
   type EditableSectionType,
 } from "@/lib/content/section-payload";
+import { slotFor, type SiteImageValue } from "@/lib/images/site-image";
+import { IMAGE_FRAMES, type FrameKey } from "@/lib/images/site-frames";
 import type {
   AdminSectionRow,
   PickerOption,
@@ -114,10 +117,28 @@ export function AppearanceEditor({
   initial,
   categories,
   collections,
+  siteImages,
+  heroFallback,
 }: {
   initial: AdminSectionRow[];
   categories: PickerOption[];
   collections: PickerOption[];
+  /**
+   * The stored original and framing for every picture in this layout, keyed by
+   * slot. Loaded once by the page rather than per field: a lazy fetch inside
+   * each field would make Adjust appear a beat after the section opens, which
+   * reads as the panel being broken rather than slow.
+   */
+  siteImages: Record<string, SiteImageValue>;
+  /**
+   * The hero still that the `banners` row supplies when the payload has none.
+   *
+   * Shown greyed under the hero's image fields rather than hidden. The hero has
+   * rendered a picture from that row since long before this editor existed, and
+   * an owner looking at a homepage with art on it, next to an image field that
+   * says "nothing here yet", concludes the panel is lying — which it would be.
+   */
+  heroFallback: { desktop: string | null; mobile: string | null };
 }) {
   const router = useRouter();
   const [sections, setSections] = React.useState<EditorSection[]>(() =>
@@ -409,6 +430,8 @@ export function AppearanceEditor({
                   section={section}
                   categories={categories}
                   collections={collections}
+                  siteImages={siteImages}
+                  heroFallback={heroFallback}
                   onField={(field, value) =>
                     patchPayload(section.key, field, value)
                   }
@@ -523,6 +546,71 @@ function AddSection({ onAdd }: { onAdd: (type: EditableSectionType) => void }) {
 
 /* ------------------------------------------------------- per-type forms ---- */
 
+/**
+ * One picture belonging to one homepage section.
+ *
+ * ## Why a section that has never been published cannot have a picture yet
+ *
+ * A picture is filed under a slot named after the row it belongs to, and a
+ * section the owner has just added has no row — the editor gives it a client-
+ * side key like `new-2`, which becomes a real id only at Publish. Filing the
+ * picture under `new-2` would work exactly once: the picture would render
+ * (the URL is in the payload and the payload is saved), and Adjust would
+ * silently stop finding it the moment the section was published under its real
+ * id. A control that works until you save is worse than one that is not there.
+ *
+ * So the field appears once the section exists, and until then this says so.
+ * The same rule, for the same reason, as the category form.
+ *
+ * ## It spans both columns
+ *
+ * The surrounding grid is two columns of text inputs. A 16:9 preview with three
+ * sliders under it in a half-width column is a hero the owner has to judge at
+ * 180 pixels wide, and it drags badly at that size on a phone.
+ */
+function SectionImage({
+  section,
+  part,
+  frame,
+  field,
+  siteImages,
+  fallbackUrl,
+  onField,
+}: {
+  section: EditorSection;
+  part: "desktop" | "mobile" | "poster" | "background";
+  frame: FrameKey;
+  /** The payload key the rendered URL is written into. */
+  field: string;
+  siteImages: Record<string, SiteImageValue>;
+  fallbackUrl?: string | null;
+  onField: (field: string, value: unknown) => void;
+}) {
+  if (!section.id) {
+    return (
+      <p className="text-muted-foreground text-sm sm:col-span-2">
+        {IMAGE_FRAMES[frame].label}: publish this section first, and its picture
+        can be chosen straight after.
+      </p>
+    );
+  }
+
+  const slot = slotFor.section(section.id, part);
+  return (
+    <div className="sm:col-span-2">
+      <SiteImageField
+        slot={slot}
+        frame={frame}
+        initial={siteImages[slot] ?? null}
+        fallbackUrl={fallbackUrl}
+        fallbackNote="This is the picture the shop is showing now, from the old banner record. Choose one here and it takes over."
+        showAlt={false}
+        onChange={(url) => onField(field, url ?? "")}
+      />
+    </div>
+  );
+}
+
 function stringAt(payload: Record<string, unknown>, field: string): string {
   const value = payload[field];
   return typeof value === "string" ? value : "";
@@ -532,9 +620,13 @@ function PayloadFields({
   section,
   categories,
   collections,
+  siteImages,
+  heroFallback,
   onField,
 }: {
   section: EditorSection;
+  siteImages: Record<string, SiteImageValue>;
+  heroFallback: { desktop: string | null; mobile: string | null };
   categories: PickerOption[];
   collections: PickerOption[];
   onField: (field: string, value: unknown) => void;
@@ -577,24 +669,40 @@ function PayloadFields({
             value={stringAt(p, "secondary_cta_href")}
             onChange={(value) => onField("secondary_cta_href", value)}
           />
-          <Text
-            id={`sec-${key}-image-desktop`}
-            label="Desktop image address"
-            value={stringAt(p, "desktop_image_url")}
-            onChange={(value) => onField("desktop_image_url", value)}
-            hint="Paste an address from Media. Leave both image fields empty to keep the current hero art."
+          {/*
+            Three pictures, and each of them used to be a text box you pasted a
+            URL into. That is why the shop shipped with drawn placeholder art in
+            the hero: the field worked, and nobody could use it, because using
+            it meant knowing what a Supabase public storage URL looks like.
+
+            Two art-directed uploads rather than one and a crop, because the
+            phone and the laptop want differently *composed* pictures — the
+            middle of a wide photograph is not a portrait of the same scene.
+          */}
+          <SectionImage
+            section={section}
+            part="desktop"
+            frame="hero_desktop"
+            field="desktop_image_url"
+            siteImages={siteImages}
+            fallbackUrl={heroFallback.desktop}
+            onField={onField}
           />
-          <Text
-            id={`sec-${key}-image-mobile`}
-            label="Phone image address"
-            value={stringAt(p, "mobile_image_url")}
-            onChange={(value) => onField("mobile_image_url", value)}
-            hint="A taller crop for phones. If only one image is given, it is used everywhere."
+          <SectionImage
+            section={section}
+            part="mobile"
+            frame="hero_mobile"
+            field="mobile_image_url"
+            siteImages={siteImages}
+            fallbackUrl={heroFallback.mobile}
+            onField={onField}
           />
-          <HeroVideoUploader
-            id={`sec-${key}-video-upload`}
-            onUploaded={(url) => onField("video_url", url)}
-          />
+          <div className="sm:col-span-2">
+            <HeroVideoUploader
+              id={`sec-${key}-video-upload`}
+              onUploaded={(url) => onField("video_url", url)}
+            />
+          </div>
           <Text
             id={`sec-${key}-video`}
             label="Video address"
@@ -602,12 +710,13 @@ function PayloadFields({
             onChange={(value) => onField("video_url", value)}
             hint="Filled in by the upload above. Clear it to go back to a still hero."
           />
-          <Text
-            id={`sec-${key}-poster`}
-            label="Video still address"
-            value={stringAt(p, "poster_url")}
-            onChange={(value) => onField("poster_url", value)}
-            hint="A frame from the video, from Media. It is what loads first, and it is what a customer who has asked for less motion sees instead of the video. If it is not a frame from the video, the picture visibly changes the moment the video starts."
+          <SectionImage
+            section={section}
+            part="poster"
+            frame="hero_poster"
+            field="poster_url"
+            siteImages={siteImages}
+            onField={onField}
           />
           {/*
             Directly under the two fields it arbitrates between, because the
@@ -802,6 +911,14 @@ function PayloadFields({
             label="Button destination"
             value={stringAt(p, "cta_href")}
             onChange={(value) => onField("cta_href", value)}
+          />
+          <SectionImage
+            section={section}
+            part="background"
+            frame="banner_background"
+            field="background_image_url"
+            siteImages={siteImages}
+            onField={onField}
           />
         </>
       );

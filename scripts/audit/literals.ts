@@ -566,6 +566,18 @@ const SURFACES: Surface[] = [
   { table: "products", label: (r) => String(r.slug) },
   { table: "product_images", label: (r) => String(r.alt_text ?? r.id) },
   { table: "brands", label: (r) => String(r.slug) },
+  /*
+    Owner-typed alternative text on the shop's own pictures — the hero, the
+    department tiles, the logo. It is prose a customer's screen reader reads
+    aloud, so a promise typed into it goes stale exactly the way one typed into
+    a product description does.
+
+    Scanned rather than skipped despite being one short column, because the
+    argument for skipping it ("nobody writes a price in an image description")
+    is the same argument that left `categories` and `products` unscanned until a
+    launch audit found threshold copy in both.
+  */
+  { table: "site_images", label: (r) => String(r.slot) },
 ];
 
 /**

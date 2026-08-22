@@ -9,8 +9,13 @@ import { MegaNav } from "@/components/storefront/mega-nav";
 import { MobileNav } from "@/components/storefront/mobile-nav";
 import { SearchButton } from "@/components/storefront/search-button";
 import type { NavItem } from "@/components/storefront/nav-types";
-import { deferIfPrerendering } from "@/lib/prerender";
-import { cachedCategoryTree, cachedPopularBrands } from "@/lib/queries/cached";
+import { deferIfPrerendering, prerenderOrDefer } from "@/lib/prerender";
+import {
+  cachedCategoryTree,
+  cachedPopularBrands,
+  cachedSiteSettings,
+} from "@/lib/queries/cached";
+import { brandingOf } from "@/lib/queries/content";
 import { getCurrentUser } from "@/lib/auth";
 import { getCartCount } from "@/lib/queries/cart";
 import { getWishlistCount } from "@/lib/queries/wishlist";
@@ -80,13 +85,22 @@ async function getPopularSearches(): Promise<
  * 390px without either wrapping or shrinking below the tap floor.
  */
 export async function SiteHeader() {
-  const [nav, popular, user, bagCount, savedCount] = await Promise.all([
-    getNav(),
-    getPopularSearches(),
-    getCurrentUser(),
-    getCartCount(),
-    getWishlistCount(),
-  ]);
+  const [nav, popular, user, bagCount, savedCount, settings] =
+    await Promise.all([
+      getNav(),
+      getPopularSearches(),
+      getCurrentUser(),
+      getCartCount(),
+      getWishlistCount(),
+      /*
+        The shop's own identity. Read here rather than in `Logo` because the
+        mark also appears inside the mobile drawer, which is a Client Component
+        — a server read inside the logo would have forced one of them to fetch
+        it a second way.
+      */
+      prerenderOrDefer("site-header/branding", () => cachedSiteSettings()),
+    ]);
+  const branding = brandingOf(settings);
 
   return (
     <header className="bg-background/95 border-border supports-[backdrop-filter]:bg-background/80 sticky top-0 z-50 border-b backdrop-blur">
@@ -97,14 +111,15 @@ export async function SiteHeader() {
         <MobileNav
           items={nav}
           user={user ? { name: user.name, email: user.email } : null}
+          branding={{ logoUrl: branding.logoUrl, shopName: branding.shopName }}
         />
 
         <Link
           href="/"
           className="mr-auto inline-flex min-h-11 items-center rounded-lg lg:mr-8"
         >
-          <Logo />
-          <span className="sr-only">Foot Vault home</span>
+          <Logo src={branding.logoUrl} name={branding.shopName} />
+          <span className="sr-only">{branding.shopName} home</span>
         </Link>
 
         <MegaNav items={nav} />

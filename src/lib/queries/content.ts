@@ -1,6 +1,7 @@
 import "server-only";
 
 import { createStaticClient } from "@/lib/supabase/static";
+import { siteConfig } from "@/lib/site-config";
 import { maybeRow, rows } from "@/lib/queries/run";
 import type { Database } from "@/lib/database.types";
 
@@ -192,6 +193,67 @@ export type ContactSettings = {
 };
 
 export type SocialSettings = Record<string, string>;
+
+/**
+ * The shop's identity as the chrome and the metadata need it.
+ *
+ * ## Two rows, on purpose
+ *
+ * The **name and tagline** come from `store_name` and `store_tagline`, which
+ * have existed since Phase 7 and which `/admin/settings` has always written.
+ * They are not duplicated into the branding row: two answers to "what is this
+ * shop called" would diverge the first time somebody edited the wrong one, and
+ * which one won would depend on which reader you asked. `opengraph-image`
+ * already reads them; this makes the header, the footer and the browser tab
+ * read them too, which they did not — all three carried a `siteConfig`
+ * constant, so the owner could rename the shop in the panel and see it change
+ * on the social card and nowhere else.
+ *
+ * The **artwork and the search description** come from `branding`, because they
+ * had no row at all. The logo was a compiled import and the favicon was a file
+ * route; replacing either meant a deploy.
+ *
+ * ## Every field is optional, and the fallbacks are what ships in the repo
+ *
+ * This is read by the **root layout**, so a throw is not a broken page — it is
+ * a broken site, including the admin screen the owner would use to fix it.
+ * `shippingSettingsOf` below throws by design because a wrong delivery promise
+ * is worse than an error; a missing shop name is not in that category, and the
+ * trade goes the other way. A missing field falls back to `siteConfig`, which
+ * is exactly what the site rendered before any of this existed.
+ */
+export type BrandingSettings = {
+  shopName: string;
+  tagline: string;
+  description: string;
+  /** Null means the committed lockup in `public/brand`. */
+  logoUrl: string | null;
+  /** Null means `src/app/icon.png`, the file route Next already serves. */
+  faviconUrl: string | null;
+  /** Null means the generated `opengraph-image` route, which is per-page. */
+  shareImageUrl: string | null;
+};
+
+export function brandingOf(settings: SiteSettings): BrandingSettings {
+  const raw = (settings.branding ?? {}) as Record<string, unknown>;
+
+  const text = (value: unknown, fallback: string): string =>
+    typeof value === "string" && value.trim() ? value.trim() : fallback;
+
+  const url = (key: string): string | null => {
+    const value = raw[key];
+    return typeof value === "string" && value.trim() ? value.trim() : null;
+  };
+
+  return {
+    shopName: text(settings.store_name, siteConfig.name),
+    tagline: text(settings.store_tagline, siteConfig.tagline),
+    description: text(raw.description, siteConfig.description),
+    logoUrl: url("logo_url"),
+    faviconUrl: url("favicon_url"),
+    shareImageUrl: url("share_image_url"),
+  };
+}
 
 export type ShippingSettings = {
   /**

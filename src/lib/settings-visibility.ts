@@ -77,6 +77,11 @@ export const SETTINGS_VISIBILITY: Record<string, SettingClassification> = {
     reason:
       "the target fill percentage the crop tool nudges toward. Operational: it shapes what the owner is guided to while framing a photograph, and a customer learns the result by looking at the pictures rather than by reading the figure",
   },
+  branding: {
+    visibility: "public",
+    reason:
+      "the logo, the favicon, the social share card and the sentence search engines print. Every value in it is served to anonymous visitors by definition — the logo is in the header of every page — so keeping it private would hide nothing and break the chrome",
+  },
   loyalty: {
     visibility: "private",
     reason:

@@ -4,6 +4,9 @@ import { AppearanceEditor } from "@/components/admin/appearance/appearance-edito
 import { AdminPage, PageHeader } from "@/components/admin/ui";
 import { HomeSection } from "@/components/storefront/home-sections";
 import { contentTokens } from "@/lib/content-tokens";
+import { slotFor, type SiteImageValue } from "@/lib/images/site-image";
+import { getSiteImages } from "@/lib/queries/admin/site-images";
+import { getBanner } from "@/lib/queries/content";
 import type { SectionType } from "@/lib/queries/content";
 import {
   listAllSections,
@@ -26,11 +29,39 @@ export const dynamic = "force-dynamic";
  * RLS-checked client.
  */
 export default async function AdminAppearancePage() {
-  const [sections, pickers, tokens] = await Promise.all([
+  const [sections, pickers, tokens, heroBanner] = await Promise.all([
     listAllSections(),
     listPickerOptions(),
     contentTokens(),
+    /*
+      The hero's old still, so the image field can show what the shop is
+      actually rendering rather than an empty box next to a homepage that
+      visibly has art on it. `home-sections.tsx` reads the payload first and
+      falls back to this row; the editor now says so out loud.
+    */
+    getBanner("home_hero"),
   ]);
+
+  /*
+    Every picture in this layout, in one query. Four slots per hero and one per
+    banner, and only sections that have been published have slots at all — a
+    row the owner has just added has no id to file a picture under.
+  */
+  const siteImages = Object.fromEntries(
+    (
+      await getSiteImages(
+        sections.flatMap((section) =>
+          section.sectionType === "hero"
+            ? (["desktop", "mobile", "poster"] as const).map((part) =>
+                slotFor.section(section.id, part),
+              )
+            : section.sectionType === "banner"
+              ? [slotFor.section(section.id, "background")]
+              : [],
+        ),
+      )
+    ).entries(),
+  ) as Record<string, SiteImageValue>;
 
   return (
     <AdminPage>
@@ -44,6 +75,11 @@ export default async function AdminAppearancePage() {
         initial={sections}
         categories={pickers.categories}
         collections={pickers.collections}
+        siteImages={siteImages}
+        heroFallback={{
+          desktop: heroBanner?.imageUrl ?? null,
+          mobile: heroBanner?.mobileImageUrl ?? heroBanner?.imageUrl ?? null,
+        }}
       />
 
       {/*

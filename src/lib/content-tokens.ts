@@ -106,7 +106,14 @@ import { createAdminClient } from "@/lib/supabase/admin";
  * moment it is not.
  */
 
-export type ContentTokens = Record<string, string>;
+/*
+  Re-exported rather than declared, so every existing `from
+  "@/lib/content-tokens"` import keeps working while the browser can reach the
+  same substitution through `@/lib/tokens`. See that file for why it moved.
+*/
+export { fillTokens, type ContentTokens } from "@/lib/tokens";
+
+import { fillTokens, type ContentTokens } from "@/lib/tokens";
 
 /**
  * Every token the CMS may use, with what it renders to right now.
@@ -252,19 +259,6 @@ function describeHours(hours: Record<string, unknown>): string | null {
   add("Saturday", hours.saturday);
   add("Sunday", hours.sunday);
   return parts.length > 0 ? parts.join(", ") : null;
-}
-
-/**
- * Substitute, leaving anything unrecognised visible.
- *
- * The regex is deliberately narrow — lowercase, underscores, inside doubled
- * braces — so a price written as `{2,499}` in ordinary prose is untouched.
- */
-export function fillTokens(text: string, tokens: ContentTokens): string {
-  return text.replace(
-    /\{\{\s*([a-z0-9_]+)\s*\}\}/g,
-    (whole, name: string) => tokens[name] ?? whole,
-  );
 }
 
 /** Convenience for the common case: read the tokens and fill in one go. */

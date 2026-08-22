@@ -3,6 +3,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 
+import { SiteImageField, type SiteImageValue } from "@/components/admin/site-images/site-image-field";
 import { FieldLabel } from "@/components/admin/ui";
 import { Button } from "@/components/ui/button";
 import {
@@ -17,6 +18,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { createCategory, updateCategory } from "@/lib/actions/admin/categories";
+import { slotFor } from "@/lib/images/site-image";
 import { toast } from "@/lib/toast";
 
 /**
@@ -45,11 +47,13 @@ export type CategoryDraft = {
   slug: string;
   description: string | null;
   parentId: string | null;
+  imageUrl: string | null;
   isActive: boolean;
 };
 
 export function CategoryForm({
   category,
+  siteImage = null,
   parents,
   triggerLabel,
   triggerVariant = "outline",
@@ -58,6 +62,13 @@ export function CategoryForm({
 }: {
   /** Absent when adding. */
   category?: CategoryDraft;
+  /**
+   * The stored original and framing for this department's picture, so Adjust
+   * works without a re-upload. Null when there is no picture, and always null
+   * while adding — a slot is named after the row's id, and a row being created
+   * does not have one yet.
+   */
+  siteImage?: SiteImageValue;
   parents: ParentChoice[];
   triggerLabel: React.ReactNode;
   triggerVariant?: "default" | "outline" | "ghost" | "secondary";
@@ -76,6 +87,7 @@ export function CategoryForm({
   );
   const [parentId, setParentId] = React.useState(category?.parentId ?? "");
   const [isActive, setIsActive] = React.useState(category?.isActive ?? true);
+  const [imageUrl, setImageUrl] = React.useState(category?.imageUrl ?? null);
   const [pending, setPending] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
@@ -88,6 +100,7 @@ export function CategoryForm({
     setDescription(category?.description ?? "");
     setParentId(category?.parentId ?? "");
     setIsActive(category?.isActive ?? true);
+    setImageUrl(category?.imageUrl ?? null);
     setError(null);
   }
 
@@ -101,6 +114,7 @@ export function CategoryForm({
       slug: slug || slugify(name),
       description: description.trim() ? description : null,
       parentId: parentId || null,
+      imageUrl,
       isActive,
     };
     const result = editing
@@ -247,6 +261,36 @@ export function CategoryForm({
               className="border-input placeholder:text-muted-foreground disabled:bg-muted w-full rounded-lg border bg-transparent px-3 py-2 text-base transition-colors disabled:cursor-not-allowed disabled:opacity-50"
             />
           </div>
+
+          {/*
+            The department's picture, and only once the department exists.
+
+            A picture is filed under a slot named after the row's id, and a row
+            being created has no id — so on the add form this is a sentence
+            saying when the control appears rather than a control that silently
+            does nothing. Every homepage department tile on this shop was
+            showing drawn placeholder art before this field existed, because
+            `categories.image_url` had been in the schema since the first
+            migration with nothing anywhere that could write to it.
+          */}
+          {editing ? (
+            <div className="border-border rounded-lg border p-3">
+              <SiteImageField
+                slot={slotFor.category(category.id)}
+                frame="category_tile"
+                initial={siteImage}
+                disabled={pending}
+                label="Picture"
+                hint="Shown behind this department's tile on the homepage. The name is drawn over it, so leave some quiet space at the bottom."
+                onChange={(url) => setImageUrl(url)}
+              />
+            </div>
+          ) : (
+            <p className="text-muted-foreground text-sm">
+              Add the category first — its picture can be chosen as soon as it
+              exists.
+            </p>
+          )}
 
           <label className="flex min-h-11 items-center gap-2.5">
             <input
