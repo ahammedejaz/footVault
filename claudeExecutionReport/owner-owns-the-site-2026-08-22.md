@@ -235,10 +235,51 @@ that accessible name"* while the other three stayed green. Restored, 28/28.
 | `npm run audit:a11y` | clean, 23 routes × 15 states at 390px and 1440px |
 | `npm run audit:overflow` | 9,584 interactive elements measured, exit 0 |
 
-**Two gates are red until the production migration is applied**, and they are
-right to be: `audit:literals` and `audit:settings-visibility` both read the
-**production** database, where `site_images` and the `branding` row do not exist
-yet. They are telling me the code and the database have to move together. See §5.
+### The full suite
+
+`npm run audit` — **59 of 64 gates green in 20.7 minutes**, including the new
+one. All five failures are accounted for and none is a regression from this
+work:
+
+| Gate | Why | What I did |
+|---|---|---|
+| `audit:literals` | Reads **production**, where `site_images` does not exist yet | Nothing — it is correct. See §5 |
+| `audit:settings-visibility` | Reads **production**, where the `branding` row does not exist yet | Nothing — same |
+| `audit:admin-mobile` | `/admin/customers` needs a sideways table scroll to reach its two action columns at 360/390px | **Pre-existing.** See §4.1 |
+| `audit:image-upload` | Asserted on the literal `derived/v1/` | **Fixed** — see §4.2 |
+| `audit:image-colour` | Same literal, in a fingerprint split | **Fixed** — same |
+
+### 4.1 The `/admin/customers` failure is pre-existing, and I did not fix it
+
+It only appears when there are customers, so it is invisible on a clean staging
+database and the suite's own fixtures create them. Three proofs it is not mine:
+my commit touches no file under `admin/customers` (that screen last changed
+2026-08-08); running the gate alone against a clean staging gives **45/0**; and
+clearing the QA fixtures with `audit:teardown` returns it to **45/0**
+immediately.
+
+It is a real defect, though — the row ends in *two* action columns ("Pay on
+Delivery" and "Orders"), and only one column can pin to the edge, so fixing it
+properly means redesigning that row for phones. The controls **are** reachable,
+by scrolling the table sideways; the gate's rule is the stricter "reachable
+without sideways scroll". That is a change to a screen this brief did not ask
+about, so I have reported it rather than made it. It is yours to scope.
+
+### 4.2 Two gates had rotted on a version bump, and I fixed them
+
+`audit:image-upload` asserted `html.includes("derived/v1/")` and
+`audit:image-colour` split on `"/derived/v1/"`. `PIPELINE_VERSION` moved to **2**
+on 2026-08-20, so every fresh upload lands under `derived/v2/` — both gates had
+been failing for two days for a reason that has nothing to do with what they
+test. `image-colour`'s three red checks were all about *colourway tagging*, and
+the actual cause was an empty fingerprint.
+
+`scripts/audit/images.ts` had already taken exactly this lesson and says so in
+its own comment — *"this fixture carried a hand-written `derived/v1/` and went
+red the day PIPELINE_VERSION moved to 2 — a copy of a derivable value asserting
+the past, again."* These two were the copies nobody went back for. Both now
+build the prefix from `PIPELINE_VERSION`. After the fix: **image-upload 31/31,
+image-colour 20/20.**
 
 ---
 
@@ -307,3 +348,6 @@ customers' names and addresses.
   finding its name in `content-tokens.ts` as text.
 - **Whether a chosen picture looks good.** That is the owner's decision, and the
   reason the framing stage exists.
+- **`/admin/customers` on a phone.** Its two action columns need a sideways
+  table scroll at 360 and 390px. Pre-existing, evidenced in §4.1, and left for
+  you to scope because the fix is a row redesign rather than a one-line change.

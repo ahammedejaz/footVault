@@ -54,6 +54,7 @@ import {
   CANONICAL_EDGE,
   MAX_DECODED_PIXELS,
   MAX_UPLOAD_BYTES,
+  PIPELINE_VERSION,
   UPLOAD_EDGE,
 } from "../../src/lib/images/constants";
 import { inspect } from "../../src/lib/images/pipeline";
@@ -126,6 +127,20 @@ async function crookedPhotograph(): Promise<Buffer> {
     .jpeg({ quality: 92 })
     .toBuffer();
 }
+
+/**
+ * The folder a derivative lands in, **derived rather than typed**.
+ *
+ * This was the literal `derived/v1/` and went red the day `PIPELINE_VERSION`
+ * moved to 2 — the run uploads a fresh photograph, which comes back under
+ * `derived/v2/`, so the assertion was looking for a path the shop had stopped
+ * producing. `scripts/audit/images.ts` had already taken this exact lesson and
+ * says so in its own comment; this file and `image-colour.ts` were the two
+ * copies nobody went back for.
+ *
+ * A copy of a derivable value is an assertion about the past.
+ */
+const DERIVED_PREFIX = `derived/v${PIPELINE_VERSION}/`;
 
 async function main() {
   /*
@@ -503,7 +518,7 @@ async function main() {
     const html = await page.content();
     check(
       "the card fetches the derivative directly, not through the optimiser",
-      html.includes("derived/v1/") && !derivativeGoesThroughOptimiser(html),
+      html.includes(DERIVED_PREFIX) && !derivativeGoesThroughOptimiser(html),
       "srcset carries storage URLs with width descriptors; no /_next/image round trip",
     );
 

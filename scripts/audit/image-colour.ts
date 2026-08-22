@@ -59,6 +59,7 @@ assertNotProduction("run image-colour");
 import sharp from "sharp";
 import { chromium, type Page } from "playwright";
 
+import { PIPELINE_VERSION } from "../../src/lib/images/constants";
 import { adminClient, createAccount, sessionCookies } from "./fixtures";
 import { scanned } from "./scanned";
 import { BASE_URL } from "./routes";
@@ -401,7 +402,16 @@ async function main() {
      * `derived/v1/` alone would be satisfied by every other photograph on the
      * page.
      */
-    const fingerprint = added.url.split("/derived/v1/")[1]?.split("/")[0] ?? "";
+    /*
+      `derived/v${PIPELINE_VERSION}/`, not the literal `derived/v1/` this
+      carried. The run uploads a fresh photograph, so the path it comes back on
+      follows whatever the pipeline emits today — the day PIPELINE_VERSION moved
+      to 2 this split returned nothing, the fingerprint was empty, and three
+      checks about colourway tagging failed for a reason that had nothing to do
+      with colourways. `scripts/audit/images.ts` records the same lesson.
+    */
+    const fingerprint =
+      added.url.split(`/derived/v${PIPELINE_VERSION}/`)[1]?.split("/")[0] ?? "";
     check(
       "the new photograph has a content hash to match on",
       fingerprint.length > 0,
